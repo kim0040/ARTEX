@@ -54,7 +54,7 @@ type Task struct {
 	LLMFailoverReason  string  `json:"llm_failover_reason,omitempty"`
 	SourceTaskIDs      []int64 `json:"source_task_ids,omitempty"`
 	CompanyIDs         []int64 `json:"company_ids,omitempty"`
-	Status             string  `json:"status"` // persisted lifecycle status (done/failed/timeout은 종료 상태; 비었거나 그 외는 실행 상태에서 도출)
+	Status             string  `json:"status"` // DB에 적어 둔 작업 생애주기(done/failed/timeout은 종료 상태; 비었거나 그 외는 실행 상태에서 도출)
 	// 작업 단위 시간 제한(docs/작업-단위-시간-제한과-마무리-설계.md 참고). DeadlineAt/FirstRunAt은 unix 초이며, 0=미설정/미실행.
 	TimeoutSeconds       int                    `json:"timeout_seconds"`
 	PlanHeartbeatSeconds int                    `json:"plan_heartbeat_seconds"` // 플래너(의도만 생성) 하트비트 트리거 간격(초)
@@ -475,7 +475,7 @@ func (m *Manager) SetTrafficEnabled(on bool) error {
 }
 
 // LLMRecordEnabled는 LLM 요청/응답 기록이 켜져 있는지 알립니다
-// (기본 꺼짐; settings.llm_record). The recorder consults this per call, so the
+// (기본 꺼짐; settings.llm_record). 기록기는 호출마다 이 값을 보므로
 // 토글은 에이전트를 다시 만들지 않고 바로 적용됩니다.
 func (m *Manager) LLMRecordEnabled() bool {
 	m.mu.RLock()
@@ -495,9 +495,9 @@ func (m *Manager) SetLLMRecordEnabled(on bool) error {
 	return nil
 }
 
-// NoaCompactionEnabled는 실험용 noa 맥락 압축이 켜져 있는지 알립니다.
-// mechanism is on (기본 꺼짐; settings.noa_compaction). Read per agent run via the
-// 주입된 결정 함수가 에이전트 실행마다 읽으므로, 토글은 다시 만들지 않고 다음 실행부터 적용됩니다.
+// NoaCompactionEnabled는 실험용 noa 맥락 압축이 켜져 있는지 알립니다
+// (기본 꺼짐; settings.noa_compaction). 주입된 결정 함수가 에이전트 실행마다
+// 읽으므로, 토글은 다시 만들지 않고 다음 실행부터 적용됩니다.
 func (m *Manager) NoaCompactionEnabled() bool {
 	return m.pg.GetBool(settingNoaCompaction, false)
 }
@@ -508,7 +508,7 @@ func (m *Manager) SetNoaCompaction(on bool) error {
 	return m.pg.SetBool(settingNoaCompaction, on)
 }
 
-// LLMPoolEnabled reports whether LLM failover ("풀링") is on (기본 꺼짐;
+// LLMPoolEnabled는 LLM 장애 조치("풀링")가 켜져 있는지 알립니다 (기본 꺼짐;
 // settings.llm_pool_enabled). 제공자 사슬을 만들 때 읽습니다(applyLLM).
 // 그래서 바꾸면 다시 만들어야 합니다. putSettings가 그렇게 합니다.
 func (m *Manager) LLMPoolEnabled() bool {
@@ -523,8 +523,8 @@ func (m *Manager) LLMPoolEnabled() bool {
 func (m *Manager) SetLLMPoolEnabled(on bool) error { return m.pg.SetBool(settingLLMPoolOn, on) }
 
 // LLMPoolBindFallback은 특정 설정에 묶인 에이전트나 작업이, 그 설정이 실패해도 사슬로 물러설지 알립니다.
-// profile still falls back to the chain when that profile fails (기본 꺼짐: 바인딩되면
-// 독점, 실패하면 곧 실패). Only meaningful while LLMPoolEnabled.
+// 켜면 그 설정이 실패해도 사슬로 물러섭니다 (기본 꺼짐: 바인딩되면
+// 독점, 실패하면 곧 실패). LLMPoolEnabled가 켜져 있을 때만 의미가 있습니다.
 func (m *Manager) LLMPoolBindFallback() bool {
 	if m.pg == nil {
 		return false
@@ -574,8 +574,8 @@ func (m *Manager) WebSearchOpts() agent.WebSearchOpts {
 // 설정이 서버 쪽 검색을 실제로 돌릴 수 있는지는 여기서 일부러 검사하지 않습니다. DeepSeek는
 // Anthropic 형식 끝점에서만 그것을 엽니다. 화면이
 // 요구를 적고 사용자가 정합니다.
-// simply fails at search time (or at the settings page's 테스트 button), which is
-// 다른 백엔드가 나쁜 키에 주는 것과 같은 반응입니다.
+// 검색할 때(또는 설정 화면의 테스트 버튼에서) 그냥 실패하며, 그 반응은
+// 다른 백엔드가 나쁜 키에 주는 것과 같습니다.
 func (m *Manager) deepSeekSearchCreds() (baseURL, apiKey, model string) {
 	p, err := m.pg.ActiveProfile()
 	if err != nil || p == nil {

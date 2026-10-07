@@ -293,6 +293,8 @@ function SkillsOverview({
 }
 
 // ── 페이지 ──────────────────────────────────────────────────────────────────
+// 이 화면은 에이전트가 골라 쓰는 스킬 라이브러리(파일 묶음)입니다.
+// 작업의 탐색 그래프나 자산 그래프가 아니고, 저장소 skills/ 절차 원문과도 다릅니다.
 export default function SkillsPage() {
   const [skills, setSkills] = React.useState<SkillItem[]>([]);
   const [agents, setAgents] = React.useState<Agent[]>([]);
@@ -334,8 +336,8 @@ export default function SkillsPage() {
   const [pendingDelete, setPendingDelete] = React.useState<PendingDelete>(null);
   const [deleting, setDeleting] = React.useState(false);
 
-  // 호출 통계: 목록 페이지의 횟수/최근 호출은 api.skills()와 함께 옵니다. skill 하나를 고르면 그것의
-  // 최근 호출 명세. missing = 이름으로 불렸지만 없는 skill(쓰고 싶은데 없음).
+  // 호출 통계: 목록 페이지의 횟수/최근 호출은 api.skills()와 함께 옵니다. 스킬 하나를 고르면 그것의
+  // 최근 호출 명세를 봅니다. missing은 이름으로 불렸지만 저장소에 없는 스킬입니다(쓰고 싶은데 없음).
   const [usageCalls, setUsageCalls] = React.useState<SkillCall[]>([]);
   const [usageLoading, setUsageLoading] = React.useState(false);
   const [missing, setMissing] = React.useState<MissingSkill[]>([]);
@@ -707,7 +709,7 @@ export default function SkillsPage() {
           <h1 className="text-sm font-semibold leading-tight">Skill</h1>
           <p className="text-muted-foreground text-xs">스킬 라이브러리 · agentskills.io 규격 · Agent 권한에 따라 표시</p>
         </div>
-        {/* 빈칸 목록: agent가 이름으로 불렀지만 저장소에 없는 skill. 무엇을 채워야 하는지 바로 알 수 있습니다. */}
+        {/* 빈칸 목록: 에이전트가 이름으로 불렀지만 저장소에 없는 스킬. 무엇을 채워야 하는지 바로 알 수 있습니다. */}
         {missing.length > 0 && (
           <Popover>
             <PopoverTrigger asChild>
@@ -770,7 +772,7 @@ export default function SkillsPage() {
                 const isSkillSelected = selected?.skill === s.name && selected.path === null;
                 return (
                   <div key={s.name}>
-                    {/* skill 루트 노드 */}
+                    {/* 스킬 루트 노드 */}
                     <div
                       className={cn(
                         "group relative flex cursor-pointer select-none items-center gap-1 rounded px-2 py-1 text-sm",
@@ -1012,7 +1014,7 @@ export default function SkillsPage() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* ── Skill 만들기 대화상자 ── */}
+      {/* ── 스킬 만들기 대화상자 ── */}
       <Sheet open={newOpen} onOpenChange={setNewOpen}>
         <SheetContent side="right" className="flex w-full flex-col gap-0 data-[side=right]:sm:max-w-xl">
           <SheetHeader className="px-4 pt-4">

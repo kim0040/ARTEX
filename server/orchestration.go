@@ -37,7 +37,7 @@ func jsonResult(v any) (actool.Result, error) {
 // 누가 실제로 보는지를 여전히 정합니다.
 // 초보용: 캡처·작업 사이 도구·사용자 정의 도구를 에이전트 실행에 넣는 입구입니다.
 //
-//nolint:unused // used as the hostTools provider in wireAgentAugment
+//nolint:unused // wireAgentAugment가 hostTools 제공자로 쓴다
 func (s *Server) hostTools() ([]actool.CoreTool, map[string][]string) {
 	tools := append(s.m.HostTools(), s.orchestrationTools()...)
 	tools = append(tools, s.findingRetestTools()...)
@@ -474,8 +474,8 @@ func (s *Server) deriveTaskStatus(t *Task) string {
 // 에이전트마다 묶을 수 있게 합니다(기본은 아무에게도 안 묶임. 오케스트레이션
 // 에이전트만 골라 켬). 트래픽 씨앗처럼 처음 한 번만 넣습니다.
 func (s *Server) seedOrchestrationTools() {
-	// task-op + platform tools default-bind to the built-in Auto agent (이 agent는 원래
-	// 플랫폼을 조작하는 용도이다). SeedTool은 첫 삽입만 적용된다. 이미 seed된 옛 라이브러리 행은 seedAutoDefaultBindings가 바인딩을 보완한다.
+	// 작업 조작 도구와 플랫폼 도구는 내장 Auto 에이전트에 기본으로 묶입니다 (이 에이전트는 원래
+	// 플랫폼을 조작하는 용도이다). SeedTool은 첫 삽입만 적용된다. 이미 심긴 옛 라이브러리 행은 seedAutoDefaultBindings가 바인딩을 보완한다.
 	autoAgents, _ := json.Marshal([]string{"auto"})
 	for _, t := range s.orchestrationTools() {
 		schema, _ := json.Marshal(t.InputSchema())
@@ -513,7 +513,7 @@ func (s *Server) seedOrchestrationTools() {
 
 // refreshBuiltinToolSchemas는 코드의 스키마/설명 변경을
 // 이미 심긴 오케스트레이션·플랫폼 도구 행에, 버전 플래그마다 한 번 반영합니다.
-// SeedTool is first-insert-only, so a new param (e.g. spawn_task의 llm_profile) never
+// SeedTool은 처음 넣을 때만 행을 만듭니다. 그래서 새 인자(예: spawn_task의 llm_profile)는
 // 옛 DB에는 반영되지 않습니다. 각 도구의 에이전트 바인딩과 켜짐 표시는 그대로 둡니다.
 // 코드에서 이 도구들의 스키마나 설명이 바뀌면 이 플래그를 올립니다.
 func (s *Server) refreshBuiltinToolSchemas() {
@@ -528,12 +528,12 @@ func (s *Server) refreshBuiltinToolSchemas() {
 			log.Printf("[tools] refresh %s schema failed: %v", t.Name(), err)
 		}
 	}
-	// 동시에 일부 내장 agent 도구를 코드 기본값으로 다시 쓴다:
-	//   - goal_met: 옛 라이브러리에 seed된 설명에 「이번 라운드 계획 종료」라는 오해가 있어, planner가 이것을
+	// 동시에 일부 내장 에이전트 도구를 코드 기본값으로 다시 쓴다:
+	//   - goal_met: 옛 라이브러리에 심긴 설명에 「이번 라운드 계획 종료」라는 오해가 있어, planner가 이것을
 	//     「빈 라운드를 끝내는」 수단으로 여기고, 막 시작하자마자 작업 전체가 끝났다고 잘못 판단하게 한다.
 	//   - insert_assets: related 인자를 새로 넣는다(자산이 현재 작업과 관련 있는지 표시하고, 커버리지에 넣을지 정한다),
-	//     SeedTool은 첫 삽입 only라서, 그렇지 않으면 옛 라이브러리에 이미 seed된 schema는 이 새 파라미터를 받지 못한다.
-	//   - list_facts: 페이지로 바꾸고 limit/before/q 인자를 새로 넣는다. 그렇지 않으면 옛 라이브러리에 이미 seed된 빈 schema는
+	//     SeedTool은 처음 넣을 때만 행을 만들어서, 그렇지 않으면 옛 라이브러리에 이미 심긴 schema는 이 새 파라미터를 받지 못한다.
+	//   - list_facts: 페이지로 바꾸고 limit/before/q 인자를 새로 넣는다. 그렇지 않으면 옛 라이브러리에 이미 심긴 빈 schema는
 	//     도구 관리 페이지에 「파라미터 없음」으로 보이고, 모델도 이 파라미터 설명을 받지 못한다.
 	refreshBuiltin := map[string]bool{"goal_met": true, "insert_assets": true, "list_facts": true}
 	for _, sd := range agent.BuiltinToolSeeds() {
@@ -567,10 +567,10 @@ func (s *Server) unbindGoalMetDefault() {
 }
 
 // reseedGoalsPrompt는 goals 목표 분해기의 프롬프트를 【현재 코드 기본】으로 다시 쓴다——기본 본문에 다음이 새로 들어갔기 때문이다
-// 「먼저 조작 제약을 뽑고(set_constraints) 그다음 목표를 쪼갠다」는 단계. SeedPromptIfEmpty는 첫 삽입 only라서 옛 라이브러리의
-// 기존 version 1은 이 단계를 받지 못한다. 여기서는 버전 관리로 【새 버전을 하나 추가】하고 그쪽으로 전환한다(ResetPromptToDefault),
-// 옛 버전은 히스토리에 남는다. 사용자가 커스터마이즈했다면 버전 기록에서 되찾을 수 있다. settings flag가 지킨다 → 한 번만 한다;
-// 나중에 기본이 다시 바뀌면 이 flag를 bump한다. 완전 새 라이브러리는 처리할 필요 없다(SeedPromptIfEmpty가 이미 최신 기본을 seed했다).
+// 「먼저 조작 제약을 뽑고(set_constraints) 그다음 목표를 쪼갠다」는 단계. SeedPromptIfEmpty는 처음 넣을 때만 행을 만들어서 옛 라이브러리의
+// 기존 버전 1은 이 단계를 받지 못한다. 여기서는 버전 관리로 【새 버전을 하나 추가】하고 그쪽으로 전환한다(ResetPromptToDefault),
+// 옛 버전은 히스토리에 남는다. 사용자가 커스터마이즈했다면 버전 기록에서 되찾을 수 있다. 설정 플래그가 지킨다 → 한 번만 한다;
+// 나중에 기본이 다시 바뀌면 이 플래그 이름을 올린다. 완전 새 라이브러리는 처리할 필요 없다(SeedPromptIfEmpty가 이미 최신 기본을 심었다).
 func (s *Server) reseedGoalsPrompt() {
 	const flag = "goals_prompt_constraint_step_v1"
 	if v, _, _ := s.m.pg.GetSetting(flag); v == "true" {
@@ -585,7 +585,7 @@ func (s *Server) reseedGoalsPrompt() {
 	if tmpl == "" {
 		return
 	}
-	// 완전 새 라이브러리는 seedPrompts가 최신 기본을 이미 seed했다 → 현재 버전이 이미 코드 기본과 같으므로 중복 버전을 또 추가하지 않는다.
+	// 완전 새 라이브러리는 seedPrompts가 최신 기본을 이미 심었다 → 현재 버전이 이미 코드 기본과 같으므로 중복 버전을 또 추가하지 않는다.
 	if cur, err := s.m.pg.CurrentPrompt(a.ID); err == nil && cur == tmpl {
 		return
 	}
@@ -597,10 +597,10 @@ func (s *Server) reseedGoalsPrompt() {
 }
 
 // reseedMainAgentPrompt는 mainagent 프롬프트를 【현재 코드 기본】으로 다시 쓴다——기본 본문에 「목표가 모두
-// 달성된 뒤 add_intent로 의도를 바로 넣을 때, 사람에게 정식 목표로 등록할지 되묻는다」는 안내가 새로 들어갔다. SeedPromptIfEmpty는 첫 삽입
-// only라서 옛 라이브러리의 기존 버전은 받지 못한다. 버전 관리로 【새 버전을 하나 추가】하고 그쪽으로 전환한다(ResetPromptToDefault). 옛 버전은 여전히
-// 히스토리에 남는다. 사용자가 커스터마이즈했다면 버전 기록에서 되찾을 수 있다. settings flag가 지킨다 → 한 번만 한다. 완전 새 라이브러리는 처리할 필요 없다
-// (SeedPromptIfEmpty가 이미 최신 기본을 seed했다). reseedGoalsPrompt와 완전히 같은 구조이다.
+// 달성된 뒤 add_intent로 의도를 바로 넣을 때, 사람에게 정식 목표로 등록할지 되묻는다」는 안내가 새로 들어갔다. SeedPromptIfEmpty는 처음 넣을 때만
+// 행을 만들어서 옛 라이브러리의 기존 버전은 받지 못한다. 버전 관리로 【새 버전을 하나 추가】하고 그쪽으로 전환한다(ResetPromptToDefault). 옛 버전은 여전히
+// 히스토리에 남는다. 사용자가 커스터마이즈했다면 버전 기록에서 되찾을 수 있다. 설정 플래그가 지킨다 → 한 번만 한다. 완전 새 라이브러리는 처리할 필요 없다
+// (SeedPromptIfEmpty가 이미 최신 기본을 심었다). reseedGoalsPrompt와 완전히 같은 구조이다.
 func (s *Server) reseedMainAgentPrompt() {
 	const flag = "mainagent_prompt_goalless_intent_v1"
 	if v, _, _ := s.m.pg.GetSetting(flag); v == "true" {
@@ -615,7 +615,7 @@ func (s *Server) reseedMainAgentPrompt() {
 	if tmpl == "" {
 		return
 	}
-	// 완전 새 라이브러리는 seedPrompts가 최신 기본을 이미 seed했다 → 현재 버전이 이미 코드 기본과 같으므로 중복 버전을 또 추가하지 않는다.
+	// 완전 새 라이브러리는 seedPrompts가 최신 기본을 이미 심었다 → 현재 버전이 이미 코드 기본과 같으므로 중복 버전을 또 추가하지 않는다.
 	if cur, err := s.m.pg.CurrentPrompt(a.ID); err == nil && cur == tmpl {
 		return
 	}
@@ -628,9 +628,9 @@ func (s *Server) reseedMainAgentPrompt() {
 
 // reseedPlannerPrompt는 플래너(의도만 생성) 프롬프트를 【현재 코드 기본값】으로 다시 기록한다——기본 본문을 간결하게 재구성했고, 「절제」를 한 단계 낮춰
 // 한 일은 중복 제거뿐이고, 「깊이가 커버리지보다 우선」「하드 하한선: 목표가 아직 달성되지 않았고 실행 중인 의도가 없으면 반드시 산출해야 한다」를 새로 넣었으며, 부정 결론 재검토에 상한을 두었다.
-// 기본값에 실질 변경이 있을 때마다 아래 flag를 bump(현재 v2)해서 기존 옛 데이터베이스를 한 번 더 다시 기록한다. SeedPromptIfEmpty는 최초 삽입 only라, 옛 데이터베이스에 이미 버전이 있으면 받지 못하므로 버전 관리로
+// 기본값에 실질 변경이 있을 때마다 아래 플래그 이름을 올려(현재 v2)해서 기존 옛 데이터베이스를 한 번 더 다시 기록한다. SeedPromptIfEmpty는 처음 넣을 때만 행을 만들어, 옛 데이터베이스에 이미 버전이 있으면 받지 못하므로 버전 관리로
 // 【새 버전을 하나 추가】하고 그쪽으로 전환한다(ResetPromptToDefault). 옛 버전은 이력에 남으며, 사용자가 커스터마이즈했다면 버전 기록에서
-// 되찾을 수 있다. settings flag 가드(guard) → 한 번만 한다. 완전 새 데이터베이스는 처리할 필요 없다(SeedPromptIfEmpty가 이미 최신 기본값을 seed했다). 그리고
+// 되찾을 수 있다. 설정 플래그 가드 → 한 번만 한다. 완전 새 데이터베이스는 처리할 필요 없다(SeedPromptIfEmpty가 이미 최신 기본값을 심었다). 그리고
 // reseedGoalsPrompt와 완전히 같은 구조다.
 func (s *Server) reseedPlannerPrompt() {
 	const flag = "planner_prompt_compact_realistic_v2"
@@ -646,7 +646,7 @@ func (s *Server) reseedPlannerPrompt() {
 	if tmpl == "" {
 		return
 	}
-	// 완전 새 라이브러리는 seedPrompts가 최신 기본을 이미 seed했다 → 현재 버전이 이미 코드 기본과 같으므로 중복 버전을 또 추가하지 않는다.
+	// 완전 새 라이브러리는 seedPrompts가 최신 기본을 이미 심었다 → 현재 버전이 이미 코드 기본과 같으므로 중복 버전을 또 추가하지 않는다.
 	if cur, err := s.m.pg.CurrentPrompt(a.ID); err == nil && cur == tmpl {
 		return
 	}
@@ -659,9 +659,9 @@ func (s *Server) reseedPlannerPrompt() {
 
 // reseedWorkerPrompt는 워커(의도 하나를 실행한 뒤 정지) 프롬프트를 【현재 코드 기본값】으로 다시 기록한다——기본 본문의 record_fact 단락에서 「부정 계열 결론에
 // 관찰을 쓰고 잠정적으로 읽는 법」 문장 전체를 뺐고, confidence(observed/inferred)를 「이 의도의 수단을 다 썼는지」와 떼어 놓았다(이것들은 플래너(의도만 생성)를 쉽게 오도한다),
-// 동시에 facts 배열의 항목을 「서로 완전히 독립이고 합칠 수 없는」 극소수 예외로 조였다. flag를 v3까지 bump해서 기존 옛 데이터베이스를 한 번 더 다시 기록한다.
-// SeedPromptIfEmpty는 최초 삽입 only라 옛 데이터베이스에 이미 버전이 있으면 받지 못한다. 그래서 버전 관리로 【새 버전을 하나 추가】하고 그쪽으로 전환하며, 옛 버전은 이력에 남겨 되찾을 수 있다.
-// settings flag 가드(guard) → 한 번만 한다. 완전 새 데이터베이스는 처리할 필요 없다. reseedGoalsPrompt와 완전히 같은 구조다.
+// 동시에 facts 배열의 항목을 「서로 완전히 독립이고 합칠 수 없는」 극소수 예외로 조였다. 플래그를 v3까지 올려서 기존 옛 데이터베이스를 한 번 더 다시 기록한다.
+// SeedPromptIfEmpty는 처음 넣을 때만 행을 만들어 옛 데이터베이스에 이미 버전이 있으면 받지 못한다. 그래서 버전 관리로 【새 버전을 하나 추가】하고 그쪽으로 전환하며, 옛 버전은 이력에 남겨 되찾을 수 있다.
+// 설정 플래그 가드 → 한 번만 한다. 완전 새 데이터베이스는 처리할 필요 없다. reseedGoalsPrompt와 완전히 같은 구조다.
 func (s *Server) reseedWorkerPrompt() {
 	const flag = "worker_prompt_compact_v4"
 	if v, _, _ := s.m.pg.GetSetting(flag); v == "true" {
@@ -676,7 +676,7 @@ func (s *Server) reseedWorkerPrompt() {
 	if tmpl == "" {
 		return
 	}
-	// 완전 새 라이브러리는 seedPrompts가 최신 기본을 이미 seed했다 → 현재 버전이 이미 코드 기본과 같으므로 중복 버전을 또 추가하지 않는다.
+	// 완전 새 라이브러리는 seedPrompts가 최신 기본을 이미 심었다 → 현재 버전이 이미 코드 기본과 같으므로 중복 버전을 또 추가하지 않는다.
 	if cur, err := s.m.pg.CurrentPrompt(a.ID); err == nil && cur == tmpl {
 		return
 	}
@@ -733,7 +733,7 @@ func (s *Server) upgradeReporterTriggerMessage() {
 
 // seedReporterAgent는 「보고서 작성」 사용자 정의 agent를 미리 둔다(builtin=false, UI에서 편집/삭제 가능). 이 agent는 엔진이 기록한 발견(finding)을 UI 보고서로 풀어 준다:
 // update_finding_report + 작업 조회 도구를 묶고, 「report_finding이 호출되면 바로 트리거」되는
-// 트리거 —— 발견(finding)을 하나 등록할 때마다 그것을 깨워 상세 보고서를 쓰게 한다. 한 번만(settings flag 가드(guard)): 사용자가 지우면 다시 만들지 않는다.
+// 트리거 —— 발견(finding)을 하나 등록할 때마다 그것을 깨워 상세 보고서를 쓰게 한다. 한 번만(설정 플래그 가드): 사용자가 지우면 다시 만들지 않는다.
 // 의존: orchestration 도구는 이 함수 위쪽에서 이미 SeedTool로 들어가 있으므로 바인딩이 된다.
 func (s *Server) seedReporterAgent() {
 	const flag = "reporter_agent_seed_v1"
