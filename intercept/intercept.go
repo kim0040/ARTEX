@@ -1,14 +1,9 @@
-// Package intercept implements the user-configurable tool-call interception layer.
-// Rules are loaded from the database, cached in memory, and evaluated in priority
-// order (highest first) on every PreToolUse event. Three actions are supported:
+// Package intercept 는 도구 호출을 실행 전에 가로채는 규칙 층입니다.
 //
-//   - allow: immediately permits the call, skipping lower-priority rules.
-//   - deny:  blocks the call and returns a message to the model.
-//   - ask:   blocks the call, creates an intercept_pending record, writes an
-//     activity to the active conversation, then waits for the user to approve or
-//     deny via the /api/intercept/pending/{id}/decide endpoint.
-//
-// The timeout behaviour is configurable at runtime via SetTimeoutConfig.
+// 초보: 규칙은 PostgreSQL 에 있고, 메모리에 올려 우선순위가 높은 것부터 봅니다.
+// allow 는 통과, deny 는 막고 이유를 돌려주며, ask 는 사람이 승인할 때까지 멈춥니다.
+// 승인은 /api/intercept/pending/{id}/decide 로 받습니다. 가드가 이 판단을 호출합니다.
+// 시간 제한은 SetTimeoutConfig 로 바꿉니다.
 package intercept
 
 import (
@@ -450,19 +445,19 @@ func (i *Interceptor) Judge(ctx context.Context, tool string, arguments json.Raw
 	if contextErr != nil {
 		// Invalid current arguments cannot be reviewed faithfully, regardless of
 		// the configured model-failure strategy. A human must resolve the input.
-		out = Decision{Action: "ask", ModelFallback: true, Message: "审查上下文不完整，需要人工确认：" + contextErr.Error()}
+		out = Decision{Action: "ask", ModelFallback: true, Message: "심사 맥락이 불완전해서 사람 확인이 필요합니다: " + contextErr.Error()}
 	} else {
 		modelInput, _ = json.Marshal(input)
 		out, err = rv(cctx, cfg.ProfileID, cfg.Prompt, input)
 	}
 	if err != nil {
-		out = Decision{ProfileID: out.ProfileID, ModelFallback: true, Action: cfg.FailAction, Message: "模型审批失败,按失败策略处理: " + err.Error()}
+		out = Decision{ProfileID: out.ProfileID, ModelFallback: true, Action: cfg.FailAction, Message: "모델 승인이 실패해 실패 정책대로 처리합니다: " + err.Error()}
 	}
 	switch out.Action {
 	case "allow", "ask", "deny":
 		// valid verdict
 	default:
-		out = Decision{ProfileID: out.ProfileID, ModelFallback: true, Action: cfg.FailAction, Message: "模型输出无法解析,按失败策略处理"}
+		out = Decision{ProfileID: out.ProfileID, ModelFallback: true, Action: cfg.FailAction, Message: "모델 출력을 해석할 수 없어 실패 정책대로 처리합니다"}
 	}
 	// A model verdict never carries a rule; keep RuleID 0 (→ NULL) for history.
 	out.RuleID = 0
@@ -477,9 +472,9 @@ func (i *Interceptor) Judge(ctx context.Context, tool string, arguments json.Raw
 	configJSON, _ := json.Marshal(cfg)
 	out.ConfigDigest = digestInput(configJSON)
 	if out.Message == "" {
-		out.Message = "[模型] " + judgeActionLabel(out.Action)
-	} else if !strings.HasPrefix(out.Message, "[模型]") {
-		out.Message = "[模型] " + out.Message
+		out.Message = "[모델] " + judgeActionLabel(out.Action)
+	} else if !strings.HasPrefix(out.Message, "[모델]") {
+		out.Message = "[모델] " + out.Message
 	}
 	if out.Action == "ask" {
 		out.TimeoutEnabled = true
@@ -492,11 +487,11 @@ func (i *Interceptor) Judge(ctx context.Context, tool string, arguments json.Raw
 func judgeActionLabel(action string) string {
 	switch action {
 	case "allow":
-		return "放行"
+		return "허용"
 	case "deny":
-		return "拦截"
+		return "차단"
 	case "ask":
-		return "转人工审批"
+		return "사람 승인으로 넘김"
 	default:
 		return action
 	}
@@ -550,9 +545,9 @@ func ruleMatches(r compiledRule, toolName string, input []byte) bool {
 func defaultMessage(action, name string) string {
 	switch action {
 	case "deny":
-		return "拦截规则 [" + name + "] 禁止执行此工具"
+		return "가로채기 규칙 [" + name + "] 이 도구 실행을 금지합니다"
 	case "ask":
-		return "拦截规则 [" + name + "] 要求用户审批，请等待"
+		return "가로채기 규칙 [" + name + "] 은 사용자 승인을 요구합니다. 기다려 주세요"
 	default:
 		return ""
 	}
@@ -609,7 +604,7 @@ func (i *Interceptor) HandleAsk(ctx context.Context, convID int64, dec Decision,
 	})
 	activity := db.Activity{
 		Kind:    "intercept_request",
-		Summary: fmt.Sprintf("工具 %s 请求审批 (#%d)", toolName, pendingID),
+		Summary: fmt.Sprintf("도구 %s 승인 요청 (#%d)", toolName, pendingID),
 		Detail:  string(detail),
 	}
 
@@ -628,8 +623,8 @@ func (i *Interceptor) HandleAsk(ctx context.Context, convID int64, dec Decision,
 		case allowed := <-ch:
 			return allowed
 		case <-ctx.Done():
-			_, _ = i.db.ResolveIntercept(pendingID, "denied", "deny", "工作已取消")
-			_ = i.db.CompleteIntercept(pendingID, audit.RunID, audit.ToolUseID, "not_executed", "执行前工作已取消", false)
+			_, _ = i.db.ResolveIntercept(pendingID, "denied", "deny", "작업이 취소되었습니다")
+			_ = i.db.CompleteIntercept(pendingID, audit.RunID, audit.ToolUseID, "not_executed", "실행 전에 작업이 취소되었습니다", false)
 			return false
 		}
 	}
@@ -649,7 +644,7 @@ func (i *Interceptor) HandleAsk(ctx context.Context, convID int64, dec Decision,
 		if allowed {
 			action = "allow"
 		}
-		resolved, err := i.db.ResolveIntercept(pendingID, "timeout", action, "审批超时，按超时策略处理")
+		resolved, err := i.db.ResolveIntercept(pendingID, "timeout", action, "승인 시간이 지나 시간 초과 정책대로 처리합니다")
 		if err != nil {
 			return false
 		}
@@ -659,13 +654,13 @@ func (i *Interceptor) HandleAsk(ctx context.Context, convID int64, dec Decision,
 		}
 		return allowed
 	case <-ctx.Done():
-		_, _ = i.db.ResolveIntercept(pendingID, "denied", "deny", "工作已取消")
-		_ = i.db.CompleteIntercept(pendingID, audit.RunID, audit.ToolUseID, "not_executed", "执行前工作已取消", false)
+		_, _ = i.db.ResolveIntercept(pendingID, "denied", "deny", "작업이 취소되었습니다")
+		_ = i.db.CompleteIntercept(pendingID, audit.RunID, audit.ToolUseID, "not_executed", "실행 전에 작업이 취소되었습니다", false)
 		return false
 	}
 }
 
-var ErrAlreadyDecided = errors.New("审批已处理或不存在，请刷新记录")
+var ErrAlreadyDecided = errors.New("승인이 이미 처리되었거나 없습니다. 기록을 새로고침하세요")
 
 // Decide resolves a pending request. Called by the HTTP decide endpoint.
 func (i *Interceptor) Decide(pendingID int64, allowed bool) error {
@@ -673,9 +668,9 @@ func (i *Interceptor) Decide(pendingID int64, allowed bool) error {
 	if allowed {
 		status = "allowed"
 	}
-	action, reason := "deny", "人工拒绝执行"
+	action, reason := "deny", "사람이 실행을 거부했습니다"
 	if allowed {
-		action, reason = "allow", "人工允许执行"
+		action, reason = "allow", "사람이 실행을 허용했습니다"
 	}
 	resolved, err := i.db.ResolveIntercept(pendingID, status, action, reason)
 	if err != nil {

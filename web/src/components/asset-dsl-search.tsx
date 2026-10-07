@@ -8,173 +8,173 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
 // ── DSL autocomplete ──────────────────────────────────────────────────────────
-// Shared by the global asset view (/function/assets) and the per-task 测试资产
+// 전역 자산 보기(/function/assets)와 작업별 테스트 자산이 함께 씀
 // search, so both search boxes behave and look identical.
 
 const DSL_FIELDS: { name: string; desc: string; ops: { op: string; desc: string }[] }[] = [
   {
     name: "domain",
-    desc: "域名（根域名/子域名/服务域名）",
+    desc: "도메인(루트 도메인/서브도메인/서비스 도메인)",
     ops: [
-      { op: "=", desc: "模糊匹配" },
-      { op: "==", desc: "精确匹配" },
-      { op: "!=", desc: "排除" },
+      { op: "=", desc: "유사 일치" },
+      { op: "==", desc: "정확히 일치" },
+      { op: "!=", desc: "제외" },
     ],
   },
   {
     name: "ip",
-    desc: "IPv4/IPv6 地址",
+    desc: "IPv4/IPv6 주소",
     ops: [
-      { op: "=", desc: "模糊匹配" },
-      { op: "==", desc: "精确匹配" },
-      { op: "!=", desc: "排除" },
+      { op: "=", desc: "유사 일치" },
+      { op: "==", desc: "정확히 일치" },
+      { op: "!=", desc: "제외" },
     ],
   },
   {
     name: "url",
-    desc: "完整 URL（服务/接口）",
+    desc: "전체 URL(서비스/인터페이스)",
     ops: [
-      { op: "=", desc: "模糊匹配" },
-      { op: "==", desc: "精确匹配" },
-      { op: "!=", desc: "排除" },
+      { op: "=", desc: "유사 일치" },
+      { op: "==", desc: "정확히 일치" },
+      { op: "!=", desc: "제외" },
     ],
   },
   {
     name: "root_domain",
-    desc: "根域名",
+    desc: "루트 도메인",
     ops: [
-      { op: "=", desc: "模糊匹配" },
-      { op: "==", desc: "精确匹配" },
-      { op: "!=", desc: "排除" },
+      { op: "=", desc: "유사 일치" },
+      { op: "==", desc: "정확히 일치" },
+      { op: "!=", desc: "제외" },
     ],
   },
   {
     name: "page_title",
-    desc: "页面标题（HTTP 服务）",
+    desc: "페이지 제목(HTTP 서비스)",
     ops: [
-      { op: "=", desc: "模糊匹配" },
-      { op: "==", desc: "精确匹配" },
-      { op: "!=", desc: "排除" },
+      { op: "=", desc: "유사 일치" },
+      { op: "==", desc: "정확히 일치" },
+      { op: "!=", desc: "제외" },
     ],
   },
   {
     name: "icp",
-    desc: "ICP 备案号",
+    desc: "ICP 등록 번호",
     ops: [
-      { op: "=", desc: "模糊匹配" },
-      { op: "==", desc: "精确匹配" },
-      { op: "!=", desc: "排除" },
+      { op: "=", desc: "유사 일치" },
+      { op: "==", desc: "정확히 일치" },
+      { op: "!=", desc: "제외" },
     ],
   },
   {
     name: "service_name",
-    desc: "服务名称（非 HTTP 服务）",
+    desc: "서비스 이름(HTTP가 아닌 서비스)",
     ops: [
-      { op: "=", desc: "模糊匹配" },
-      { op: "==", desc: "精确匹配" },
-      { op: "!=", desc: "排除" },
+      { op: "=", desc: "유사 일치" },
+      { op: "==", desc: "정확히 일치" },
+      { op: "!=", desc: "제외" },
     ],
   },
   {
     name: "app_name",
-    desc: "应用名称",
+    desc: "앱 이름",
     ops: [
-      { op: "=", desc: "模糊匹配" },
-      { op: "==", desc: "精确匹配" },
-      { op: "!=", desc: "排除" },
+      { op: "=", desc: "유사 일치" },
+      { op: "==", desc: "정확히 일치" },
+      { op: "!=", desc: "제외" },
     ],
   },
   {
     name: "bundle_id",
-    desc: "应用 Bundle ID",
+    desc: "애플리케이션 Bundle ID",
     ops: [
-      { op: "=", desc: "模糊匹配" },
-      { op: "==", desc: "精确匹配" },
-      { op: "!=", desc: "排除" },
+      { op: "=", desc: "유사 일치" },
+      { op: "==", desc: "정확히 일치" },
+      { op: "!=", desc: "제외" },
     ],
   },
   {
     name: "category",
-    desc: "应用分类",
+    desc: "애플리케이션 분류",
     ops: [
-      { op: "=", desc: "模糊匹配" },
-      { op: "==", desc: "精确匹配" },
-      { op: "!=", desc: "排除" },
+      { op: "=", desc: "유사 일치" },
+      { op: "==", desc: "정확히 일치" },
+      { op: "!=", desc: "제외" },
     ],
   },
   {
     name: "app_icp",
-    desc: "应用 ICP 备案",
+    desc: "애플리케이션 ICP 등록",
     ops: [
-      { op: "=", desc: "模糊匹配" },
-      { op: "==", desc: "精确匹配" },
-      { op: "!=", desc: "排除" },
+      { op: "=", desc: "유사 일치" },
+      { op: "==", desc: "정확히 일치" },
+      { op: "!=", desc: "제외" },
     ],
   },
   {
     name: "method",
-    desc: "HTTP 方法 GET/POST/PUT/…",
+    desc: "HTTP 메서드 GET/POST/PUT/…",
     ops: [
-      { op: "==", desc: "精确匹配" },
-      { op: "!=", desc: "排除" },
+      { op: "==", desc: "정확히 일치" },
+      { op: "!=", desc: "제외" },
     ],
   },
   {
     name: "service_type",
-    desc: "服务类型：http | other",
+    desc: "서비스 유형: http | other",
     ops: [
-      { op: "==", desc: "精确匹配" },
-      { op: "!=", desc: "排除" },
+      { op: "==", desc: "정확히 일치" },
+      { op: "!=", desc: "제외" },
     ],
   },
   {
     name: "record_type",
-    desc: "DNS 解析类型 A/CNAME/MX/…",
+    desc: "DNS 조회 유형 A/CNAME/MX/…",
     ops: [
-      { op: "==", desc: "精确匹配" },
-      { op: "!=", desc: "排除" },
+      { op: "==", desc: "정확히 일치" },
+      { op: "!=", desc: "제외" },
     ],
   },
   {
     name: "technology",
-    desc: "技术指纹（数组字段）",
+    desc: "기술 핑거프린트(배열 필드)",
     ops: [
-      { op: "=", desc: "模糊匹配" },
-      { op: "==", desc: "精确匹配" },
-      { op: "!=", desc: "排除" },
+      { op: "=", desc: "유사 일치" },
+      { op: "==", desc: "정확히 일치" },
+      { op: "!=", desc: "제외" },
     ],
   },
   {
     name: "port",
-    desc: "端口号（整数）",
+    desc: "포트 번호(정수)",
     ops: [
-      { op: "==", desc: "等于" },
-      { op: "!=", desc: "不等于" },
-      { op: ">", desc: "大于" },
-      { op: ">=", desc: "大于等于" },
-      { op: "<", desc: "小于" },
-      { op: "<=", desc: "小于等于" },
+      { op: "==", desc: "같음" },
+      { op: "!=", desc: "같지 않음" },
+      { op: ">", desc: "보다 큼" },
+      { op: ">=", desc: "보다 크거나 같음" },
+      { op: "<", desc: "보다 작음" },
+      { op: "<=", desc: "보다 작거나 같음" },
     ],
   },
   {
     name: "status_code",
-    desc: "HTTP 状态码（整数）",
+    desc: "HTTP 상태 코드(정수)",
     ops: [
-      { op: "==", desc: "等于" },
-      { op: "!=", desc: "不等于" },
-      { op: ">", desc: "大于" },
-      { op: ">=", desc: "大于等于" },
-      { op: "<", desc: "小于" },
-      { op: "<=", desc: "小于等于" },
+      { op: "==", desc: "같음" },
+      { op: "!=", desc: "같지 않음" },
+      { op: ">", desc: "보다 큼" },
+      { op: ">=", desc: "보다 크거나 같음" },
+      { op: "<", desc: "보다 작음" },
+      { op: "<=", desc: "보다 작거나 같음" },
     ],
   },
-  { name: "company_id", desc: "归属企业 ID（整数）", ops: [{ op: "==", desc: "等于" }] },
-  { name: "task_id", desc: "来源任务 ID（整数）", ops: [{ op: "==", desc: "等于" }] },
+  { name: "company_id", desc: "소속 기업 ID(정수)", ops: [{ op: "==", desc: "같음" }] },
+  { name: "task_id", desc: "출처 작업 ID(정수)", ops: [{ op: "==", desc: "같음" }] },
 ];
 
 const LOGIC_OPS = [
-  { label: "AND", desc: "且（两个条件都满足）" },
-  { label: "OR", desc: "或（满足其中之一）" },
+  { label: "AND", desc: "그리고(두 조건 모두 충족)" },
+  { label: "OR", desc: "또는(하나만 충족)" },
 ];
 
 interface DslSuggestion {
@@ -261,7 +261,7 @@ const KIND_STYLE: Record<string, string> = {
 };
 
 // AssetDslSearch is the shared DSL search box: a monospace input with a
-// field/operator/logic autocomplete popover and a status line ("找到 N 条" /
+// field/operator/logic 자동완성 popover와 상태 줄("N건 찾음" /
 // error / loading). Used by both the global asset view and the per-task view.
 export function AssetDslSearch({
   query,
@@ -341,7 +341,7 @@ export function AssetDslSearch({
         <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
         <Input
           ref={inputRef}
-          placeholder="DSL 搜索：domain=example AND status_code>=400"
+          placeholder="DSL 검색: domain=example AND status_code>=400"
           value={query}
           onChange={handleChange}
           onKeyDown={handleKeyDown}
@@ -375,7 +375,7 @@ export function AssetDslSearch({
       </div>
       {query.trim() && !open && (
         <p className="pl-1 text-[11px] text-muted-foreground">
-          {loading ? "搜索中…" : error ? <span className="text-destructive">{error}</span> : `找到 ${count ?? 0} 条`}
+          {loading ? "검색 중…" : error ? <span className="text-destructive">{error}</span> : `찾음 ${count ?? 0} 건`}
         </p>
       )}
     </div>

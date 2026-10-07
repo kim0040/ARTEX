@@ -14,7 +14,7 @@ import { api } from "@/lib/api";
 import { statusMeta, toneClasses } from "@/lib/status";
 import type { NotificationChannel, NotificationDelivery } from "@/lib/types";
 
-// DeliveryList 是投递记录表：可按渠道与状态筛选，失败项可手动重发。
+// DeliveryList는 전달 기록 표입니다. 채널과 상태로 거를 수 있고, 실패 항목은 손으로 다시 보낼 수 있습니다.
 export function DeliveryList({ channels }: { channels: NotificationChannel[] }) {
   const [rows, setRows] = React.useState<NotificationDelivery[]>([]);
   const [total, setTotal] = React.useState(0);
@@ -32,7 +32,7 @@ export function DeliveryList({ channels }: { channels: NotificationChannel[] }) 
         setRows(r.deliveries);
         setTotal(r.total);
       })
-      .catch((e) => toast.error("读取投递记录失败：" + (e as Error).message))
+      .catch((e) => toast.error("전달 기록 읽기 실패: " + (e as Error).message))
       .finally(() => setLoading(false));
   }, [channelID, state, page]);
   React.useEffect(() => {
@@ -42,10 +42,10 @@ export function DeliveryList({ channels }: { channels: NotificationChannel[] }) 
   async function retry(id: number) {
     try {
       await api.notifyRetryDelivery(id);
-      toast.success("已重新入队");
+      toast.success("대기열에 다시 넣음");
       load();
     } catch (e) {
-      toast.error("重发失败：" + (e as Error).message);
+      toast.error("다시 보내기 실패: " + (e as Error).message);
     }
   }
 
@@ -62,10 +62,10 @@ export function DeliveryList({ channels }: { channels: NotificationChannel[] }) 
           }}
         >
           <SelectTrigger size="sm" className="w-44">
-            <SelectValue placeholder="全部渠道" />
+            <SelectValue placeholder="모든 채널" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">全部渠道</SelectItem>
+            <SelectItem value="all">모든 채널</SelectItem>
             {channels.map((c) => (
               <SelectItem key={c.id} value={String(c.id)}>
                 {c.name}
@@ -81,10 +81,10 @@ export function DeliveryList({ channels }: { channels: NotificationChannel[] }) 
           }}
         >
           <SelectTrigger size="sm" className="w-32">
-            <SelectValue placeholder="全部状态" />
+            <SelectValue placeholder="모든 상태" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">全部状态</SelectItem>
+            <SelectItem value="all">모든 상태</SelectItem>
             {["pending", "sending", "sent", "failed", "skipped"].map((s) => (
               <SelectItem key={s} value={s}>
                 {statusMeta("delivery", s).label}
@@ -93,21 +93,21 @@ export function DeliveryList({ channels }: { channels: NotificationChannel[] }) 
           </SelectContent>
         </Select>
         <Button size="sm" variant="outline" onClick={load} disabled={loading}>
-          <RefreshCwIcon className={loading ? "animate-spin" : ""} /> 刷新
+          <RefreshCwIcon className={loading ? "animate-spin" : ""} /> 새로고침
         </Button>
-        <span className="text-muted-foreground ml-auto text-xs">共 {total} 条</span>
+        <span className="text-muted-foreground ml-auto text-xs">총 {total} 건</span>
       </div>
 
       <Card className="py-0">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="w-40">时间</TableHead>
-              <TableHead>漏洞</TableHead>
-              <TableHead className="w-40">渠道</TableHead>
-              <TableHead className="w-24">状态</TableHead>
-              <TableHead className="w-16">尝试</TableHead>
-              <TableHead>错误</TableHead>
+              <TableHead className="w-40">시간</TableHead>
+              <TableHead>발견</TableHead>
+              <TableHead className="w-40">채널</TableHead>
+              <TableHead className="w-24">상태</TableHead>
+              <TableHead className="w-16">시도</TableHead>
+              <TableHead>오류</TableHead>
               <TableHead className="w-20" />
             </TableRow>
           </TableHeader>
@@ -115,7 +115,7 @@ export function DeliveryList({ channels }: { channels: NotificationChannel[] }) 
             {rows.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={7} className="text-muted-foreground py-8 text-center">
-                  {loading ? "加载中…" : "暂无投递记录"}
+                  {loading ? "불러오는 중…" : "전달 기록이 아직 없습니다"}
                 </TableCell>
               </TableRow>
             ) : (
@@ -129,10 +129,10 @@ export function DeliveryList({ channels }: { channels: NotificationChannel[] }) 
                       <Badge variant="outline" className={toneClasses[statusMeta("severity", d.severity).tone]}>
                         {statusMeta("severity", d.severity).label}
                       </Badge>
-                      <span className="truncate text-sm">{d.title || "（无标题）"}</span>
+                      <span className="truncate text-sm">{d.title || "(제목 없음)"}</span>
                       {d.event_kind === "finding_status_changed" && (
                         <Badge variant="outline" className="shrink-0">
-                          状态变更
+                          상태 변경
                         </Badge>
                       )}
                     </div>
@@ -146,10 +146,10 @@ export function DeliveryList({ channels }: { channels: NotificationChannel[] }) 
                   <TableCell className="text-muted-foreground text-sm">{d.attempts}</TableCell>
                   <TableCell className="text-muted-foreground max-w-md text-xs break-all">{d.last_error}</TableCell>
                   <TableCell>
-                    {/* 只有失败/跳过的才给重发入口：已送达的重发会造成重复推送。 */}
+                    {/* 실패했거나 건너뛴 항목만 다시 보내기 입구를 줍니다. 이미 도착한 것을 다시 보내면 알림이 중복됩니다. */}
                     {(d.state === "failed" || d.state === "skipped") && (
                       <Button size="sm" variant="outline" onClick={() => retry(d.id)}>
-                        <RotateCcwIcon /> 重发
+                        <RotateCcwIcon /> 다시 보내기
                       </Button>
                     )}
                   </TableCell>
@@ -163,13 +163,13 @@ export function DeliveryList({ channels }: { channels: NotificationChannel[] }) 
       {maxPage > 1 && (
         <div className="flex items-center justify-end gap-2">
           <Button size="sm" variant="outline" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
-            上一页
+            이전 페이지
           </Button>
           <span className="text-muted-foreground text-sm">
             {page} / {maxPage}
           </span>
           <Button size="sm" variant="outline" disabled={page >= maxPage} onClick={() => setPage((p) => p + 1)}>
-            下一页
+            다음 페이지
           </Button>
         </div>
       )}

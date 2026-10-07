@@ -1,5 +1,7 @@
-// Package db is the PostgreSQL data source for ARTEX (取代旧 graph 单文件 SQLite)。
-// 它打开连接、应用 schema、并 seed 内置 agent 与变量目录。
+// Package db는 ARTEX의 PostgreSQL 데이터 원본이다.
+// 예전 그래프는 SQLite 파일 하나였다. 지금은 PostgreSQL이 자산 그래프(작업들이
+// 공유하는 자산 장부)와 탐색 그래프(작업마다 있는 목표·의도·사실·발견)를 담는다.
+// 이 패키지는 연결을 열고, schema를 적용하고, 내장 에이전트와 변수 목록을 심는다.
 package db
 
 import (
@@ -161,41 +163,42 @@ func Open(dsn string) (*DB, error) {
 type builtinAgent struct {
 	key, name, role, desc string
 	vars                  []promptVar
-	interactiveShell      bool // 建行时的默认交互式 shell 开关；ON CONFLICT 不覆盖用户后续手动开关
-	runSeconds            *int // 建行时的单次 run 墙钟上限(秒)；nil=用种子默认(1200)，0=不限时
+	interactiveShell      bool // 행을 만들 때의 기본 대화형 shell. ON CONFLICT 는 사용자가 나중에 끈 값을 덮지 않는다.
+	runSeconds            *int // 행을 만들 때의 한 번 실행 벽시계 상한(초). nil=시드 기본(1200), 0=제한 없음.
 }
 
 type promptVar struct{ name, desc, example, source string }
 
-// intp 返回 v 的指针，用于给 builtinAgent 可选字段(如 runSeconds)显式取值。
+// intp는 v의 포인터를 돌려준다. builtinAgent의 선택 필드(runSeconds 등)에 값을 넣기 위해서다.
 func intp(v int) *int { return &v }
 
-// builtinAgents mirrors docs §5(a). 内置工具不入库；这里只 seed agent + 变量目录。
-// 注：planner/worker/mainagent/auto 的交互式 shell 默认由下方 interactive_shell_default_v1
-// 块统一置 true（尊重后续 toggle）；这里的 interactiveShell 只给需要「建行即默认开」的新 agent。
+// builtinAgents는 고정 에이전트와 프롬프트 변수 목록이다. 내장 도구는 저장하지 않고
+// 에이전트와 변수 목록만 심는다. 플래너만 탐색 그래프에 의도를 만들고, 워커는 의도 하나를 실행한다.
+// planner/worker/mainagent/auto의 대화형 shell 기본값은 아래 interactive_shell_default_v1
+// 블록이 한꺼번에 true로 둔다(이후 토글은 존중). 여기 interactiveShell은 만들자마자 켜야 하는 새 에이전트용이다.
 var builtinAgents = []builtinAgent{
-	{"goals", "目标拆解", "goals", "把渗透任务目标拆解成若干独立、可验证的子目标。", []promptVar{
-		{"EngagementDescription", "任务描述（测试对象/背景）", "测试 example.com 站点", "exploration"},
-		// Now 是全局 runtime 变量(见 server.globalPromptVars),不再在各 agent 目录里
-		// 重复定义,否则 withGlobalVars 追加时会与全局项撞名。
+	{"goals", "목표 분해", "goals", "작업 목표를 독립적이고 확인할 수 있는 하위 목표 여러 개로 나눈다.", []promptVar{
+		{"EngagementDescription", "작업 설명(대상과 배경)", "example.com 사이트", "exploration"},
+		// Now는 전역 runtime 변수다(server.globalPromptVars). 에이전트 목록에 다시 정의하면
+		// withGlobalVars가 붙일 때 전역 항목과 이름이 부딪힌다.
 	}, false, nil},
-	{"planner", "规划", "planner", "读取态势、判定目标，只在确有未覆盖的新方向时补充探索意图（每任务一个规划循环）。", []promptVar{
-		{"Goal", "任务总目标", "拿下 example.com 的管理员权限", "exploration"},
-		{"AssetSummary", "资产计数/类型分布摘要(可选)", "domain:3 ip:5 site:2", "distilled"},
+	{"planner", "플래너", "planner", "상황을 읽고 목표를 판정한다. 아직 덮이지 않은 새 방향이 있을 때만 탐색 의도를 보탠다(작업마다 계획 루프 하나).", []promptVar{
+		{"Goal", "작업의 전체 목표", "example.com 관리자 권한", "exploration"},
+		{"AssetSummary", "자산 개수와 유형 분포 요약(선택)", "domain:3 ip:5 site:2", "distilled"},
 	}, false, nil},
-	{"mainagent", "主", "main", "人机接口：观察进展，把人的意图落成 hint 或高优先级意图。", []promptVar{
-		{"Goal", "当前任务目标", "拿下 example.com 的管理员权限", "exploration"},
-		{"AssetSummary", "开局态势摘要(可选)", "domain:3 ip:5", "distilled"},
-		{"FindingsSummary", "已确认漏洞摘要(可选)", "high:1 medium:2", "distilled"},
+	{"mainagent", "메인", "main", "사람과의 접점. 진행을 보고, 사람의 뜻을 힌트나 높은 우선순위 의도로 남긴다.", []promptVar{
+		{"Goal", "현재 작업 목표", "example.com 관리자 권한", "exploration"},
+		{"AssetSummary", "시작 상황 요약(선택)", "domain:3 ip:5", "distilled"},
+		{"FindingsSummary", "확인된 발견 요약(선택)", "high:1 medium:2", "distilled"},
 	}, false, nil},
-	{"worker", "执行", "worker", "领取一条意图执行，把发现的事实/漏洞写回知识图谱后停止。", []promptVar{
-		{"ProxyAddr", "记录代理地址(驱动 if 双文案)", "127.0.0.1:8080", "runtime"},
-		{"WorkerName", "worker 自我标识(可选)", "worker-1", "runtime"},
+	{"worker", "실행", "worker", "의도 하나를 집어 실행하고, 사실과 발견을 탐색 그래프에 쓴 뒤 멈춘다.", []promptVar{
+		{"ProxyAddr", "기록 프록시 주소(문구가 둘로 갈린다)", "127.0.0.1:8080", "runtime"},
+		{"WorkerName", "워커 자기 이름(선택)", "worker-1", "runtime"},
 	}, false, nil},
-	// Auto:内置「平台操作」agent。不参与渗透编排循环,经对话页驱动,用工具操作平台。
-	{"auto", "Auto", "assistant", "平台操作助手：用工具管理任务(建/看/暂停/给提示)与资产，并可创建/修改 skill、自定义工具、MCP。", nil, false, nil},
-	// 渗透测试:内置「独立渗透」agent。经对话页驱动,一人从侦察到收尾走完整条渗透链,自己规划自己执行自己验证。默认开启交互式 shell。
-	{"pentest", "渗透测试", "assistant", "独立渗透 agent：一人从侦察→找攻击面→深入利用→验证→收尾走完整条链，自己规划、自己执行、自己对抗式验证。", nil, true, intp(0)},
+	// Auto는 내장 플랫폼 조작 에이전트다. 탐색 루프에 들어가지 않고, 대화 페이지에서 도구로 플랫폼을 다룬다.
+	{"auto", "Auto", "assistant", "플랫폼 조작 도우미. 도구로 작업(만들기/보기/일시정지/힌트)과 자산을 관리하고, skill, 사용자 도구, MCP를 만들거나 고친다.", nil, false, nil},
+	// pentest는 내장 독립 에이전트다. 대화 페이지에서 돌고, 한 에이전트가 계획하고 실행하고 확인한다. 대화형 shell은 기본으로 켜진다.
+	{"pentest", "독립 점검", "assistant", "독립 에이전트. 한 명이 계획하고, 실행하고, 결과를 확인한다.", nil, true, intp(0)},
 }
 
 // seedBuiltins inserts the fixed built-in agents and their variable catalog (idempotent).
@@ -223,8 +226,8 @@ ON CONFLICT (agent_id, var_name) DO UPDATE
 	}
 	// Drop catalog entries for variables that were renamed, so the white-list no
 	// longer advertises a name templates can't resolve (EngagementTitle→Description).
-	// 'Now' 从各 agent 目录提升为全局 runtime 变量后,旧库里 goals 仍残留一条 'Now'
-	// 会与全局项撞名(前端变量列表 key 重复);一并清掉。
+	// 'Now'를 각 에이전트 목록에서 전역 runtime 변수로 올린 뒤에도, 옛 저장소의 goals에는
+	// 'Now'가 남아 전역 항목과 이름이 부딪힌다(프론트 변수 목록 key 중복). 같이 지운다.
 	if _, err := d.Exec(`DELETE FROM agent_prompt_vars WHERE var_name IN ('EngagementTitle', 'CoverageGaps', 'Now')`); err != nil {
 		return fmt.Errorf("cleanup renamed vars: %w", err)
 	}
@@ -237,8 +240,8 @@ ON CONFLICT (agent_id, var_name) DO UPDATE
 		}
 		_ = d.SetSetting("interactive_shell_default_v1", "true")
 	}
-	// Seed the built-in browser (Playwright) MCP once — DISABLED by default (用户
-	// 需要时自行启用), no proxy by default. The traffic-capture toggle injects/strips
+	// 내장 브라우저(Playwright) MCP는 한 번만 심고, 기본은 꺼 둔다(필요할 때 사용자가 켠다).
+	// 프록시도 기본은 없다. 트래픽 캡처 토글이 실행 중에 기록 프록시와 CA를 넣거나 뺀다
 	// the recording proxy + CA at runtime (server.Manager.syncBrowserMCPProxy).
 	// Insert only if absent so we never clobber user edits (args/env/enabled/
 	// visibility) on restart.
@@ -283,10 +286,10 @@ func (d *DB) seedDefaultAssetInterceptRules() error {
 		pattern string
 		note    string
 	}{
-		{"fuzzy_domain", ".gov", "[内置] 政府网站 (.gov)"},
-		{"fuzzy_domain", ".gov.cn", "[内置] 政府网站 (.gov.cn)"},
-		{"fuzzy_domain", ".edu", "[内置] 教育网站 (.edu)"},
-		{"fuzzy_domain", ".edu.cn", "[内置] 教育网站 (.edu.cn)"},
+		{"fuzzy_domain", ".gov", "[내장] 정부 웹사이트 (.gov)"},
+		{"fuzzy_domain", ".gov.cn", "[내장] 정부 웹사이트 (.gov.cn)"},
+		{"fuzzy_domain", ".edu", "[내장] 교육 웹사이트 (.edu)"},
+		{"fuzzy_domain", ".edu.cn", "[내장] 교육 웹사이트 (.edu.cn)"},
 	}
 	for _, r := range rules {
 		if _, err := d.Exec(`
@@ -344,164 +347,164 @@ func (d *DB) seedDefaultInterceptRules() error {
 		priority int
 	}
 	rules := []rule{
-		// ── 系统破坏性命令 (priority 100) ──────────────────────────────────
+		// ── 시스템을 망가뜨리는 명령 (priority 100) ──
 		{
-			name:     "[内置] 递归强制删除 rm -rf",
+			name:     "[내장] 재귀 강제 삭제 rm -rf",
 			target:   "tool_input",
 			typ:      "regex",
 			pattern:  `(?i)\brm\b.{0,80}(?:-[a-z]*r[a-z]*f[a-z]*|-[a-z]*f[a-z]*r[a-z]*|--recursive|--no-preserve-root)`,
 			action:   "deny",
-			message:  "禁止执行递归强制删除（rm -rf / rm --recursive），可能永久损坏系统或靶机环境",
+			message:  "재귀 강제 삭제(rm -rf / rm --recursive)는 거절됩니다. 시스템이나 대상 환경을 영구히 망가뜨릴 수 있습니다",
 			priority: 100,
 		},
 		{
-			name:     "[内置] 删除系统关键目录",
+			name:     "[내장] 시스템 핵심 디렉터리 삭제",
 			target:   "tool_input",
 			typ:      "regex",
 			pattern:  `\brm\b[^"'\n]{0,60}["'\s](/|/etc|/bin|/usr|/boot|/var|/lib|/sys|/proc|/dev|/sbin|/root)`,
 			action:   "deny",
-			message:  "禁止删除系统关键路径",
+			message:  "시스템 핵심 경로 삭제는 거절됩니다",
 			priority: 100,
 		},
 		{
-			name:     "[内置] 磁盘格式化 mkfs",
+			name:     "[내장] 디스크 포맷 mkfs",
 			target:   "tool_input",
 			typ:      "regex",
 			pattern:  `\bmkfs\b`,
 			action:   "deny",
-			message:  "禁止格式化磁盘（mkfs）",
+			message:  "디스크 포맷(mkfs)은 거절됩니다",
 			priority: 100,
 		},
 		{
-			name:     "[内置] 覆写磁盘设备 dd",
+			name:     "[내장] 디스크 장치 덮어쓰기 dd",
 			target:   "tool_input",
 			typ:      "regex",
 			pattern:  `\bdd\b[^|\n]{0,100}\bof=\s*/dev/[a-zA-Z]`,
 			action:   "deny",
-			message:  "禁止使用 dd 覆写磁盘设备",
+			message:  "dd로 디스크 장치를 덮어쓰는 것은 거절됩니다",
 			priority: 100,
 		},
 		{
-			name:     "[内置] Fork 炸弹",
+			name:     "[내장] 포크 폭탄",
 			target:   "tool_input",
 			typ:      "regex",
 			pattern:  `:\(\)\s*\{[^}]*:\|:`,
 			action:   "deny",
-			message:  "禁止执行 Fork 炸弹",
+			message:  "포크 폭탄 실행은 거절됩니다",
 			priority: 100,
 		},
 		{
-			name:     "[内置] 关机 / 重启",
+			name:     "[내장] 종료 / 재시작",
 			target:   "tool_input",
 			typ:      "regex",
 			pattern:  `\b(?:shutdown|reboot|halt|poweroff|init\s+[06])\b`,
 			action:   "deny",
-			message:  "禁止执行关机或重启命令",
+			message:  "종료나 재시작 명령은 거절됩니다",
 			priority: 100,
 		},
 		{
-			name:     "[内置] 杀死全部进程",
+			name:     "[내장] 모든 프로세스 종료",
 			target:   "tool_input",
 			typ:      "regex",
 			pattern:  `\bkill\s+-9\s+-1\b|\bkillall\s+-9\b`,
 			action:   "deny",
-			message:  "禁止 kill -9 -1 或 killall -9（杀死所有进程）",
+			message:  "kill -9 -1 또는 killall -9(모든 프로세스 종료)는 거절됩니다",
 			priority: 100,
 		},
 		{
-			name:     "[内置] 磁盘擦除 shred / wipe",
+			name:     "[내장] 디스크 지우기 shred / wipe",
 			target:   "tool_input",
 			typ:      "regex",
 			pattern:  `\b(?:shred|wipe)\b[^|\n]{0,80}/dev/[a-zA-Z]`,
 			action:   "deny",
-			message:  "禁止对磁盘设备执行 shred/wipe 擦除",
+			message:  "디스크 장치에 shred/wipe를 실행하는 것은 거절됩니다",
 			priority: 100,
 		},
 		{
-			name:     "[内置] 清空防火墙规则",
+			name:     "[내장] 방화벽 규칙 비우기",
 			target:   "tool_input",
 			typ:      "regex",
 			pattern:  `\biptables\s+(?:-F|--flush)\b|\bnft\s+flush\s+ruleset\b`,
 			action:   "deny",
-			message:  "禁止清空防火墙规则（iptables -F / nft flush）",
+			message:  "방화벽 규칙을 비우는 것은 거절됩니다(iptables -F / nft flush)",
 			priority: 100,
 		},
-		// ── 数据库破坏性操作 (priority 90) ─────────────────────────────────
+		// ── 데이터베이스를 망가뜨리는 조작 (priority 90) ──
 		{
-			name:     "[内置] SQL DROP DATABASE / TABLE / SCHEMA",
+			name:     "[내장] SQL DROP DATABASE / TABLE / SCHEMA",
 			target:   "tool_input",
 			typ:      "regex",
 			pattern:  `(?i)\bDROP\s+(?:DATABASE|TABLE|SCHEMA|INDEX|VIEW|TABLESPACE|USER|ROLE)\b`,
 			action:   "deny",
-			message:  "禁止执行 DROP 操作，可能不可逆地销毁数据库对象",
+			message:  "DROP 실행은 거절됩니다. 데이터베이스 객체를 되돌릴 수 없이 없앨 수 있습니다",
 			priority: 90,
 		},
 		{
-			name:     "[内置] SQL TRUNCATE",
+			name:     "[내장] SQL TRUNCATE",
 			target:   "tool_input",
 			typ:      "regex",
 			pattern:  `(?i)\bTRUNCATE\s+(?:TABLE\s+)?\w`,
 			action:   "deny",
-			message:  "禁止执行 TRUNCATE，可能清空数据表所有数据",
+			message:  "TRUNCATE 실행은 거절됩니다. 표의 데이터를 모두 비울 수 있습니다",
 			priority: 90,
 		},
 		{
-			name:     "[内置] MongoDB drop / dropDatabase",
+			name:     "[내장] MongoDB drop / dropDatabase",
 			target:   "tool_input",
 			typ:      "regex",
 			pattern:  `(?i)\.(?:dropDatabase|dropCollection|drop)\s*\(`,
 			action:   "deny",
-			message:  "禁止执行 MongoDB drop 操作",
+			message:  "MongoDB drop 실행은 거절됩니다",
 			priority: 90,
 		},
 		{
-			name:     "[内置] Redis FLUSHALL / FLUSHDB",
+			name:     "[내장] Redis FLUSHALL / FLUSHDB",
 			target:   "tool_input",
 			typ:      "regex",
 			pattern:  `(?i)\b(?:FLUSHALL|FLUSHDB)\b`,
 			action:   "deny",
-			message:  "禁止执行 Redis FLUSHALL / FLUSHDB，可能清空全部缓存数据",
+			message:  "Redis FLUSHALL / FLUSHDB 실행은 거절됩니다. 캐시 데이터를 모두 비울 수 있습니다",
 			priority: 90,
 		},
-		// ── HTTP 破坏性请求 (priority 80) ──────────────────────────────────
-		// Agent 发送 DELETE 请求的三种常见方式：
-		//   1. curl -X DELETE / --request DELETE（Bash 工具直接执行或写入脚本）
-		//   2. Python HTTP 客户端 .delete() 方法
-		//   3. JS/通用脚本里的 method: 'DELETE' / method="DELETE"
+		// ── HTTP 파괴 요청 (priority 80) ──
+		// 에이전트가 DELETE 요청을 보내는 흔한 세 가지:
+		//   1. curl -X DELETE / --request DELETE (bash 도구가 직접 실행하거나 스크립트에 씀)
+		//   2. Python HTTP 클라이언트의 .delete() 메서드
+		//   3. JS나 일반 스크립트의 method: 'DELETE' / method="DELETE"
 		{
-			name:     "[内置] curl / wget 发送 DELETE 请求",
+			name:     "[내장] curl / wget DELETE 요청",
 			target:   "tool_input",
 			typ:      "regex",
 			pattern:  `(?i)\bcurl\b[^|\n&;"]{0,300}(?:-X\s*DELETE|--request\s+DELETE|-XDELETE)|\bwget\b[^|\n&;"]{0,300}--method[=\s]+DELETE`,
 			action:   "deny",
-			message:  "禁止通过 curl/wget 发送 HTTP DELETE 请求，可能删除目标系统数据",
+			message:  "curl/wget으로 HTTP DELETE를 보내는 것은 거절됩니다. 대상 시스템 데이터를 지울 수 있습니다",
 			priority: 80,
 		},
 		{
-			name:     "[内置] Python HTTP 客户端 DELETE（requests/httpx/aiohttp）",
+			name:     "[내장] Python HTTP 클라이언트 DELETE (requests/httpx/aiohttp)",
 			target:   "tool_input",
 			typ:      "regex",
 			pattern:  `(?i)\b(?:requests|httpx|aiohttp|urllib\.request)\.delete\s*\(|session\.delete\s*\(|client\.delete\s*\(`,
 			action:   "deny",
-			message:  "禁止使用 Python HTTP 客户端发送 DELETE 请求",
+			message:  "Python HTTP 클라이언트로 DELETE를 보내는 것은 거절됩니다",
 			priority: 80,
 		},
 		{
-			name:     "[内置] 脚本中声明 HTTP DELETE 方法（JS/通用）",
+			name:     "[내장] 스크립트의 HTTP DELETE 메서드 선언 (JS/일반)",
 			target:   "tool_input",
 			typ:      "regex",
 			pattern:  `(?i)axios\.delete\s*\(|method\s*[:=]\s*['"]DELETE['"]`,
 			action:   "deny",
-			message:  "禁止在脚本中声明并发送 HTTP DELETE 请求",
+			message:  "스크립트에서 HTTP DELETE를 선언해 보내는 것은 거절됩니다",
 			priority: 80,
 		},
 		{
-			name:     "[内置] 批量清空 / 清除接口路径",
+			name:     "[내장] 일괄 비우기 / 제거 경로",
 			target:   "tool_input",
 			typ:      "regex",
 			pattern:  `(?i)/(?:clear|wipe|flush|purge|truncate|drop|destroy|factory[-_]reset|reset[-_]all)(?:[/?#"'\s]|$)`,
 			action:   "deny",
-			message:  "禁止调用批量清空或销毁类接口（/clear /wipe /flush /purge 等）",
+			message:  "일괄 비우기나 제거 경로 호출은 거절됩니다(/clear /wipe /flush /purge 등)",
 			priority: 80,
 		},
 	}
@@ -521,7 +524,7 @@ ON CONFLICT DO NOTHING`,
 // seedDefaultInterceptRulesV2 migrates the two safety patterns that used to be
 // hard-coded in guard.go (destructive shell + data-exfil pipe) into ordinary
 // intercept rules. Gated by its own flag so it also lands on DBs that already ran
-// v1. Unlike the old guard.go floor, these are plain [内置] rules — the user can
+// v1. Unlike the old guard.go floor, these are plain [내장] rules — the user can
 // disable or delete them. The exfil rule ships DISABLED by default (its
 // curl/wget/nc pipe pattern mis-fires on legitimate CTF/pentest reverse-shell and
 // data-transfer pipes); enable it manually when exfil gating is actually wanted.
@@ -538,18 +541,18 @@ func (d *DB) seedDefaultInterceptRulesV2() error {
 		priority int
 	}{
 		{
-			name:     "[内置] 破坏性系统命令",
+			name:     "[내장] 파괴적인 시스템 명령",
 			pattern:  `(?i)\b(rm\s+-rf\s+/|mkfs|dd\s+if=|:\(\)\s*\{|shutdown|reboot|>\s*/dev/sd)`,
 			action:   "deny",
-			message:  "破坏性命令被拒绝（rm -rf / / mkfs / dd / fork bomb / 关机重启 / 覆写磁盘设备）",
+			message:  "파괴적인 명령은 거절됩니다(rm -rf / / mkfs / dd / fork bomb / 종료·재시작 / 디스크 장치 덮어쓰기)",
 			enabled:  true,
 			priority: 100,
 		},
 		{
-			name:     "[内置] 数据外泄管道",
+			name:     "[내장] 데이터 유출 파이프",
 			pattern:  `(?i)(curl|wget|nc|ncat)\b[^|]*\b(\|\s*(curl|wget|nc))`,
 			action:   "deny",
-			message:  "疑似数据外泄管道被拒绝（命令输出经 curl/wget/nc 外传）",
+			message:  "데이터 유출로 보이는 파이프는 거절됩니다(명령 출력을 curl/wget/nc로 내보냄)",
 			enabled:  false,
 			priority: 80,
 		},
@@ -587,14 +590,14 @@ func (d *DB) seedDefaultInterceptRulesV3() error {
 	if v, _, _ := d.GetSetting("intercept_default_rules_v3"); v == "done" {
 		return nil
 	}
-	const name = "[内置] 删除类接口路径"
+	const name = "[내장] 삭제류 인터페이스 경로"
 	if _, err := d.Exec(`
 INSERT INTO intercept_rules(name, enabled, priority, match_target, match_type, pattern, action, message, timeout_enabled, timeout_seconds, timeout_action)
 SELECT $1, true, 80, 'tool_input', 'regex', $2, 'deny', $3, false, 60, 'deny'
 WHERE NOT EXISTS (SELECT 1 FROM intercept_rules WHERE name = $1)`,
 		name,
 		deleteEndpointPathPattern,
-		"禁止调用删除类接口（/delete /remove /unlink /erase 等），不论使用哪种 HTTP 方法——多数应用的删除接口用 GET/POST 就能触发，同样会真实删除目标数据",
+		"삭제류 경로 호출은 거절됩니다(/delete /remove /unlink /erase 등). HTTP 메서드와 관계없습니다. 많은 앱의 삭제 경로는 GET/POST로도 동작해 대상 데이터를 실제로 지웁니다",
 	); err != nil {
 		return fmt.Errorf("rule %q: %w", name, err)
 	}

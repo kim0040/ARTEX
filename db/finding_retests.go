@@ -12,7 +12,7 @@ import (
 
 const FindingRetestAgentKey = "retester"
 
-var ErrRetestNotRunning = errors.New("本次复测已结束或尚未开始，请从漏洞详情发起新的复测")
+var ErrRetestNotRunning = errors.New("이번 재테스트는 이미 끝났거나 아직 시작되지 않았습니다. 발견 상세에서 새 재테스트를 시작하세요")
 
 // FindingRetest is an immutable historical test once its conversation turn ends.
 // Snapshot is only loaded for the agent, never sent with the history list.
@@ -82,7 +82,7 @@ func (d *DB) CreateFindingRetest(ctx context.Context, findingID int64, notes str
 	defer tx.Rollback()
 	var title string
 	var snapshot []byte
-	err = tx.QueryRowContext(ctx, `SELECT COALESCE(NULLIF(f.name,''), NULLIF(f.vulnclass,''), '未分类'),
+	err = tx.QueryRowContext(ctx, `SELECT COALESCE(NULLIF(f.name,''), NULLIF(f.vulnclass,''), '미분류'),
 	jsonb_build_object('finding', to_jsonb(f),
 	 'assets', COALESCE((SELECT jsonb_agg(to_jsonb(a)) FROM assets a WHERE f.asset_ids @> to_jsonb(ARRAY[a.id])), '[]'::jsonb),
 	 'constraints', COALESCE((SELECT jsonb_agg(to_jsonb(c)) FROM task_constraints c JOIN tasks t ON t.exploration_id=c.exploration_id WHERE t.id=f.task_id), '[]'::jsonb))
@@ -102,7 +102,7 @@ func (d *DB) CreateFindingRetest(ctx context.Context, findingID int64, notes str
 		title = string(runes[:100])
 	}
 	c, err := scanConv(tx.QueryRowContext(ctx, `INSERT INTO conversations(agent_key,title) VALUES ($1,$2) RETURNING `+convCols,
-		FindingRetestAgentKey, fmt.Sprintf("复测 #%d · %s", findingID, title)))
+		FindingRetestAgentKey, fmt.Sprintf("재테스트 #%d · %s", findingID, title)))
 	if err != nil {
 		return nil, nil, false, err
 	}
@@ -113,7 +113,7 @@ func (d *DB) CreateFindingRetest(ctx context.Context, findingID int64, notes str
 	}
 	msg := r.InitialMessage()
 	_, err = tx.ExecContext(ctx, `INSERT INTO conversation_activities(conversation_id,worker,kind,summary,detail) VALUES ($1,$2,'user',$3,$4)`,
-		c.ID, FindingRetestAgentKey, fmt.Sprintf("请复测漏洞 #%d", findingID), msg)
+		c.ID, FindingRetestAgentKey, fmt.Sprintf("발견 #%d을 재테스트하세요", findingID), msg)
 	if err != nil {
 		return nil, nil, false, err
 	}
@@ -124,9 +124,9 @@ func (d *DB) CreateFindingRetest(ctx context.Context, findingID int64, notes str
 }
 
 func (r *FindingRetest) InitialMessage() string {
-	msg := fmt.Sprintf("请复测漏洞 #%d。先调用 get_finding_retest_context 读取本会话关联的原始证据与约束，再执行针对性验证，最后调用 record_finding_retest_result 保存结论。", r.FindingID)
+	msg := fmt.Sprintf("발견 #%d을 재테스트하세요. 먼저 get_finding_retest_context를 호출해 이 세션에 연결된 원래 증거와 제약을 읽고, 이어서 표적 검증을 실행한 뒤, 마지막으로 record_finding_retest_result를 호출해 결론을 저장하세요.", r.FindingID)
 	if r.Notes != "" {
-		msg += "\n\n本次复测补充说明：\n" + r.Notes
+		msg += "\n\n이번 재테스트 보충 설명:\n" + r.Notes
 	}
 	return msg
 }
@@ -157,12 +157,11 @@ func (d *DB) FindingRetestForConversation(ctx context.Context, conversationID in
 	return r, err
 }
 
-// FailPendingRetestForConversation seals a conversation's unfinished retest when
-// the runner could not even load it — the retest ID is unknown on that path, so
-// the conversation ID is the only handle. Without it a transient read error
-// leaves the row 'pending' forever: the findings list keeps showing 复测中 and
-// every later 发起复测 is deduped against a run that is not happening, with only
-// a process restart (RecoverFindingRetests) able to clear it.
+// FailPendingRetestForConversation은 러너가 재테스트를 아예 불러오지 못했을 때 그 대화의 끝나지 않은 재테스트를 봉인한다.
+// 그 경로에서는 재테스트 ID를 모르므로, 대화 ID만이 유일한 핸들이다. 이것이 없으면 일시적 읽기 오류가
+// 행을 pending으로 영원히 남긴다. 발견 목록은 계속 재테스트 중을 보여주고,
+// 이후의 모든 재테스트 시작은 실제로 진행되지 않는 실행과 중복으로 걸러지며, 오직
+// 프로세스 재시작(RecoverFindingRetests)만이 이를 해제할 수 있다.
 func (d *DB) FailPendingRetestForConversation(conversationID int64, reason string) error {
 	_, err := d.Exec(`UPDATE finding_retests SET status='failed', error=$2, finished_at=now()
 		WHERE conversation_id=$1 AND status IN ('pending','running')`, conversationID, reason)
@@ -182,14 +181,14 @@ func (d *DB) StartFindingRetest(ctx context.Context, id int64) (bool, error) {
 // runtime conversation. Identical retries are safe; a second verdict is refused.
 func (d *DB) RecordFindingRetestResult(ctx context.Context, conversationID int64, verdict, summary, evidence string) error {
 	if verdict != "reproduced" && verdict != "fixed" && verdict != "inconclusive" {
-		return errors.New("verdict 必须为 reproduced / fixed / inconclusive")
+		return errors.New("verdict는 reproduced / fixed / inconclusive 여야 합니다")
 	}
 	summary, evidence = strings.TrimSpace(summary), strings.TrimSpace(evidence)
 	if summary == "" || evidence == "" {
-		return errors.New("summary 与 evidence 不能为空；无法确认时说明实际检查及阻塞原因")
+		return errors.New("summary와 evidence는 비울 수 없습니다. 확인할 수 없을 때는 실제로 한 점검과 막힌 이유를 적으세요")
 	}
 	if len(summary) > 16000 || len(evidence) > 128000 {
-		return errors.New("复测结论过长（summary ≤ 16KB，evidence ≤ 128KB）")
+		return errors.New("재테스트 결론이 너무 깁니다(summary ≤ 16KB, evidence ≤ 128KB)")
 	}
 	res, err := d.ExecContext(ctx, `UPDATE finding_retests SET verdict=$2,summary=$3,evidence=$4
 	WHERE conversation_id=$1 AND status='running' AND (verdict='' OR (verdict=$2 AND summary=$3 AND evidence=$4))`, conversationID, verdict, summary, evidence)
@@ -228,7 +227,7 @@ func (d *DB) FinishFindingRetest(id int64, status, reason string) error {
 	var finalStatus, verdict string
 	err = tx.QueryRow(`UPDATE finding_retests SET
 	status=CASE WHEN $2='completed' AND verdict='' THEN 'failed' ELSE $2 END,
-	error=CASE WHEN $2='completed' AND verdict='' THEN 'Agent 未保存复测结论，请查看会话后重新复测' ELSE $3 END,
+	error=CASE WHEN $2='completed' AND verdict='' THEN 'Agent가 재검사 결론을 저장하지 않았습니다. 세션을 확인한 뒤 다시 재검사하세요' ELSE $3 END,
 	finished_at=now() WHERE id=$1 AND status IN ('pending','running') RETURNING status,verdict`, id, status, reason).Scan(&finalStatus, &verdict)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil // A replay must not overwrite a later manual triage decision.
@@ -237,15 +236,15 @@ func (d *DB) FinishFindingRetest(id int64, status, reason string) error {
 		return err
 	}
 	if finalStatus == "completed" && verdict == "fixed" {
-		// 走带通知的版本，与人工在详情页改状态共用同一套语义。
+		// 알림이 있는 버전을 타며, 사람이 상세 페이지에서 상태를 바꿀 때와 같은 의미를 공유한다.
 		//
-		// 此前这里是裸的 UPDATE：复测判「已修复」时状态确实变了，但配了
-		// on_status_change 的渠道完全收不到推送——状态在界面上悄悄变了，
-		// 运维要打开平台才知道。状态更新与推送事件必须一起落库，
-		// SetFindingStatusTx 内部处理了「状态没变就不登记」等细节。
-		// 用 context.Background()：本函数整条都是无 ctx 的旧风格（d.Begin()/
-		// tx.QueryRow/tx.Exec），没有可传递的取消信号，硬加一个 ctx 参数会
-		// 牵动 server 侧调用点与多处测试，超出本次改动的范围。
+		// 이전에는 여기가 그냥 UPDATE였다. 재테스트가 「수정됨」으로 판정하면 상태는 실제로 바뀌지만, 설정된
+		// on_status_change 채널은 푸시를 전혀 받지 못한다. 상태가 화면에서 조용히 바뀌어,
+		// 운영자는 플랫폼을 열어야만 알 수 있다. 상태 갱신과 푸시 이벤트는 함께 저장되어야 하고,
+		// SetFindingStatusTx 안에서 「상태가 그대로면 등록하지 않음」 같은 세부 사항을 처리한다.
+		// context.Background()를 쓴다. 이 함수 전체가 ctx 없는 옛 스타일(d.Begin()/
+		// tx.QueryRow/tx.Exec)이라 전달할 취소 신호가 없고, ctx 매개변수를 억지로 넣으면
+		// server 쪽 호출부와 여러 테스트가 함께 바뀌어, 이번 변경 범위를 넘는다.
 		if _, _, _, _, err := SetFindingStatusTx(context.Background(), tx, findingID, FindingFixed); err != nil {
 			return err
 		}
@@ -254,6 +253,6 @@ func (d *DB) FinishFindingRetest(id int64, status, reason string) error {
 }
 
 func (d *DB) RecoverFindingRetests() error {
-	_, err := d.Exec(`UPDATE finding_retests SET status='stopped', error='服务重启，复测已中断，请重新发起', finished_at=now() WHERE status IN ('pending','running')`)
+	_, err := d.Exec(`UPDATE finding_retests SET status='stopped', error='서비스가 다시 시작되어 재검사가 중단되었습니다. 다시 시작하세요', finished_at=now() WHERE status IN ('pending','running')`)
 	return err
 }

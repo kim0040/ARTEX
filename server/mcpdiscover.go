@@ -25,22 +25,22 @@ func connectMCP(ctx context.Context, m *db.MCPServer) (mcpClient, error) {
 	switch m.Transport {
 	case "stdio":
 		if m.Command == "" {
-			return nil, fmt.Errorf("stdio 传输缺少命令")
+			return nil, fmt.Errorf("stdio 전송에 명령이 없습니다")
 		}
 		return mcp.NewStdioClient(ctx, m.Name, m.Command, jsonStrMap(m.Env), jsonStrSlice(m.Args)...)
 	case "http":
 		if m.URL == "" {
-			return nil, fmt.Errorf("http 传输缺少 URL")
+			return nil, fmt.Errorf("http 전송에 URL이 없습니다")
 		}
 		// env map doubles as HTTP headers (e.g. Authorization).
 		return mcphttp.New(ctx, m.Name, m.URL, jsonStrMap(m.Env), m.Insecure)
 	case "sse":
 		if m.URL == "" {
-			return nil, fmt.Errorf("sse 传输缺少 URL")
+			return nil, fmt.Errorf("sse 전송에 URL이 없습니다")
 		}
 		return mcphttp.NewSSE(ctx, m.Name, m.URL, jsonStrMap(m.Env), m.Insecure)
 	default:
-		return nil, fmt.Errorf("未知传输方式 %q", m.Transport)
+		return nil, fmt.Errorf("알 수 없는 전송 방식 %q", m.Transport)
 	}
 }
 
@@ -63,7 +63,7 @@ func (s *Server) discoverAndCacheMCP(ctx context.Context, m *db.MCPServer) error
 	if err := s.m.pg.SaveMCPTools(m.ID, tools); err != nil {
 		return err
 	}
-	log.Printf("[mcp] %s 发现 %d 个工具并已缓存", m.Name, len(tools))
+	log.Printf("[mcp] %s에서 도구 %d개를 찾아 캐시했습니다", m.Name, len(tools))
 	return nil
 }
 
@@ -74,7 +74,7 @@ func (s *Server) discoverAndCacheMCP(ctx context.Context, m *db.MCPServer) error
 func (s *Server) discoverEmptyMCPsOnStartup() {
 	servers, err := s.m.pg.ListMCP()
 	if err != nil {
-		log.Printf("[mcp] 启动自动发现: 读取列表失败: %v", err)
+		log.Printf("[mcp] 시작 시 자동 발견: 목록을 읽지 못했습니다: %v", err)
 		return
 	}
 	for _, m := range servers {
@@ -83,7 +83,7 @@ func (s *Server) discoverEmptyMCPsOnStartup() {
 		}
 		ctx, cancel := context.WithTimeout(s.ctx, 90*time.Second)
 		if err := s.discoverAndCacheMCP(ctx, m); err != nil {
-			log.Printf("[mcp] 启动自动发现 %s 失败: %v", m.Name, err)
+			log.Printf("[mcp] 시작 시 자동 발견 %s 실패: %v", m.Name, err)
 		}
 		cancel()
 	}

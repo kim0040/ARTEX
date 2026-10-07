@@ -37,74 +37,74 @@ func gone(t *testing.T, es *ExplorationStore, id int64) bool {
 	return n == nil
 }
 
-// TestSoftDeleteIntent 假删除置 deleted + delete_reason,保留节点。
+// TestSoftDeleteIntent 가짜 삭제는 deleted + delete_reason 을 두고 노드는 남깁니다.
 func TestSoftDeleteIntent(t *testing.T) {
 	d, err := Open(testDSN(t))
 	if err != nil {
 		t.Skipf("postgres unavailable (%v) — skipping", err)
 	}
 	defer d.Close()
-	expID, err := d.CreateExploration("soft delete", "假删除")
+	expID, err := d.CreateExploration("soft delete", "가짜 삭제")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer d.Exec(`DELETE FROM explorations WHERE id=$1`, expID)
 	es := d.Exploration(expID)
 
-	intent := mustIntent(t, es, "待删意图")
+	intent := mustIntent(t, es, "삭제 대기 의도")
 	if err := es.SetIntentState(intent, "paused"); err != nil {
 		t.Fatal(err)
 	}
-	summary, err := es.SoftDeleteIntent(intent, "方向判断错误")
+	summary, err := es.SoftDeleteIntent(intent, "방향 판단 오류")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if summary != "待删意图" {
-		t.Fatalf("summary=%q, want 待删意图", summary)
+	if summary != "삭제 대기 의도" {
+		t.Fatalf("summary=%q, want 삭제 대기 의도", summary)
 	}
 	n, err := es.GetNode(intent)
 	if err != nil || n == nil {
 		t.Fatalf("intent removed by soft delete: n=%+v err=%v", n, err)
 	}
-	if n.State != StateIntentDeleted || n.DeleteReason != "方向判断错误" {
-		t.Fatalf("state=%q delete_reason=%q, want deleted/方向判断错误", n.State, n.DeleteReason)
+	if n.State != StateIntentDeleted || n.DeleteReason != "방향 판단 오류" {
+		t.Fatalf("state=%q delete_reason=%q, want deleted/방향 판단 오류", n.State, n.DeleteReason)
 	}
-	// 待领(open)意图也允许假删除。
-	openIntent := mustIntent(t, es, "待领意图")
-	if _, err := es.SoftDeleteIntent(openIntent, "方向不需要了"); err != nil {
+	// 수령 대기(open) 의도도 가짜 삭제를 허용합니다.
+	openIntent := mustIntent(t, es, "수령 대기 의도")
+	if _, err := es.SoftDeleteIntent(openIntent, "방향이 더 이상 필요하지 않음"); err != nil {
 		t.Fatalf("soft delete open intent: %v", err)
 	}
 	if n, err := es.GetNode(openIntent); err != nil || n == nil || n.State != StateIntentDeleted {
 		t.Fatalf("open intent not soft-deleted: n=%+v err=%v", n, err)
 	}
 
-	// 已删除(deleted)等其它状态不能再假删除。
-	if _, err := es.SoftDeleteIntent(intent, "再删"); err == nil {
+	// 이미 삭제됨(deleted) 등 다른 상태는 다시 가짜 삭제할 수 없습니다.
+	if _, err := es.SoftDeleteIntent(intent, "다시 삭제"); err == nil {
 		t.Fatal("soft-deleting an already-deleted intent unexpectedly succeeded")
 	}
 }
 
-// TestHardDeleteCascadesExclusiveDescendants 真删除沿链路级联删除独占子孙到叶子。
+// TestHardDeleteCascadesExclusiveDescendants 진짜 삭제는 체인을 따라 독점 자손을 잎까지 연쇄 삭제합니다.
 func TestHardDeleteCascadesExclusiveDescendants(t *testing.T) {
 	d, err := Open(testDSN(t))
 	if err != nil {
 		t.Skipf("postgres unavailable (%v) — skipping", err)
 	}
 	defer d.Close()
-	expID, err := d.CreateExploration("hard cascade", "级联删除")
+	expID, err := d.CreateExploration("hard cascade", "연쇄 삭제")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer d.Exec(`DELETE FROM explorations WHERE id=$1`, expID)
 	es := d.Exploration(expID)
 
-	// intent1 --yields--> fact1 --derived_from--> intent2 --yields--> fact2(叶子)
-	intent1 := mustIntent(t, es, "根意图")
-	fact1 := mustNode(t, es, KindFact, "事实1")
+	// intent1 --yields--> fact1 --derived_from--> intent2 --yields--> fact2(잎)
+	intent1 := mustIntent(t, es, "루트 의도")
+	fact1 := mustNode(t, es, KindFact, "사실1")
 	mustLink(t, es, intent1, RelYields, fact1)
-	intent2 := mustIntent(t, es, "衍生意图")
+	intent2 := mustIntent(t, es, "파생 의도")
 	mustLink(t, es, fact1, RelDerivedFrom, intent2)
-	fact2 := mustNode(t, es, KindFact, "事实2")
+	fact2 := mustNode(t, es, KindFact, "사실2")
 	mustLink(t, es, intent2, RelYields, fact2)
 
 	cleanup, err := es.CancelIntent(intent1)
@@ -121,41 +121,41 @@ func TestHardDeleteCascadesExclusiveDescendants(t *testing.T) {
 	}
 }
 
-// TestHardDeletePreservesSharedAndGoal 真删除保留共享子孙(还有其它父)与目标。
+// TestHardDeletePreservesSharedAndGoal 진짜 삭제는 공유 자손(다른 부모가 있음)과 목표는 남깁니다.
 func TestHardDeletePreservesSharedAndGoal(t *testing.T) {
 	d, err := Open(testDSN(t))
 	if err != nil {
 		t.Skipf("postgres unavailable (%v) — skipping", err)
 	}
 	defer d.Close()
-	expID, err := d.CreateExploration("hard preserve", "保留共享/目标")
+	expID, err := d.CreateExploration("hard preserve", "공유/목표 유지")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer d.Exec(`DELETE FROM explorations WHERE id=$1`, expID)
 	es := d.Exploration(expID)
 
-	goal, err := es.AddGoal(map[string]any{"text": "拿下后台"}, "human")
+	goal, err := es.AddGoal(map[string]any{"text": "관리자 백엔드 장악"}, "human")
 	if err != nil {
 		t.Fatal(err)
 	}
-	// intent1 独占 finding(proves goal),intent1 与 intentX 共享 fact1(fact1 衍生出 intent2)。
-	intent1 := mustIntent(t, es, "待删意图")
-	intentX := mustIntent(t, es, "旁路意图")
-	finding := mustNode(t, es, KindFinding, "漏洞")
+	// intent1 독점 finding(proves goal), intent1 과 intentX 가 fact1 공유(fact1 이 intent2 를 파생).
+	intent1 := mustIntent(t, es, "삭제 대기 의도")
+	intentX := mustIntent(t, es, "측면 의도")
+	finding := mustNode(t, es, KindFinding, "발견")
 	mustLink(t, es, intent1, RelYields, finding)
 	mustLink(t, es, finding, RelProves, goal)
-	shared := mustNode(t, es, KindFact, "共享事实")
+	shared := mustNode(t, es, KindFact, "공유 사실")
 	mustLink(t, es, intent1, RelYields, shared)
 	mustLink(t, es, intentX, RelYields, shared)
-	intent2 := mustIntent(t, es, "由共享事实衍生")
+	intent2 := mustIntent(t, es, "공유 사실에서 파생")
 	mustLink(t, es, shared, RelDerivedFrom, intent2)
 
 	cleanup, err := es.CancelIntent(intent1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// 只删 intent1 与其独占的 finding;shared(有 intentX 父)及其下游 intent2、goal 全保留。
+	// intent1과 그것이 독점하는 finding만 삭제한다. shared(intentX 부모가 있음)와 그 하류 intent2, goal은 모두 남긴다.
 	if cleanup.Intents != 1 || cleanup.Findings != 1 || cleanup.Facts != 0 {
 		t.Fatalf("cleanup=%+v, want 1 intent / 1 finding / 0 fact", cleanup)
 	}

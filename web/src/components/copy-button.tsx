@@ -9,9 +9,9 @@ import { Button } from "@/components/ui/button";
 import { cn, copyText } from "@/lib/utils";
 
 type CopyButtonProps = {
-  // 要复制的文本;为空则按钮禁用。
+  // 복사할 텍스트. 비어 있으면 버튼을 끔.
   text: string | null | undefined;
-  // 复制成功后的 toast 文案,默认「已复制」。
+  // 복사 성공 후의 toast 문구. 기본 「복사됨」.
   successMessage?: string;
   label?: React.ReactNode;
   size?: React.ComponentProps<typeof Button>["size"];
@@ -19,12 +19,12 @@ type CopyButtonProps = {
   className?: string;
 };
 
-// CopyButton 统一的「复制到剪贴板」按钮:内置成功/失败反馈,并在 HTTP 非安全上下文
-// 下自动降级(见 copyText)。
+// CopyButton은 공통 「클립보드에 복사」 버튼입니다. 성공/실패 피드백이 들어 있고, HTTP 비보안 맥락에서는
+// 아래에서 자동으로 한 단계 내림(copyText 참고).
 export function CopyButton({
   text,
-  successMessage = "已复制",
-  label = "复制",
+  successMessage = "복사했습니다",
+  label = "복사",
   size = "sm",
   variant = "outline",
   className,
@@ -47,7 +47,7 @@ export function CopyButton({
       if (timer.current) clearTimeout(timer.current);
       timer.current = setTimeout(() => setCopied(false), 1500);
     } else {
-      toast.error("复制失败，请手动选择文本复制");
+      toast.error("복사 실패, 텍스트를 직접 선택해 복사하세요");
     }
   }
 

@@ -10,8 +10,8 @@ import (
 	"testing"
 )
 
-// testPaths 造一个隔离的升级目录。不能直接用 ResolvePaths()——那会指向测试
-// 二进制本身，一跑就把 go test 的可执行文件改名了。
+// testPaths는 격리된 업그레이드 디렉터리를 만듭니다. ResolvePaths()를 바로 쓰면 안 됩니다.
+// 테스트 바이너리 자신을 가리켜, 실행하면 go test 실행 파일 이름이 바뀝니다.
 func testPaths(t *testing.T) Paths {
 	t.Helper()
 	dir := t.TempDir()
@@ -25,13 +25,13 @@ func testPaths(t *testing.T) Paths {
 	}
 }
 
-// fakeBin 写一个可执行的壳脚本冒充 artex。smokeTest 只是用 -h 拉起它看退出码，
-// 脚本完全够用，而且比编译一个真二进制快得多。
+// fakeBin은 실행 가능한 껍데기 스크립트로 artex인 척합니다. smokeTest는 -h로 띄워 종료 코드만 봅니다.
+// 스크립트로 충분하고, 진짜 바이너리를 컴파일하는 것보다 훨씬 빠릅니다.
 func fakeBin(t *testing.T, path, marker string, exitCode int) {
 	t.Helper()
 	script := "#!/bin/sh\necho " + marker + "\nexit " + itoa(exitCode) + "\n"
 	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
-		t.Fatalf("写入假二进制 %s: %v", path, err)
+		t.Fatalf("가짜 바이너리 쓰기 %s: %v", path, err)
 	}
 }
 
@@ -42,16 +42,16 @@ func itoa(n int) string {
 	return string(rune('0' + n))
 }
 
-// stage 把 bin 布置成"已暂存待换装"的样子：写好 artex.new 和它的校验和。
+// stage는 bin을 "임시 저장되어 갈아 끼우기를 기다림" 상태로 둡니다. artex.new와 체크섬을 씁니다.
 func stage(t *testing.T, p Paths, marker string, exitCode int) {
 	t.Helper()
 	fakeBin(t, p.New, marker, exitCode)
 	sum, err := fileSHA256(p.New)
 	if err != nil {
-		t.Fatalf("计算校验和: %v", err)
+		t.Fatalf("체크섬 계산: %v", err)
 	}
 	if err := os.WriteFile(p.Sum, []byte(sum), 0o644); err != nil {
-		t.Fatalf("写入校验和: %v", err)
+		t.Fatalf("체크섬 쓰기: %v", err)
 	}
 }
 
@@ -59,7 +59,7 @@ func readAll(t *testing.T, path string) string {
 	t.Helper()
 	b, err := os.ReadFile(path)
 	if err != nil {
-		t.Fatalf("读取 %s: %v", path, err)
+		t.Fatalf("%s 읽기: %v", path, err)
 	}
 	return string(b)
 }
@@ -67,7 +67,7 @@ func readAll(t *testing.T, path string) string {
 func requireUnix(t *testing.T) {
 	t.Helper()
 	if runtime.GOOS == "windows" {
-		t.Skip("假二进制用的是 sh 脚本，Windows 上跑不了")
+		t.Skip("가짜 바이너리는 sh 스크립트라 Windows에서 돌릴 수 없습니다")
 	}
 }
 
@@ -80,11 +80,11 @@ func TestCompareVersions(t *testing.T) {
 		{"0.3.7", "0.3.8", -1, true},
 		{"0.3.8", "0.3.7", 1, true},
 		{"0.3.7", "0.3.7", 0, true},
-		{"v0.3.7", "0.3.8", -1, true}, // build.sh 去掉 v，tag 带 v，两边都要认
+		{"v0.3.7", "0.3.8", -1, true}, // build.sh는 v를 떼고 tag는 v를 답니다. 양쪽 다 알아봐야 합니다
 		{"0.3.7", "v0.3.7", 0, true},
-		{"0.9.0", "0.10.0", -1, true}, // 按数字比而不是字典序
+		{"0.9.0", "0.10.0", -1, true}, // 사전 순이 아니라 숫자로 비교
 		{"1.0.0", "0.99.99", 1, true},
-		// 开发构建必须判为不可比较，否则会被正式版覆盖掉未提交的改动。
+		// 개발 빌드는 비교 불가로 봐야 합니다. 그렇지 않으면 정식판이 커밋하지 않은 변경을 덮습니다.
 		{"dev", "0.3.8", 0, false},
 		{"0.3.7-2-gabc1234", "0.3.8", 0, false},
 		{"0.3.7-dirty", "0.3.8", 0, false},
@@ -94,11 +94,11 @@ func TestCompareVersions(t *testing.T) {
 	for _, c := range cases {
 		got, ok := CompareVersions(c.a, c.b)
 		if ok != c.comparable {
-			t.Errorf("CompareVersions(%q,%q) comparable=%v, 期望 %v", c.a, c.b, ok, c.comparable)
+			t.Errorf("CompareVersions(%q,%q) comparable=%v, 기대 %v", c.a, c.b, ok, c.comparable)
 			continue
 		}
 		if ok && got != c.want {
-			t.Errorf("CompareVersions(%q,%q)=%d, 期望 %d", c.a, c.b, got, c.want)
+			t.Errorf("CompareVersions(%q,%q)=%d, 기대 %d", c.a, c.b, got, c.want)
 		}
 	}
 }
@@ -108,17 +108,17 @@ func TestResolvePathsNaming(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ResolvePaths: %v", err)
 	}
-	// 关键不变量：所有升级文件都和可执行文件同目录。落到 CWD 会让服务化运行
-	// （工作目录可能是 /）时的换装彻底失效。
+	// 핵심 불변: 업그레이드 파일은 모두 실행 파일과 같은 디렉터리에 있습니다. CWD에 떨어지면
+	// 서비스 실행(작업 디렉터리가 / 일 수 있음)의 갈아 끼우기가 완전히 무효가 됩니다.
 	for name, path := range map[string]string{"New": p.New, "Sum": p.Sum, "Old": p.Old, "Marker": p.Marker} {
 		if filepath.Dir(path) != p.Dir {
-			t.Errorf("%s 不在可执行文件目录下: %s (期望 %s)", name, path, p.Dir)
+			t.Errorf("%s가 실행 파일 디렉터리에 없습니다: %s (기대 %s)", name, path, p.Dir)
 		}
 	}
-	// Windows 上 .new/.old 必须保留 .exe，否则冒烟测试和换装后的执行都会失败。
+	// Windows에서는 .new/.old가 .exe를 유지해야 합니다. 그렇지 않으면 스모크 테스트와 갈아 끼운 뒤 실행이 실패합니다.
 	if runtime.GOOS == "windows" {
 		if !strings.HasSuffix(p.New, ".exe") || !strings.HasSuffix(p.Old, ".exe") {
-			t.Errorf("Windows 上 .new/.old 必须以 .exe 结尾: new=%s old=%s", p.New, p.Old)
+			t.Errorf("Windows에서 .new/.old는 .exe로 끝나야 합니다: new=%s old=%s", p.New, p.Old)
 		}
 	}
 }
@@ -128,20 +128,20 @@ func TestVerifyStagedRejectsTamperedBinary(t *testing.T) {
 	p := testPaths(t)
 	stage(t, p, "new", 0)
 
-	// 校验和写好之后再改动文件，模拟下载损坏 / 被掉包。
+	// 체크섬을 쓴 뒤 파일을 바꿔, 다운로드 손상 / 바꿔치기를 흉내 냅니다.
 	fakeBin(t, p.New, "tampered", 0)
 	if err := verifyStaged(p); err == nil {
-		t.Fatal("期望 SHA256 不匹配被拒绝，却通过了")
+		t.Fatal("SHA256 불일치로 거부되기를 기대했는데 통과했습니다")
 	}
 }
 
 func TestVerifyStagedRejectsUnrunnableBinary(t *testing.T) {
 	requireUnix(t)
 	p := testPaths(t)
-	stage(t, p, "broken", 1) // 能执行但退出码非 0
+	stage(t, p, "broken", 1) // 실행은 되지만 종료 코드가 0이 아님
 
 	if err := verifyStaged(p); err == nil {
-		t.Fatal("期望冒烟测试失败被拒绝，却通过了")
+		t.Fatal("스모크 테스트 실패로 거부되기를 기대했는데 통과했습니다")
 	}
 }
 
@@ -151,31 +151,31 @@ func TestApplyStagedHappyPath(t *testing.T) {
 	fakeBin(t, p.Current, "old", 0)
 	stage(t, p, "new", 0)
 	if err := writeMarker(p.Marker, marker{From: "0.3.7", To: "0.3.8"}); err != nil {
-		t.Fatalf("写标记: %v", err)
+		t.Fatalf("표시 쓰기: %v", err)
 	}
 
 	action, st := applyStaged(p)
 	if action != Restart {
-		t.Fatalf("期望 Restart，得到 %v", action)
+		t.Fatalf("Restart를 기대했는데 %v", action)
 	}
 	if !st.Pending {
-		t.Error("换装后状态应为 Pending")
+		t.Error("갈아 끼운 뒤 상태는 Pending이어야 합니다")
 	}
 	if !strings.Contains(readAll(t, p.Current), "new") {
-		t.Error("artex 应已被替换为新版本")
+		t.Error("artex는 새 버전으로 바뀌어 있어야 합니다")
 	}
 	if !strings.Contains(readAll(t, p.Old), "old") {
-		t.Error("旧版本应备份到 artex.old")
+		t.Error("옛 버전은 artex.old로 백업되어야 합니다")
 	}
 	if _, err := os.Stat(p.New); !os.IsNotExist(err) {
-		t.Error("换装后 artex.new 应已消失")
+		t.Error("갈아 끼운 뒤 artex.new는 사라져야 합니다")
 	}
 	if _, err := os.Stat(p.Sum); !os.IsNotExist(err) {
-		t.Error("换装后校验和文件应已清理")
+		t.Error("갈아 끼운 뒤 체크섬 파일은 지워져야 합니다")
 	}
-	// 标记必须留着，下一次启动（跑的是新版）靠它计数、必要时回滚。
+	// 표시는 남아 있어야 합니다. 다음 기동(새 버전이 돔)이 이것으로 횟수를 세고, 필요하면 되돌립니다.
 	if _, ok := readMarker(p.Marker); !ok {
-		t.Error("换装后升级标记应保留")
+		t.Error("갈아 끼운 뒤 업그레이드 표시는 남아 있어야 합니다")
 	}
 }
 
@@ -184,20 +184,20 @@ func TestApplyStagedKeepsCurrentWhenVerifyFails(t *testing.T) {
 	p := testPaths(t)
 	fakeBin(t, p.Current, "old", 0)
 	stage(t, p, "new", 0)
-	fakeBin(t, p.New, "tampered", 0) // 破坏校验和
+	fakeBin(t, p.New, "tampered", 0) // 체크섬을 망가뜨림
 
 	action, st := applyStaged(p)
 	if action != Continue {
-		t.Fatalf("校验失败时期望 Continue，得到 %v", action)
+		t.Fatalf("검증 실패 때는 Continue를 기대했는데 %v", action)
 	}
 	if !st.FailedStage {
-		t.Error("状态应标记为 FailedStage")
+		t.Error("상태는 FailedStage로 표시되어야 합니다")
 	}
 	if !strings.Contains(readAll(t, p.Current), "old") {
-		t.Fatal("校验失败时绝不能动当前版本")
+		t.Fatal("검증 실패 때 현재 버전을 건드리면 안 됩니다")
 	}
 	if _, err := os.Stat(p.New); !os.IsNotExist(err) {
-		t.Error("校验失败的暂存件应被清理，否则下次启动会再试一遍")
+		t.Error("검증에 실패한 임시 파일은 지워야 합니다. 그렇지 않으면 다음 기동이 다시 시도합니다")
 	}
 }
 
@@ -205,17 +205,17 @@ func TestSwapOverwritesPreviousBackup(t *testing.T) {
 	requireUnix(t)
 	p := testPaths(t)
 	fakeBin(t, p.Current, "v2", 0)
-	fakeBin(t, p.Old, "v1", 0) // 上一轮升级留下的备份
+	fakeBin(t, p.Old, "v1", 0) // 지난 업그레이드가 남긴 백업
 	stage(t, p, "v3", 0)
 
 	if err := swap(p); err != nil {
 		t.Fatalf("swap: %v", err)
 	}
 	if !strings.Contains(readAll(t, p.Current), "v3") {
-		t.Error("应换装到 v3")
+		t.Error("v3로 갈아 끼워야 합니다")
 	}
 	if !strings.Contains(readAll(t, p.Old), "v2") {
-		t.Error("备份应更新为刚被换下的 v2")
+		t.Error("백업은 방금 내려온 v2로 갱신되어야 합니다")
 	}
 }
 
@@ -226,39 +226,39 @@ func TestConfirmCountsAttemptsThenRollsBack(t *testing.T) {
 	fakeBin(t, p.Old, "good-old", 0)
 	m := marker{From: "0.3.7", To: "0.3.8"}
 
-	// 前 maxAttempts 次启动只累计计数，让新版有机会自己站稳。
+	// 처음 maxAttempts번 기동은 횟수만 더합니다. 새 버전이 스스로 설 기회를 줍니다.
 	for i := 1; i <= maxAttempts; i++ {
 		action, st := confirmOrRollback(p, m)
 		if action != Continue {
-			t.Fatalf("第 %d 次尝试期望 Continue，得到 %v", i, action)
+			t.Fatalf("%d번째 시도는 Continue를 기대했는데 %v", i, action)
 		}
 		if !st.Pending {
-			t.Errorf("第 %d 次尝试状态应为 Pending", i)
+			t.Errorf("%d번째 시도 상태는 Pending이어야 합니다", i)
 		}
 		got, ok := readMarker(p.Marker)
 		if !ok || got.Attempts != i {
-			t.Fatalf("第 %d 次尝试后 attempts=%d（ok=%v），期望 %d", i, got.Attempts, ok, i)
+			t.Fatalf("%d번째 시도 후 attempts=%d(ok=%v), 기대 %d", i, got.Attempts, ok, i)
 		}
 		m = got
 	}
 
-	// 再崩一次就超限，自动把旧版换回来。
+	// 한 번 더 죽으면 한도를 넘어, 옛 버전으로 자동으로 되돌립니다.
 	action, st := confirmOrRollback(p, m)
 	if action != Restart {
-		t.Fatalf("超过尝试上限时期望 Restart，得到 %v", action)
+		t.Fatalf("시도 한도를 넘으면 Restart를 기대했는데 %v", action)
 	}
 	if !st.RolledBack {
-		t.Error("状态应标记为 RolledBack")
+		t.Error("상태는 RolledBack으로 표시되어야 합니다")
 	}
 	if !strings.Contains(readAll(t, p.Current), "good-old") {
-		t.Fatal("应已回滚到旧版本")
+		t.Fatal("옛 버전으로 되돌려져 있어야 합니다")
 	}
 	if _, err := os.Stat(p.Marker); !os.IsNotExist(err) {
-		t.Error("回滚后标记应清除，否则会无限回滚")
+		t.Error("되돌린 뒤 표시는 지워야 합니다. 그렇지 않으면 무한 되돌리기가 됩니다")
 	}
-	// 起不来的那个版本留作排查，不直接删。
+	// 뜨지 못한 버전은 바로 지우지 않고 조사할 수 있게 남깁니다.
 	if _, err := os.Stat(p.Current + ".failed"); err != nil {
-		t.Error("失败的版本应保留为 .failed 供排查")
+		t.Error("실패한 버전은 조사할 수 있게 .failed로 남아야 합니다")
 	}
 }
 
@@ -268,7 +268,7 @@ func TestManualRollbackIsReversible(t *testing.T) {
 	fakeBin(t, p.Current, "v2", 0)
 	fakeBin(t, p.Old, "v1", 0)
 
-	// Rollback() 走 ResolvePaths()，这里直接测底层的交换语义。
+	// Rollback()은 ResolvePaths()를 탑니다. 여기서는 아래층의 교환 의미만 직접 시험합니다.
 	tmp := p.Current + ".swap"
 	if err := os.Rename(p.Current, tmp); err != nil {
 		t.Fatal(err)
@@ -280,10 +280,10 @@ func TestManualRollbackIsReversible(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !strings.Contains(readAll(t, p.Current), "v1") {
-		t.Error("回滚后当前版本应是 v1")
+		t.Error("되돌린 뒤 현재 버전은 v1이어야 합니다")
 	}
 	if !strings.Contains(readAll(t, p.Old), "v2") {
-		t.Error("回滚后备份应变成 v2，这样还能再滚回去")
+		t.Error("되돌린 뒤 백업은 v2가 되어야 다시 되돌릴 수 있습니다")
 	}
 }
 
@@ -292,29 +292,29 @@ func TestParseSums(t *testing.T) {
 		linuxSum = "1111111111111111111111111111111111111111111111111111111111111111"
 		winSum   = "ABCDEF0000000000000000000000000000000000000000000000000000000000"
 	)
-	// sha256sum 输出是双空格分隔；shasum -a 256 在二进制模式下会给文件名加 *。
+	// sha256sum 출력은 공백 두 칸으로 나눕니다. shasum -a 256의 바이너리 모드는 파일 이름 앞에 *를 붙입니다.
 	raw := linuxSum + "  artex-0.3.8-linux-amd64.zip\n" +
 		winSum + " *artex-0.3.8-windows-amd64.zip\n" +
 		"\n" +
-		"garbage line\n" + // 恰好两个字段，但第一个不是摘要
-		"deadbeef  artex-0.3.8-darwin-arm64.zip\n" // 摘要长度不对
+		"garbage line\n" + // 필드가 정확히 둘이지만 첫 칸이 요약이 아님
+		"deadbeef  artex-0.3.8-darwin-arm64.zip\n" // 요약 길이가 틀림
 
 	out := parseSums(raw)
 	if out["artex-0.3.8-linux-amd64.zip"] != linuxSum {
-		t.Errorf("linux 条目解析错误: %v", out)
+		t.Errorf("linux 항목 해석 오류: %v", out)
 	}
-	// 摘要统一小写，比对时才不会因大小写误判为不匹配。
+	// 요약은 소문자로 통일합니다. 대조할 때 대소문자 때문에 불일치로 오판하지 않습니다.
 	if got := out["artex-0.3.8-windows-amd64.zip"]; got != strings.ToLower(winSum) {
-		t.Errorf("windows 条目错误（* 前缀应剥离、摘要应转小写）: %q", got)
+		t.Errorf("windows 항목 오류(* 접두사는 떼고, 요약은 소문자여야 함): %q", got)
 	}
 	if len(out) != 2 {
-		t.Errorf("应忽略空行、非摘要行和长度不对的行，得到 %v", out)
+		t.Errorf("빈 줄, 요약이 아닌 줄, 길이가 틀린 줄은 무시해야 하는데 %v", out)
 	}
 }
 
 func TestExtractBinaryFindsNestedEntry(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("包内基名在 Windows 上是 artex.exe，此用例按 Unix 命名构造")
+		t.Skip("패키지 안 베이스 이름은 Windows에서 artex.exe입니다. 이 케이스는 Unix 이름으로 만듭니다")
 	}
 	dir := t.TempDir()
 	zipPath := filepath.Join(dir, "release.zip")
@@ -324,7 +324,7 @@ func TestExtractBinaryFindsNestedEntry(t *testing.T) {
 		t.Fatal(err)
 	}
 	zw := zip.NewWriter(f)
-	// 真实发布包的结构：artex-<版本>-<os>-<arch>/artex，外加若干干扰文件。
+	// 실제 배포 패키지 구조: artex-<버전>-<os>-<arch>/artex, 그리고 방해 파일 몇 개.
 	for name, body := range map[string]string{
 		"artex-0.3.8-linux-amd64/README.md":           "readme",
 		"artex-0.3.8-linux-amd64/skills/a.md":         "skill",
@@ -349,14 +349,14 @@ func TestExtractBinaryFindsNestedEntry(t *testing.T) {
 		t.Fatalf("extractBinary: %v", err)
 	}
 	if got := readAll(t, dst); !strings.Contains(got, "exit 0") {
-		t.Errorf("解压出来的不是 artex 可执行文件: %q", got)
+		t.Errorf("풀어낸 것이 artex 실행 파일이 아닙니다: %q", got)
 	}
 	info, err := os.Stat(dst)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if info.Mode().Perm()&0o111 == 0 {
-		t.Error("解压出的二进制必须带执行位")
+		t.Error("풀어낸 바이너리에는 실행 비트가 있어야 합니다")
 	}
 }
 
@@ -374,39 +374,39 @@ func TestExtractBinaryMissingEntry(t *testing.T) {
 	f.Close()
 
 	if err := extractBinary(zipPath, filepath.Join(dir, "out")); err == nil {
-		t.Fatal("包内没有可执行文件时应报错")
+		t.Fatal("패키지 안에 실행 파일이 없으면 오류여야 합니다")
 	}
 }
 
 func TestCheckURLRejectsNonGitHub(t *testing.T) {
 	bad := []string{
-		"http://github.com/x",           // 非 HTTPS
-		"https://evil.com/artex.zip",    // 域名不在白名单
-		"https://github.com.evil.com/x", // 后缀伪装
+		"http://github.com/x",           // HTTPS가 아님
+		"https://evil.com/artex.zip",    // 도메인이 허용 목록에 없음
+		"https://github.com.evil.com/x", // 접미사 위장
 		"https://raw.githubusercontent.com.evil.com/x",
 	}
 	for _, raw := range bad {
 		u := mustParse(t, raw)
 		if err := checkURL(u); err == nil {
-			t.Errorf("checkURL(%q) 应当拒绝", raw)
+			t.Errorf("checkURL(%q) 는 거부해야 합니다", raw)
 		}
 	}
 	good := []string{
 		"https://api.github.com/repos/x/releases/latest",
 		"https://objects.githubusercontent.com/blah",
-		"https://GitHub.com/x", // 域名大小写不敏感
+		"https://GitHub.com/x", // 도메인 대소문자를 가리지 않음
 	}
 	for _, raw := range good {
 		u := mustParse(t, raw)
 		if err := checkURL(u); err != nil {
-			t.Errorf("checkURL(%q) 应当放行，却报错: %v", raw, err)
+			t.Errorf("checkURL(%q) 는 허용해야 하는데 오류: %v", raw, err)
 		}
 	}
 }
 
 func TestAssetNameMatchesBuildScript(t *testing.T) {
-	// build.sh 的 package_binary 用的是 artex-<版本>-<os>-<arch>.zip，且版本号
-	// 去掉了 v 前缀。这里对错一个字符，所有平台的一键更新都会找不到资产。
+	// build.sh의 package_binary는 artex-<버전>-<os>-<arch>.zip을 쓰고, 버전 번호에서
+	// v 접두사를 뗍니다. 여기서 글자 하나가 틀리면 모든 플랫폼의 한 번 업데이트가 자산을 못 찾습니다.
 	if got := AssetName("v0.3.8", "linux", "amd64"); got != "artex-0.3.8-linux-amd64.zip" {
 		t.Errorf("AssetName = %q", got)
 	}
@@ -419,7 +419,7 @@ func mustParse(t *testing.T, raw string) *url.URL {
 	t.Helper()
 	u, err := url.Parse(raw)
 	if err != nil {
-		t.Fatalf("解析 %q: %v", raw, err)
+		t.Fatalf("%q 해석: %v", raw, err)
 	}
 	return u
 }
@@ -436,15 +436,15 @@ func TestSettleClearsMarkerAndStopsRollback(t *testing.T) {
 	settle(p)
 
 	if _, err := os.Stat(p.Marker); !os.IsNotExist(err) {
-		t.Fatal("确认稳定后升级标记必须清除")
+		t.Fatal("안정 확인 뒤 업그레이드 표시는 지워야 합니다")
 	}
-	// 标记没了，后续正常重启就不会再累计次数、也不会误触发回滚。
+	// 표시가 없으면 이후 정상 재시작은 횟수를 더하지 않고, 되돌리기를 잘못 켜지도 않습니다.
 	if _, ok := readMarker(p.Marker); ok {
-		t.Error("标记读取应失败")
+		t.Error("표시 읽기는 실패해야 합니다")
 	}
-	// 备份要留着，用户还能手动回滚。
+	// 백업은 남겨 둡니다. 사용자가 아직 수동으로 되돌릴 수 있습니다.
 	if _, err := os.Stat(p.Old); err != nil {
-		t.Error("确认稳定后仍应保留上一版本备份")
+		t.Error("안정 확인 뒤에도 이전 버전 백업은 남아야 합니다")
 	}
 }
 
@@ -452,8 +452,8 @@ func TestSettleIsNoopWithoutMarker(t *testing.T) {
 	requireUnix(t)
 	p := testPaths(t)
 	fakeBin(t, p.Current, "cur", 0)
-	settle(p) // 普通启动路径，不该 panic 也不该动任何文件
+	settle(p) // 보통 기동 경로. panic도 없고 어떤 파일도 건드리면 안 됩니다
 	if _, err := os.Stat(p.Current); err != nil {
-		t.Error("无标记时 settle 不应影响任何文件")
+		t.Error("표시가 없으면 settle은 어떤 파일에도 영향을 주면 안 됩니다")
 	}
 }

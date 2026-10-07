@@ -19,7 +19,7 @@ func (s *Server) seedFindingWorkflowTools() {
 	if value, _, _ := s.m.pg.GetSetting(hostSearchDescriptionFlag); value != "true" {
 		// Only replace the original built-in text. A user-edited description is
 		// authoritative and must survive upgrades.
-		legacy := "查询记录代理已抓取的目标流量（必须指定 host，可再按 URL 子串或正文关键词过滤）。body_contains 会在已抓取的请求/响应头与正文中做全文搜索，支持任意子串和中文（至少 3 个字符），可用来找响应里的密码、密钥、报错、内网地址等。仅返回极轻量索引(id/method/url/status/resp_len)，不含任何响应内容。默认只返回 3 条、每页最多 10 条；结果多时用 page 翻页（page=0 起）；要看某条的请求/响应原文用 traffic_get(id)。回看已访问资源、找端点先用它，避免重复 curl 同一 URL。"
+		legacy := "기록 프록시(127.0.0.1:8788)가 수집한 대상 트래픽을 조회합니다(host는 필수이며, URL 부분 문자열이나 본문 키워드로 더 필터할 수 있음). body_contains는 이미 수집된 요청/응답 헤더와 본문에서 전문 검색을 하며, 임의 부분 문자열과 중국어를 지원합니다(최소 3자). 응답 안의 비밀번호, 키, 오류, 내부망 주소 등을 찾는 데 쓸 수 있습니다. 매우 가벼운 인덱스(id/method/url/status/resp_len)만 반환하며 응답 내용은 포함하지 않습니다. 기본은 3건만 반환하고 페이지당 최대 10건입니다. 결과가 많으면 page로 넘깁니다(page=0부터). 특정 항목의 요청/응답 원문은 traffic_get(id)로 봅니다. 이미 방문한 자원과 엔드포인트를 찾을 때는 먼저 이것을 써서 같은 URL을 curl로 반복하지 않습니다."
 		if _, err := s.m.pg.Exec(`UPDATE tools SET description=$1,updated_at=now() WHERE key='traffic_search' AND system AND description=$2`, traffic.TrafficSearchDescription, legacy); err != nil {
 			// Log and leave the flag unset so the next startup retries; do not
 			// return, or a transient error here would also skip the reporter
@@ -54,7 +54,7 @@ func (s *Server) seedFindingWorkflowTools() {
 		props := objectProperty(schema, "properties")
 		if key == "report_finding" {
 			if _, exists := props["evidence_hint_id"]; !exists {
-				props["evidence_hint_id"] = map[string]any{"type": "integer", "description": "可选：本任务中对应此漏洞的 hint ID；读取该提示保存的 traffic_refs 一并绑定，无提示时省略"}
+				props["evidence_hint_id"] = map[string]any{"type": "integer", "description": "선택: 이 작업에서 이 발견(finding)에 해당하는 hint ID. 해당 힌트에 저장된 traffic_refs를 읽어 함께 묶으며, 힌트가 없으면 생략"}
 			}
 		} else {
 			if _, exists := props["traffic_refs"]; !exists {
@@ -69,7 +69,7 @@ func (s *Server) seedFindingWorkflowTools() {
 				items["type"] = "object"
 			}
 			itemProps := objectProperty(items, "properties")
-			for name, value := range map[string]any{"text": strParam("提示内容"), "asset_ids": map[string]any{"type": "array", "items": map[string]any{"type": "integer"}}, "traffic_refs": agent.HintTrafficSchema()} {
+			for name, value := range map[string]any{"text": strParam("힌트 내용"), "asset_ids": map[string]any{"type": "array", "items": map[string]any{"type": "integer"}}, "traffic_refs": agent.HintTrafficSchema()} {
 				if _, exists := itemProps[name]; !exists {
 					itemProps[name] = value
 				}
@@ -117,37 +117,37 @@ func objectProperty(parent map[string]any, key string) map[string]any {
 
 func (s *Server) agentFindingTrafficAccess(ctx context.Context, id int64, write bool) error {
 	if id <= 0 {
-		return errors.New("finding_id 必须为独立漏洞记录 ID；不是探索节点 ID")
+		return errors.New("finding_id는 독립 발견 기록 ID여야 합니다. 탐색 노드 ID가 아닙니다")
 	}
 	f, err := s.m.pg.GetFinding(id)
 	if err != nil {
 		return err
 	}
 	if f == nil {
-		return fmt.Errorf("%w：finding_id=%d。证据工具使用独立漏洞记录 ID，请从 list_task_findings / get_task_node_detail 的 finding_id 字段读取；不要传 id / finding_node_id", db.ErrFindingNotFound, id)
+		return fmt.Errorf("%w: finding_id=%d. 증거 도구는 독립 발견 기록 ID를 사용합니다. list_task_findings / get_task_node_detail의 finding_id 필드에서 읽으세요. id / finding_node_id를 넘기지 마세요", db.ErrFindingNotFound, id)
 	}
 	if ri := agent.RunInfoFrom(ctx); ri.TaskID > 0 {
 		task := s.m.ResolveTask(strconv.FormatInt(ri.TaskID, 10))
 		if task == nil {
-			return errors.New("任务不存在")
+			return errors.New("작업이 없습니다")
 		}
 		_, inherited, allowed := findingProvenanceInTask(task, f.TaskID)
 		if !allowed {
-			return errors.New("当前任务不可读取该漏洞")
+			return errors.New("이 작업에서는 해당 발견을 읽을 수 없습니다")
 		}
 		if write && inherited {
-			return errors.New("继承漏洞的流量证据只读，请到来源任务修改")
+			return errors.New("상속된 발견(finding)의 트래픽 증거는 읽기 전용입니다. 출처 작업에서 수정하세요")
 		}
 	}
 	return nil
 }
 
 func (s *Server) toolBindFindingTraffic() actool.CoreTool {
-	return wrTool("bind_finding_traffic", "为已登记漏洞补绑经核实的真实 HTTP 流量。finding_id 使用独立漏洞记录 ID；不要传探索节点 ID。同批引用全部成功或全部失败，重复引用不覆盖已有说明。补绑会使已有报告标记待更新；不要为补包重新探测或重复创建漏洞。",
-		objSchema(map[string]any{"finding_id": strParam("独立漏洞记录 ID，从 list_task_findings / get_task_node_detail 的 finding_id 字段读取"), "traffic_refs": agent.HintTrafficSchema()}, "finding_id", "traffic_refs"),
+	return wrTool("bind_finding_traffic", "이미 등록된 발견(finding)에 검증된 실제 HTTP 트래픽을 추가로 묶습니다. finding_id는 독립 발견(finding) 기록 ID를 쓰고, 탐색 노드 ID를 넘기지 마세요. 같은 묶음의 참조는 전부 성공하거나 전부 실패하며, 중복 참조는 기존 설명을 덮어쓰지 않습니다. 추가 바인딩은 기존 보고서를 업데이트 대기로 표시합니다. 패킷을 보강하려고 다시 탐색하거나 발견(finding)을 중복 생성하지 마세요.",
+		objSchema(map[string]any{"finding_id": strParam("독립 발견(finding) 기록 ID. list_task_findings / get_task_node_detail의 finding_id 필드에서 읽습니다"), "traffic_refs": agent.HintTrafficSchema()}, "finding_id", "traffic_refs"),
 		func(ctx context.Context, raw json.RawMessage) (actool.Result, error) {
 			if !s.m.pg.GetBool(settingAgentTrafficBinding, false) {
-				return actool.Errorf("Agent 自动绑定流量已关闭；请在系统设置开启，或使用页面人工绑定。"), nil
+				return actool.Errorf("에이전트의 트래픽 자동 바인딩이 꺼져 있습니다. 시스템 설정에서 켜거나, 화면에서 수동으로 묶으세요."), nil
 			}
 			var args struct {
 				FindingID json.RawMessage `json:"finding_id"`
@@ -161,7 +161,7 @@ func (s *Server) toolBindFindingTraffic() actool.CoreTool {
 				return actool.Errorf(err.Error()), nil
 			}
 			if len(args.Refs) == 0 {
-				return actool.Errorf("补绑需要至少一条已核实的 traffic_refs；无流量无需调用此工具"), nil
+				return actool.Errorf("추가 바인딩에는 검증된 traffic_refs가 최소 한 건 필요합니다. 트래픽이 없으면 이 도구를 호출하지 마세요"), nil
 			}
 			list, err := s.evidenceStore().Bind(ctx, id, args.Refs)
 			if err != nil {

@@ -38,12 +38,12 @@ func validWorkerMessageRequestID(id string) bool {
 func (s *Server) sendWorkerMessage(w http.ResponseWriter, r *http.Request) {
 	t, ok := s.m.Task(r.PathValue("id"))
 	if !ok {
-		writeErr(w, http.StatusNotFound, "task not found")
+		writeErr(w, http.StatusNotFound, "작업을 찾을 수 없습니다")
 		return
 	}
 	iid, err := strconv.ParseInt(r.PathValue("iid"), 10, 64)
 	if err != nil || iid <= 0 {
-		writeErr(w, http.StatusBadRequest, "bad intent id")
+		writeErr(w, http.StatusBadRequest, "의도 id가 올바르지 않습니다")
 		return
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxWorkerMessageBytes)
@@ -54,24 +54,24 @@ func (s *Server) sendWorkerMessage(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {
-			writeErr(w, http.StatusRequestEntityTooLarge, "请求体过大")
+			writeErr(w, http.StatusRequestEntityTooLarge, "요청 본문이 너무 큽니다")
 			return
 		}
-		writeErr(w, http.StatusBadRequest, "bad json: "+err.Error())
+		writeErr(w, http.StatusBadRequest, "JSON 이 올바르지 않습니다: "+err.Error())
 		return
 	}
 	message := strings.TrimSpace(req.Message)
 	requestID := strings.TrimSpace(req.RequestID)
 	if message == "" {
-		writeErr(w, http.StatusBadRequest, "消息不能为空")
+		writeErr(w, http.StatusBadRequest, "메시지는 비울 수 없습니다")
 		return
 	}
 	if len([]rune(message)) > 4000 {
-		writeErr(w, http.StatusBadRequest, "消息不能超过 4000 个字符")
+		writeErr(w, http.StatusBadRequest, "메시지는 4000자를 넘을 수 없습니다")
 		return
 	}
 	if !validWorkerMessageRequestID(requestID) {
-		writeErr(w, http.StatusBadRequest, "request_id 必须是 1-128 位字母、数字、-、_、. 或 :")
+		writeErr(w, http.StatusBadRequest, "request_id는 1–128자의 영문, 숫자, -, _, ., : 만 쓸 수 있습니다")
 		return
 	}
 
@@ -79,22 +79,22 @@ func (s *Server) sendWorkerMessage(w http.ResponseWriter, r *http.Request) {
 	// instead of a silent no-op. The intent itself must be paused: the UI flow is
 	// interrupt (pause) first, then send.
 	if s.engine.IsDeleting(t.ID) {
-		writeErr(w, http.StatusConflict, "任务正在删除，无法向 Worker 发送消息")
+		writeErr(w, http.StatusConflict, "작업을 삭제하는 중이라 워커에 메시지를 보낼 수 없습니다")
 		return
 	}
 	lifecycle := t.lifecycleSnapshot()
 	switch {
 	case lifecycle.Paused || s.engine.IsPaused(t.ID):
-		writeErr(w, http.StatusConflict, "任务已暂停，请先恢复任务再向 Worker 发送消息")
+		writeErr(w, http.StatusConflict, "작업이 일시정지되어 있습니다. 재개한 뒤 워커에 메시지를 보내세요")
 		return
 	case lifecycle.Queued:
-		writeErr(w, http.StatusConflict, "排队中的任务无法向 Worker 发送消息")
+		writeErr(w, http.StatusConflict, "대기 중인 작업에는 워커 메시지를 보낼 수 없습니다")
 		return
 	case isTerminalStatus(lifecycle.Status):
-		writeErr(w, http.StatusConflict, "终态任务无法向 Worker 发送消息")
+		writeErr(w, http.StatusConflict, "이미 끝난 작업에는 워커 메시지를 보낼 수 없습니다")
 		return
 	case s.engine.isSettling(t.ID):
-		writeErr(w, http.StatusConflict, "任务正在收尾，无法向 Worker 发送消息")
+		writeErr(w, http.StatusConflict, "작업이 마무리 중이라 워커에 메시지를 보낼 수 없습니다")
 		return
 	}
 
@@ -105,18 +105,18 @@ func (s *Server) sendWorkerMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	if node == nil {
 		if inherited, sourceErr := t.Store.GetNodeWithSources(iid); sourceErr == nil && inherited != nil && inherited.Inherited {
-			writeErr(w, http.StatusConflict, "继承意图为只读，不能发送 Worker 消息")
+			writeErr(w, http.StatusConflict, "상속된 의도는 읽기 전용이라 워커 메시지를 보낼 수 없습니다")
 			return
 		}
-		writeErr(w, http.StatusNotFound, "intent not found")
+		writeErr(w, http.StatusNotFound, "의도를 찾을 수 없습니다")
 		return
 	}
 	if node.Kind != db.KindIntent {
-		writeErr(w, http.StatusConflict, "node is not an intent")
+		writeErr(w, http.StatusConflict, "이 노드는 의도가 아닙니다")
 		return
 	}
 	if node.State != "paused" {
-		writeErr(w, http.StatusConflict, "仅已暂停的 Worker 可以发送消息，请先暂停")
+		writeErr(w, http.StatusConflict, "일시정지된 워커만 메시지를 받을 수 있습니다. 먼저 일시정지하세요")
 		return
 	}
 	agentMessage, ok := s.prepareChatMentionMessage(w, message)

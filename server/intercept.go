@@ -40,11 +40,11 @@ func (s *Server) wireInterceptReviewer() {
 			}
 		}
 		if profileID == 0 {
-			return intercept.Decision{}, fmt.Errorf("未配置可用的裁判模型")
+			return intercept.Decision{}, fmt.Errorf("사용 가능한 심판 모델이 구성되지 않았다")
 		}
 		prov, _, ok := s.providerForProfile(profileID)
 		if !ok {
-			return intercept.Decision{ProfileID: profileID}, fmt.Errorf("裁判模型 profile %d 不可用", profileID)
+			return intercept.Decision{ProfileID: profileID}, fmt.Errorf("판정 모델 profile %d 을(를) 쓸 수 없습니다", profileID)
 		}
 		// Tag this call's usage as the "judge" lane so the config page can report
 		// how much the fallback approval has spent, separate from model profiles.
@@ -55,7 +55,7 @@ func (s *Server) wireInterceptReviewer() {
 		}
 		v := intercept.ParseVerdict(text)
 		if v.Action == "" {
-			return intercept.Decision{ProfileID: profileID}, fmt.Errorf("模型裁决格式无效，必须包含裁决、实际操作、成功后的后果和命中规则")
+			return intercept.Decision{ProfileID: profileID}, fmt.Errorf("모델 판정 형식이 올바르지 않습니다. 판정, 실제 동작, 성공 뒤의 결과, 맞춘 규칙이 모두 있어야 합니다")
 		}
 		return intercept.Decision{Action: v.Action, Message: v.Reason, ProfileID: profileID}, nil
 	})
@@ -141,7 +141,7 @@ func (s *Server) interceptUpdateRule(w http.ResponseWriter, r *http.Request) {
 	}
 	id, ok := pathInt(r, "id")
 	if !ok {
-		writeErr(w, 400, "bad rule id")
+		writeErr(w, 400, "규칙 id가 올바르지 않습니다")
 		return
 	}
 	var req interceptRuleReq
@@ -169,7 +169,7 @@ func (s *Server) interceptDeleteRule(w http.ResponseWriter, r *http.Request) {
 	}
 	id, ok := pathInt(r, "id")
 	if !ok {
-		writeErr(w, 400, "bad rule id")
+		writeErr(w, 400, "규칙 id가 올바르지 않습니다")
 		return
 	}
 	if err := pg.DeleteInterceptRule(id); err != nil {
@@ -187,7 +187,7 @@ func (s *Server) interceptToggleRule(w http.ResponseWriter, r *http.Request) {
 	}
 	id, ok := pathInt(r, "id")
 	if !ok {
-		writeErr(w, 400, "bad rule id")
+		writeErr(w, 400, "규칙 id가 올바르지 않습니다")
 		return
 	}
 	var req struct {
@@ -230,7 +230,7 @@ func (s *Server) interceptGetOne(w http.ResponseWriter, r *http.Request) {
 	}
 	id, ok := pathInt(r, "id")
 	if !ok {
-		writeErr(w, 400, "bad pending id")
+		writeErr(w, 400, "대기 id가 올바르지 않습니다")
 		return
 	}
 	p, err := pg.GetInterceptPending(id)
@@ -252,7 +252,7 @@ func (s *Server) interceptListTaskItems(w http.ResponseWriter, r *http.Request) 
 	}
 	taskID := r.PathValue("taskID")
 	if taskID == "" {
-		writeErr(w, 400, "bad task id")
+		writeErr(w, 400, "작업 id가 올바르지 않습니다")
 		return
 	}
 	q := r.URL.Query()
@@ -325,12 +325,12 @@ func interceptFilterParams(q url.Values) (db.InterceptApprovalFilter, error) {
 	switch filter.Status {
 	case "", "pending", "allowed", "denied", "timeout":
 	default:
-		return filter, fmt.Errorf("status 必须是 pending、allowed、denied 或 timeout")
+		return filter, fmt.Errorf("status는 pending, allowed, denied 또는 timeout이어야 한다")
 	}
 	switch filter.DecisionSource {
 	case "", "model", "rule", "unknown":
 	default:
-		return filter, fmt.Errorf("decision_source 必须是 model、rule 或 unknown")
+		return filter, fmt.Errorf("decision_source는 model, rule 또는 unknown이어야 한다")
 	}
 	return filter, nil
 }
@@ -353,7 +353,7 @@ func interceptPageParams(q url.Values) (int, int) {
 func (s *Server) interceptDecide(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathInt(r, "id")
 	if !ok {
-		writeErr(w, 400, "bad pending id")
+		writeErr(w, 400, "대기 id가 올바르지 않습니다")
 		return
 	}
 	var req struct {
@@ -364,7 +364,7 @@ func (s *Server) interceptDecide(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Decision != "allowed" && req.Decision != "denied" {
-		writeErr(w, 400, "decision 必须是 allowed 或 denied")
+		writeErr(w, 400, "decision은 allowed 또는 denied여야 한다")
 		return
 	}
 	if err := s.m.interceptor.Decide(id, req.Decision == "allowed"); err != nil {
@@ -378,7 +378,7 @@ func (s *Server) interceptDecide(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"ok": true})
 }
 
-// --- tool-config (全局工具拦截范围) ---
+// --- tool-config (전역 도구 가로채기 범위) --- 이 조각은 엔진이 도구 호출을 가로채기(intercept)하는 경계를 정하고, 자산 그래프와 탐색 그래프에 남길 호출과 연결된다.
 
 // interceptGetToolConfig returns the list of tool names that are currently
 // configured to enter the intercept rule system.
@@ -411,7 +411,7 @@ func (s *Server) interceptSetToolConfig(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, 200, map[string]any{"ok": true})
 }
 
-// --- LLM fallback judge config (全局模型兜底) ---
+// --- LLM fallback judge config (전역 모델 폴백) --- 이 조각은 엔진이 작업의 판정 모델을 고를 때 쓰는 전역 폴백이며, UI는 탐색 그래프에 적힌 작업 상태를 읽는다.
 
 // interceptGetJudgeConfig returns the resolved judge configuration. Prompt is the
 // effective prompt (built-in template when unset), so the UI can prefill it.
@@ -429,13 +429,13 @@ func (s *Server) interceptSetJudgeConfig(w http.ResponseWriter, r *http.Request)
 	switch req.FailAction {
 	case "allow", "ask", "deny":
 	default:
-		writeErr(w, 400, "fail_action 必须是 allow、ask 或 deny")
+		writeErr(w, 400, "fail_action은 allow, ask 또는 deny여야 한다")
 		return
 	}
 	switch req.AskTimeoutAction {
 	case "allow", "deny":
 	default:
-		writeErr(w, 400, "ask_timeout_action 必须是 allow 或 deny")
+		writeErr(w, 400, "ask_timeout_action은 allow 또는 deny여야 한다")
 		return
 	}
 	if err := s.m.interceptor.SetJudgeConfig(req); err != nil {
@@ -480,29 +480,29 @@ type interceptRuleReq struct {
 
 func validateInterceptRuleReq(req interceptRuleReq) error {
 	if req.Name == "" {
-		return fmt.Errorf("name 不能为空")
+		return fmt.Errorf("name은 비어 있으면 안 된다")
 	}
 	switch req.MatchTarget {
 	case "tool_name", "tool_input":
 	default:
-		return fmt.Errorf("match_target 必须是 tool_name 或 tool_input")
+		return fmt.Errorf("match_target은 tool_name 또는 tool_input이어야 한다")
 	}
 	switch req.MatchType {
 	case "string", "regex":
 	default:
-		return fmt.Errorf("match_type 必须是 string 或 regex")
+		return fmt.Errorf("match_type은 string 또는 regex여야 한다")
 	}
 	if req.Pattern == "" {
-		return fmt.Errorf("pattern 不能为空")
+		return fmt.Errorf("pattern은 비울 수 없습니다")
 	}
 	switch req.Action {
 	case "allow", "deny", "ask":
 	default:
-		return fmt.Errorf("action 必须是 allow、deny 或 ask")
+		return fmt.Errorf("action은 allow, deny 또는 ask여야 한다")
 	}
 	if req.MatchType == "regex" {
 		if _, err := regexp.Compile(req.Pattern); err != nil {
-			return fmt.Errorf("pattern 不是有效正则：%w", err)
+			return fmt.Errorf("pattern은 유효한 정규식이 아니다: %w", err)
 		}
 	}
 	return nil
@@ -515,7 +515,7 @@ func (s *Server) interceptDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	id, ok := pathInt(r, "id")
 	if !ok || id <= 0 {
-		writeErr(w, 400, "bad approval id")
+		writeErr(w, 400, "승인 id가 올바르지 않습니다")
 		return
 	}
 	detail, err := pg.GetInterceptDetail(id)
@@ -538,7 +538,7 @@ func (s *Server) interceptExecution(w http.ResponseWriter, r *http.Request) {
 	}
 	id, ok := pathInt(r, "id")
 	if !ok || id <= 0 {
-		writeErr(w, 400, "bad approval id")
+		writeErr(w, 400, "승인 id가 올바르지 않습니다")
 		return
 	}
 	target, err := pg.GetInterceptExecution(id)
@@ -565,11 +565,11 @@ func (s *Server) interceptExecution(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			if conv == nil {
-				writeErr(w, http.StatusGone, "对话已被删除")
+				writeErr(w, http.StatusGone, "대화가 삭제되었습니다")
 				return
 			}
 		}
-		writeErr(w, 404, "审批记录已被删除或不存在")
+		writeErr(w, 404, "승인 기록이 삭제되었거나 존재하지 않는다")
 		return
 	}
 	writeJSON(w, 200, map[string]any{"conversation_id": target.ConversationID, "task_id": target.TaskID, "session": target.Session, "seq": target.Seq, "items": activityDTOs(target.Items)})

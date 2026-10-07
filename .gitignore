@@ -34,9 +34,9 @@ Thumbs.db
 # claude code local state
 .claude/
 
-# 内嵌前端的单二进制产物
+# 내장 프론트엔드가 들어간 단일 바이너리
 /artex
-# 一键更新在可执行文件旁留下的中间产物（暂存件 / 备份 / 失败版本 / 升级标记）
+# 한 번에 업데이트할 때 실행 파일 옆에 남는 중간 파일(임시 / 백업 / 실패한 버전 / 업그레이드 표시)
 /artex.new
 /artex.new.sha256
 /artex.old
@@ -45,7 +45,7 @@ Thumbs.db
 /server/webui/dist/
 /dist/
 
-# JWT 签名密钥（运行时生成，存项目根，绝不提交）
+# JWT 서명 키. 실행 중에 프로젝트 루트에 만들어지므로 커밋하지 않는다.
 /jwt.key
 
 # Docker 部署生成的本地环境（含密码/密钥，不提交）

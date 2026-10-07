@@ -136,15 +136,15 @@ export default function MCPPage() {
 
   async function saveForm() {
     if (!form.name.trim()) {
-      toast.error("请填写名称");
+      toast.error("이름을 입력하세요");
       return;
     }
     if (form.transport === "stdio" && !form.command.trim()) {
-      toast.error("请填写命令");
+      toast.error("명령을 입력하세요");
       return;
     }
     if (form.transport !== "stdio" && !form.url.trim()) {
-      toast.error("请填写远程 URL");
+      toast.error("원격 URL을 입력하세요");
       return;
     }
     setSaving(true);
@@ -156,7 +156,7 @@ export default function MCPPage() {
               url: form.url.trim(),
               command: "",
               args: [] as string[],
-              env: parseEnv(form.env), // 远程模式下 env 即请求头
+              env: parseEnv(form.env), // 원격 모드에서 env는 곧 요청 헤더
               insecure: form.insecure,
             }
           : {
@@ -172,11 +172,11 @@ export default function MCPPage() {
         enabled: editing ? editing.enabled : true,
         ...base,
       });
-      toast.success(editing ? "已保存" : "已添加 MCP 服务器");
+      toast.success(editing ? "저장했습니다" : "MCP 서버를 추가했습니다");
       if (!editing) setOpen(false);
       load();
     } catch (e) {
-      toast.error("保存失败：" + (e as Error).message);
+      toast.error("저장 실패:" + (e as Error).message);
     } finally {
       setSaving(false);
     }
@@ -188,10 +188,10 @@ export default function MCPPage() {
     try {
       const t = await api.refreshMcpServer(editing.id);
       setTools(t);
-      toast.success(`发现 ${t.length} 个工具`);
+      toast.success(`발견 ${t.length} 개 도구`);
       load();
     } catch (e) {
-      toast.error("刷新失败：" + (e as Error).message);
+      toast.error("새로고침 실패:" + (e as Error).message);
     } finally {
       setRefreshing(false);
     }
@@ -200,11 +200,11 @@ export default function MCPPage() {
   async function removeServer(s: MCPServer) {
     try {
       await api.deleteMcpServer(s.id);
-      toast.success(`已删除：${s.name}`);
+      toast.success(`삭제됨:${s.name}`);
       setOpen(false);
       load();
     } catch (e) {
-      toast.error("删除失败：" + (e as Error).message);
+      toast.error("삭제 실패:" + (e as Error).message);
     }
   }
 
@@ -213,7 +213,7 @@ export default function MCPPage() {
       await api.saveMcpServer({ ...s, enabled: !s.enabled });
       load();
     } catch (e) {
-      toast.error("操作失败：" + (e as Error).message);
+      toast.error("동작 실패: " + (e as Error).message);
     }
   }
 
@@ -221,10 +221,10 @@ export default function MCPPage() {
     const on = (visibility[serverId] ?? []).includes(agentId);
     try {
       await api.toggleVisibility(agentId, "mcp", serverId, !on);
-      toast.success(`${on ? "取消" : "授予"}「${agentName}」可见`);
+      toast.success(`${on ? "취소" : "부여"}「${agentName}」에 보임`);
       load();
     } catch (e) {
-      toast.error("操作失败：" + (e as Error).message);
+      toast.error("동작 실패: " + (e as Error).message);
     }
   }
 
@@ -232,33 +232,33 @@ export default function MCPPage() {
     return (
       <div className="grid gap-4 py-4">
         <div className="grid gap-2">
-          <Label>传输方式</Label>
+          <Label>전송 방식</Label>
           <div className="flex gap-2">
             <Button
               type="button"
               variant={form.transport === "stdio" ? "default" : "outline"}
               onClick={() => setF({ transport: "stdio" })}
             >
-              stdio（本地）
+              stdio(로컬)
             </Button>
             <Button
               type="button"
               variant={form.transport === "http" ? "default" : "outline"}
               onClick={() => setF({ transport: "http" })}
             >
-              http（远程）
+              http(원격)
             </Button>
             <Button
               type="button"
               variant={form.transport === "sse" ? "default" : "outline"}
               onClick={() => setF({ transport: "sse" })}
             >
-              sse（旧版）
+              sse(이전 버전)
             </Button>
           </div>
         </div>
         <div className="grid gap-2">
-          <Label htmlFor="m-name">名称</Label>
+          <Label htmlFor="m-name">이름</Label>
           <Input
             id="m-name"
             placeholder="filesystem"
@@ -269,7 +269,7 @@ export default function MCPPage() {
         {form.transport === "stdio" ? (
           <>
             <div className="grid gap-2">
-              <Label htmlFor="m-cmd">命令</Label>
+              <Label htmlFor="m-cmd">명령</Label>
               <Input
                 id="m-cmd"
                 className="font-mono"
@@ -279,7 +279,7 @@ export default function MCPPage() {
               />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="m-args">参数（空格分隔）</Label>
+              <Label htmlFor="m-args">매개변수(공백으로 구분)</Label>
               <Input
                 id="m-args"
                 className="font-mono"
@@ -291,7 +291,7 @@ export default function MCPPage() {
           </>
         ) : (
           <div className="grid gap-2">
-            <Label htmlFor="m-url">远程 URL</Label>
+            <Label htmlFor="m-url">원격 URL</Label>
             <Input
               id="m-url"
               className="font-mono"
@@ -304,15 +304,15 @@ export default function MCPPage() {
                 checked={form.insecure}
                 onCheckedChange={(v) => setF({ insecure: v === true })}
               />
-              跳过 TLS 证书校验（自签证书）
+              TLS 인증서 검사 건너뛰기(자체 서명 인증서)
             </label>
           </div>
         )}
         <div className="grid gap-2">
           <Label htmlFor="m-env">
             {form.transport !== "stdio"
-              ? "请求头（每行 KEY=VALUE，如 Authorization=Bearer xxx）"
-              : "环境变量（每行 KEY=VALUE）"}
+              ? "요청 헤더(한 줄에 KEY=VALUE, 예: Authorization=Bearer xxx)"
+              : "환경 변수(한 줄에 KEY=VALUE)"}
           </Label>
           <Textarea
             id="m-env"
@@ -332,15 +332,15 @@ export default function MCPPage() {
     return (
       <div className="flex flex-col gap-3 py-4">
         <div className="flex items-center justify-between">
-          <span className="text-muted-foreground text-sm">{tools.length} 个工具</span>
+          <span className="text-muted-foreground text-sm">{tools.length} 개 도구</span>
           <Button size="sm" variant="outline" disabled={refreshing} onClick={refreshTools}>
-            <RefreshCwIcon className={refreshing ? "animate-spin" : ""} /> 刷新
+            <RefreshCwIcon className={refreshing ? "animate-spin" : ""} /> 새로고침
           </Button>
         </div>
         {toolsLoading ? (
-          <p className="text-muted-foreground text-sm">加载中…</p>
+          <p className="text-muted-foreground text-sm">불러오는 중…</p>
         ) : tools.length === 0 ? (
-          <p className="text-muted-foreground text-sm">尚未发现工具，点击刷新重新获取。</p>
+          <p className="text-muted-foreground text-sm">아직 도구를 찾지 못했습니다. 새로고침을 눌러 다시 가져오세요.</p>
         ) : (
           <div className="flex flex-col divide-y">
             {tools.map((t) => (
@@ -363,7 +363,7 @@ export default function MCPPage() {
     <div className="flex flex-1 flex-col gap-4 md:gap-6">
       <div>
         <h1 className="text-xl font-semibold tracking-tight">MCP</h1>
-        <p className="text-muted-foreground text-sm">外部 MCP 工具服务器 · 按 Agent 授权可见</p>
+        <p className="text-muted-foreground text-sm">외부 MCP 도구 서버 · Agent 권한에 따라 표시</p>
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -373,7 +373,7 @@ export default function MCPPage() {
           className="text-foreground/70 border-foreground/70 hover:bg-muted/60 hover:shadow-sm flex min-h-[116px] flex-col items-center justify-center gap-2 rounded-xl border border-dashed transition"
         >
           <PlusIcon className="size-6" />
-          <span className="text-sm">添加 MCP</span>
+          <span className="text-sm">MCP 추가</span>
         </button>
 
         {servers.map((s) => (
@@ -393,12 +393,12 @@ export default function MCPPage() {
                   <Switch
                     checked={s.enabled}
                     onCheckedChange={() => toggleEnabled(s)}
-                    aria-label="启用"
+                    aria-label="사용"
                   />
                   <Button
                     size="icon"
                     variant="outline"
-                    aria-label="删除"
+                    aria-label="삭제"
                     onClick={() => removeServer(s)}
                   >
                     <Trash2Icon className="text-destructive" />
@@ -408,10 +408,10 @@ export default function MCPPage() {
             </CardHeader>
             <CardContent className="grid gap-3">
               <p className="text-muted-foreground text-sm">
-                {s.tools && s.tools.length > 0 ? `${s.tools.length} 个工具` : "尚未发现工具"}
+                {s.tools && s.tools.length > 0 ? `${s.tools.length} 개 도구` : "아직 도구를 찾지 못함"}
               </p>
               <div className="grid gap-2" onClick={(e) => e.stopPropagation()}>
-                <span className="text-muted-foreground text-xs">可见性（按 Agent 授权）</span>
+                <span className="text-muted-foreground text-xs">표시 범위(Agent 권한별)</span>
                 <div className="flex flex-wrap gap-x-4 gap-y-2">
                   {agents.map((a) => (
                     <label key={a.key} className="flex items-center gap-2 text-sm">
@@ -435,9 +435,9 @@ export default function MCPPage() {
           className="w-full data-[side=right]:sm:max-w-lg"
         >
           <SheetHeader>
-            <SheetTitle>{editing ? editing.name : "添加 MCP 服务器"}</SheetTitle>
+            <SheetTitle>{editing ? editing.name : "MCP 서버 추가"}</SheetTitle>
             <SheetDescription>
-              stdio（本地起进程）或 http（远程 Streamable HTTP）
+              stdio(로컬에서 프로세스 시작) 또는 http(원격 Streamable HTTP)
             </SheetDescription>
           </SheetHeader>
 
@@ -448,16 +448,16 @@ export default function MCPPage() {
               className="flex min-h-0 flex-1 flex-col px-4"
             >
               <TabsList>
-                <TabsTrigger value="config">配置</TabsTrigger>
+                <TabsTrigger value="config">설정</TabsTrigger>
                 <TabsTrigger value="tools">
-                  工具列表{tools.length ? `（${tools.length}）` : ""}
+                  도구 목록{tools.length ? `（${tools.length}）` : ""}
                 </TabsTrigger>
               </TabsList>
               <TabsContent value="config" className="min-h-0 flex-1 overflow-y-auto">
                 {renderForm()}
                 <div className="flex gap-2 pt-2 pb-6">
                   <Button onClick={saveForm} disabled={saving}>
-                    保存
+                    저장
                   </Button>
                 </div>
               </TabsContent>
@@ -470,7 +470,7 @@ export default function MCPPage() {
               {renderForm()}
               <div className="pt-2 pb-6">
                 <Button onClick={saveForm} disabled={saving}>
-                  <PlusIcon /> 添加
+                  <PlusIcon /> 추가
                 </Button>
               </div>
             </div>

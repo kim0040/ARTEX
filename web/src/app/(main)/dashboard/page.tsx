@@ -44,9 +44,9 @@ import { cn } from "@/lib/utils";
 // ── chart constants ───────────────────────────────────────────────────────────
 
 const dailyTrendConfig = {
-  input: { label: "输入", color: "hsl(217 91% 60%)" },
-  output: { label: "输出", color: "hsl(263 70% 60%)" },
-  cacheRead: { label: "缓存读", color: "hsl(160 60% 45%)" },
+  input: { label: "입력", color: "hsl(217 91% 60%)" },
+  output: { label: "출력", color: "hsl(263 70% 60%)" },
+  cacheRead: { label: "캐시 읽기", color: "hsl(160 60% 45%)" },
 } satisfies ChartConfig;
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -55,12 +55,12 @@ function fmtRel(ts?: string | number): string {
   if (!ts) return "—";
   const ms = Date.now() - (typeof ts === "number" ? ts * 1000 : Date.parse(ts as string));
   const s = Math.floor(ms / 1000);
-  if (s < 60) return `${s}s 前`;
+  if (s < 60) return `${s}s 전`;
   const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m 前`;
+  if (m < 60) return `${m}m 전`;
   const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h 前`;
-  return `${Math.floor(h / 24)}d 前`;
+  if (h < 24) return `${h}h 전`;
+  return `${Math.floor(h / 24)}d 전`;
 }
 
 function fmtTokens(n: number): string {
@@ -70,12 +70,12 @@ function fmtTokens(n: number): string {
 }
 
 const ASSET_TYPE_LABELS: Record<string, string> = {
-  root_domain: "根域名",
+  root_domain: "루트 도메인",
   ip: "IP",
-  subdomain: "子域名",
-  app: "应用",
-  service: "服务",
-  endpoint: "端点",
+  subdomain: "서브도메인",
+  app: "앱",
+  service: "서비스",
+  endpoint: "엔드포인트",
 };
 
 const ASSET_COLORS: Record<string, string> = {
@@ -328,14 +328,14 @@ export default function DashboardPage() {
   // tasks whose llm_profile_id is null/undefined used the active default profile
   const defaultProfileId = activeProfile ? Number(activeProfile.id) : null;
 
-  // 数据源开关：旧版 = activity（task.tokens + 会话），新版 = llm_usage 计量账本。
+  // 데이터 출처 스위치: 예전 = activity(task.tokens + 세션), 새 버전 = llm_usage 계량 장부.
   const [tokenVersion, setTokenVersion] = React.useState<"old" | "new">("old");
-  // selected profile tab: "all" = 全部; number = specific profile id
+  // 고른 profile tab: "all" = 전체. number = 특정 profile id
   const [tokenTab, setTokenTab] = React.useState<number | null | "all">("all");
   // day range for the daily bar chart
   const [tokenDays, setTokenDays] = React.useState<7 | 30 | 90 | 180 | 365>(30);
 
-  // profile 名 → id，用于把 llm_usage 的 profile_name 映射到现有 profile 分栏。
+  // profile 이름 → id. llm_usage의 profile_name을 기존 profile 칸에 대응시킬 때 씁니다.
   const profileIdByName = React.useMemo(() => {
     const m = new Map<string, number>();
     for (const p of llmProfiles) m.set(p.name, Number(p.id));
@@ -344,7 +344,7 @@ export default function DashboardPage() {
 
   type Bucket = { input: number; output: number; cacheRead: number; cacheWrite: number; taskCount: number };
 
-  // 旧版：按 profile 归桶（来自 activity 的 task.tokens + 会话用量）。
+  // 예전: profile별로 통에 넣음(activity의 task.tokens + 세션 사용량에서).
   const tokenByProfileOld = React.useMemo<Map<number | null, Bucket>>(() => {
     const m = new Map<number | null, Bucket>();
     const fold = (key: number | null, inp: number, out: number, cr: number, cw: number, addTask: boolean) => {
@@ -380,11 +380,11 @@ export default function DashboardPage() {
     return m;
   }, [tasks, convTokens, defaultProfileId]);
 
-  // 新版：按 profile 归桶（来自 llm_usage 全局聚合，逐次调用精确）。
+  // 새 버전: profile별로 통에 넣음(llm_usage 전역 집계에서, 호출마다 정확).
   const tokenByProfileNew = React.useMemo<Map<number | null, Bucket>>(() => {
     const m = new Map<number | null, Bucket>();
     for (const p of usageStats?.by_profile ?? []) {
-      // 未匹配到现有 profile（改名/删除/空名）→ 落到默认桶，仍计入「全部」。
+      // 기존 profile에 안 맞음(이름 변경/삭제/빈 이름) → 기본 통으로 떨어지며, 여전히 「전체」에 포함됩니다.
       const key = profileIdByName.get(p.profile_name) ?? defaultProfileId;
       const prev = m.get(key) ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, taskCount: 0 };
       m.set(key, {
@@ -422,7 +422,7 @@ export default function DashboardPage() {
       : { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, taskCount: 0 };
   }, [tokenTab, tokenByProfile]);
 
-  // 旧版每日：把任务/会话的总量按其创建日期归桶（近似，非真实每日消耗）。
+  // 예전 하루 단위: 작업/세션 총량을 만든 날짜의 통에 넣음(근사, 실제 하루 소모가 아님).
   const dailyTokenDataOld = React.useMemo(() => {
     const now = new Date();
     now.setDate(now.getDate() - tokenDays);
@@ -449,7 +449,7 @@ export default function DashboardPage() {
     return [...m.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([date, v]) => ({ date: date.slice(5), ...v }));
   }, [tasks, convTokens, tokenDays, tokenTab, defaultProfileId]);
 
-  // 新版每日：来自 llm_usage 的真实每日消耗（ts 是实际调用时刻）。
+  // 새 버전 하루 단위: llm_usage의 실제 하루 소모(ts는 실제 호출 시각).
   const dailyTokenDataNew = React.useMemo(() => {
     const now = new Date();
     now.setDate(now.getDate() - tokenDays);
@@ -496,18 +496,18 @@ export default function DashboardPage() {
       {/* ── Header ── */}
       <div>
         <div>
-          <h1 className="text-lg font-semibold tracking-tight">总览</h1>
-          <p className="text-xs text-muted-foreground">系统全局状态 · 实时刷新</p>
+          <h1 className="text-lg font-semibold tracking-tight">전체 보기</h1>
+          <p className="text-xs text-muted-foreground">시스템 전체 상태 · 실시간 새로고침</p>
         </div>
       </div>
 
       {/* ── Row 1: 5 stat cards ── */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        {/* 活跃任务 */}
+        {/* 진행 중인 작업 */}
         <Card className="gap-1">
           <CardHeader className="pb-0">
             <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
-              <TargetIcon className="size-3" /> 活跃任务
+              <TargetIcon className="size-3" /> 진행 중인 작업
             </div>
             <div className="flex items-baseline gap-1.5">
               <span className="text-2xl font-semibold tabular-nums">{tasksByStatus.running ?? 0}</span>
@@ -515,45 +515,45 @@ export default function DashboardPage() {
             </div>
           </CardHeader>
           <CardContent className="flex flex-wrap gap-x-2.5 gap-y-0.5 text-[10px]">
-            {(tasksByStatus.running ?? 0) > 0 && <span className="text-blue-400">探索 {tasksByStatus.running}</span>}
-            {(tasksByStatus.paused ?? 0) > 0 && <span className="text-amber-400">暂停 {tasksByStatus.paused}</span>}
-            {(tasksByStatus.done ?? 0) > 0 && <span className="text-emerald-400">完成 {tasksByStatus.done}</span>}
-            {tasks.length === 0 && <span className="text-muted-foreground">暂无任务</span>}
+            {(tasksByStatus.running ?? 0) > 0 && <span className="text-blue-400">탐색 {tasksByStatus.running}</span>}
+            {(tasksByStatus.paused ?? 0) > 0 && <span className="text-amber-400">일시 중지 {tasksByStatus.paused}</span>}
+            {(tasksByStatus.done ?? 0) > 0 && <span className="text-emerald-400">완료 {tasksByStatus.done}</span>}
+            {tasks.length === 0 && <span className="text-muted-foreground">작업 없음</span>}
           </CardContent>
         </Card>
 
-        {/* 确认发现 */}
+        {/* 발견 확인 */}
         <Card className="gap-1">
           <CardHeader className="pb-0">
             <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
-              <BugIcon className="size-3" /> 确认发现
+              <BugIcon className="size-3" /> 발견 확인
             </div>
             <div className="text-2xl font-semibold tabular-nums">{findings.length}</div>
           </CardHeader>
           <CardContent className="flex flex-wrap gap-2.5 text-[10px]">
-            <span className="text-rose-500">严重 {findingsBySev.critical}</span>
-            <span className="text-red-400">高危 {findingsBySev.high}</span>
-            <span className="text-amber-400">中危 {findingsBySev.medium}</span>
-            <span className="text-slate-400">低危 {findingsBySev.low}</span>
+            <span className="text-rose-500">심각 {findingsBySev.critical}</span>
+            <span className="text-red-400">높음 {findingsBySev.high}</span>
+            <span className="text-amber-400">중간 {findingsBySev.medium}</span>
+            <span className="text-slate-400">낮음 {findingsBySev.low}</span>
           </CardContent>
         </Card>
 
-        {/* 资产节点 */}
+        {/* 자산 노드 */}
         <Card className="gap-1">
           <CardHeader className="pb-0">
             <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
-              <NetworkIcon className="size-3" /> 资产节点
+              <NetworkIcon className="size-3" /> 자산 노드
             </div>
             <div className="text-2xl font-semibold tabular-nums">{totalAssets}</div>
           </CardHeader>
-          <CardContent className="text-[10px] text-muted-foreground">跨任务共享</CardContent>
+          <CardContent className="text-[10px] text-muted-foreground">작업 간 공유</CardContent>
         </Card>
 
-        {/* 流量交互 */}
+        {/* 트래픽 주고받음 */}
         <Card className="gap-1">
           <CardHeader className="pb-0">
             <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
-              <ActivityIcon className="size-3" /> 流量交互
+              <ActivityIcon className="size-3" /> 트래픽 상호작용
             </div>
             <div className="text-2xl font-semibold tabular-nums">{traffic.length}</div>
           </CardHeader>
@@ -561,44 +561,44 @@ export default function DashboardPage() {
             {settings?.traffic_capture ? (
               <>
                 <LiveDot />
-                <span>录制中</span>
+                <span>기록 중</span>
               </>
             ) : (
-              <span>捕获未开启</span>
+              <span>캡처가 꺼져 있음</span>
             )}
           </CardContent>
         </Card>
 
-        {/* LLM 用量 */}
+        {/* LLM 사용량 */}
         <Card className="gap-1">
           <CardHeader className="pb-0">
             <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
-              <ZapIcon className="size-3" /> Token 用量
+              <ZapIcon className="size-3" /> Token 사용량
             </div>
             <div className="text-2xl font-semibold tabular-nums">
               {fmtTokens(displayedTokens.input + displayedTokens.output) || "—"}
             </div>
           </CardHeader>
           <CardContent className="text-[10px] text-muted-foreground">
-            入 {fmtTokens(displayedTokens.input)}（含缓存 {fmtTokens(displayedTokens.cacheRead)}）· 出{" "}
+            입력 {fmtTokens(displayedTokens.input)}(캐시 포함 {fmtTokens(displayedTokens.cacheRead)})· 출력{" "}
             {fmtTokens(displayedTokens.output)}
           </CardContent>
         </Card>
       </div>
 
-      {/* ── Row 2: LLM Token 消耗 ── */}
+      {/* ── Row 2: LLM Token 소모 ── */}
       <Card className="p-4">
         {/* Header */}
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-1.5 text-xs font-semibold">
             <ZapIcon className="size-3.5 text-muted-foreground" />
-            LLM Token 消耗
-            {/* 数据源开关：旧版=activity 统计（含历史任务），新版=llm_usage 计量账本（更准，仅覆盖启用后） */}
+            LLM Token 사용량
+            {/* 데이터 출처 스위치: 예전=activity 통계(지난 작업 포함), 새 버전=llm_usage 계량 장부(더 정확, 켠 뒤만 포함) */}
             <div className="ml-1 flex gap-0.5 rounded-md border bg-muted/30 p-0.5">
               {(
                 [
-                  { v: "old", label: "旧版" },
-                  { v: "new", label: "新版" },
+                  { v: "old", label: "이전 버전" },
+                  { v: "new", label: "새 버전" },
                 ] as const
               ).map(({ v, label }) => (
                 <button
@@ -607,8 +607,8 @@ export default function DashboardPage() {
                   onClick={() => setTokenVersion(v)}
                   title={
                     v === "new"
-                      ? "新版：来自 llm_usage 计量账本，逐次调用精确、含中断消耗；仅覆盖启用后的数据"
-                      : "旧版：来自 activity 统计（含历史任务），中断消耗不计、无法精确到模型"
+                      ? "새 버전: llm_usage 측정 원장에서 옵니다. 호출마다 정확하고 중단 소모를 포함하며, 켠 뒤의 데이터만 다룹니다"
+                      : "이전 버전: activity 통계에서 옵니다(과거 작업 포함). 중단 소모는 집계하지 않고, 모델까지 정확히 나누지 못합니다"
                   }
                   className={cn(
                     "rounded px-2 py-0.5 text-[9px] font-medium transition-colors",
@@ -637,7 +637,7 @@ export default function DashboardPage() {
                   : "bg-muted/30 text-muted-foreground hover:text-foreground",
               )}
             >
-              全部
+              전체
             </button>
             {llmProfiles.map((p) => {
               const key = Number(p.id);
@@ -666,7 +666,7 @@ export default function DashboardPage() {
                           : "bg-emerald-500/20 text-emerald-400",
                       )}
                     >
-                      默认
+                      기본값
                     </span>
                   )}
                 </button>
@@ -681,33 +681,33 @@ export default function DashboardPage() {
           <div className="flex flex-col gap-4">
             {/* Total */}
             <div>
-              <div className="text-[10px] text-muted-foreground">合计 (输入+输出)</div>
+              <div className="text-[10px] text-muted-foreground">합계(입력+출력)</div>
               <div className="mt-0.5 text-3xl font-bold tabular-nums tracking-tight">
                 {fmtTokens(displayedTokens.input + displayedTokens.output) || "—"}
               </div>
-              <div className="mt-0.5 text-[10px] text-muted-foreground">{displayedTokens.taskCount} 个任务</div>
+              <div className="mt-0.5 text-[10px] text-muted-foreground">{displayedTokens.taskCount} 개 작업</div>
             </div>
 
             {/* Per-type bars */}
             <div className="space-y-3">
               {(() => {
-                // input 已含缓存；拆成不重叠三段：未命中输入 + 缓存命中 + 输出 = 总量。
+                // input에 이미 캐시가 포함됨. 겹치지 않는 세 조각: 못 맞춘 입력 + 캐시 적중 + 출력 = 총량.
                 const total = displayedTokens.input + displayedTokens.output;
                 return [
                   {
-                    label: "输入(未命中)",
+                    label: "입력(미적중)",
                     value: displayedTokens.input - displayedTokens.cacheRead,
                     barColor: dailyTrendConfig.input.color!,
                     text: "text-blue-400",
                   },
                   {
-                    label: "缓存命中",
+                    label: "캐시 적중",
                     value: displayedTokens.cacheRead,
                     barColor: dailyTrendConfig.cacheRead.color!,
                     text: "text-emerald-400",
                   },
                   {
-                    label: "输出",
+                    label: "출력",
                     value: displayedTokens.output,
                     barColor: dailyTrendConfig.output.color!,
                     text: "text-violet-400",
@@ -734,12 +734,12 @@ export default function DashboardPage() {
 
             {/* Cache hit rate */}
             {(() => {
-              // input 已含缓存 → 命中率 = 缓存命中 / 总输入。
+              // input에 이미 캐시가 포함됨 → 적중률 = 캐시 적중 / 전체 입력.
               const denominator = displayedTokens.input;
               const hitPct = denominator > 0 ? Math.round((displayedTokens.cacheRead / denominator) * 100) : 0;
               return (
                 <div className="flex items-center justify-between rounded-lg border bg-muted/20 px-3 py-2 text-[10px]">
-                  <span className="text-muted-foreground">缓存命中率</span>
+                  <span className="text-muted-foreground">캐시 적중률</span>
                   <span
                     className={cn("font-semibold tabular-nums", hitPct > 50 ? "text-emerald-400" : "text-amber-400")}
                   >
@@ -767,11 +767,11 @@ export default function DashboardPage() {
               <div className="flex gap-0.5 rounded-md border bg-muted/30 p-0.5">
                 {(
                   [
-                    { days: 7, label: "7天" },
-                    { days: 30, label: "30天" },
-                    { days: 90, label: "3月" },
-                    { days: 180, label: "6月" },
-                    { days: 365, label: "一年" },
+                    { days: 7, label: "7일" },
+                    { days: 30, label: "30일" },
+                    { days: 90, label: "3개월" },
+                    { days: 180, label: "6개월" },
+                    { days: 365, label: "1년" },
                   ] as const
                 ).map(({ days, label }) => (
                   <button
@@ -796,7 +796,7 @@ export default function DashboardPage() {
                 className="flex flex-1 items-center justify-center rounded-lg border bg-muted/10 text-xs text-muted-foreground"
                 style={{ minHeight: 180 }}
               >
-                暂无数据
+                데이터 없음
               </div>
             ) : (
               <ChartContainer config={dailyTrendConfig} className="h-[200px] w-full">
@@ -844,24 +844,24 @@ export default function DashboardPage() {
         </div>
       </Card>
 
-      {/* ── Row 3: 活动流 | 发现 ── */}
+      {/* ── Row 3: 활동 흐름 | 발견 ── */}
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-        {/* 活动流 */}
+        {/* 활동 흐름 */}
         <Card className="p-4">
           <div className="mb-3 flex items-center justify-between">
             <div className="flex items-center gap-1.5 text-xs font-semibold">
               <ActivityIcon className="size-3.5 text-muted-foreground" />
-              活动流
+              활동 흐름
             </div>
             <div className="flex items-center gap-2">
               <span className="text-[10px] text-muted-foreground">
-                {activity.filter((a) => a.kind !== "usage").length} 条事件
+                {activity.filter((a) => a.kind !== "usage").length} 건의 이벤트
               </span>
               <Link
                 href="/function/tasks"
                 className="flex items-center gap-0.5 text-[10px] text-muted-foreground hover:text-foreground"
               >
-                查看任务 <ArrowUpRightIcon className="size-3" />
+                작업 보기 <ArrowUpRightIcon className="size-3" />
               </Link>
             </div>
           </div>
@@ -880,7 +880,7 @@ export default function DashboardPage() {
 
           <div className="divide-y">
             {recentActivity.length === 0 ? (
-              <div className="py-4 text-center text-xs text-muted-foreground">暂无活动记录</div>
+              <div className="py-4 text-center text-xs text-muted-foreground">활동 기록 없음</div>
             ) : (
               recentActivity.map((a) => (
                 <div key={a.seq} className="flex gap-2.5 py-2">
@@ -908,24 +908,24 @@ export default function DashboardPage() {
           </div>
         </Card>
 
-        {/* 发现 */}
+        {/* 발견 */}
         <Card className="p-4">
           <div className="mb-3 flex items-center justify-between">
             <div className="flex items-center gap-1.5 text-xs font-semibold">
               <BugIcon className="size-3.5 text-muted-foreground" />
-              发现
+              발견
             </div>
             <Link
               href="/function/findings"
               className="flex items-center gap-0.5 text-[10px] text-muted-foreground hover:text-foreground"
             >
-              全部 <ArrowUpRightIcon className="size-3" />
+              전체 <ArrowUpRightIcon className="size-3" />
             </Link>
           </div>
 
           <div className="divide-y">
             {recentFindings.length === 0 ? (
-              <div className="py-4 text-center text-xs text-muted-foreground">暂无发现</div>
+              <div className="py-4 text-center text-xs text-muted-foreground">발견 없음</div>
             ) : (
               recentFindings.map((f) => (
                 <div key={f.id} className="flex items-start gap-2 py-2">
@@ -953,27 +953,27 @@ export default function DashboardPage() {
         </Card>
       </div>
 
-      {/* ── Row 4: 任务表格 ── */}
+      {/* ── Row 4: 작업 표 ── */}
       <Card className="overflow-hidden p-0">
         <div className="flex items-center justify-between border-b px-4 py-3">
           <div className="flex items-center gap-1.5 text-xs font-semibold">
             <ClockIcon className="size-3.5 text-muted-foreground" />
-            任务
+            작업
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-[10px] text-muted-foreground">{tasks.length} 个任务</span>
+            <span className="text-[10px] text-muted-foreground">{tasks.length} 개 작업</span>
             <Link
               href="/function/tasks"
               className="flex items-center gap-0.5 text-[10px] text-muted-foreground hover:text-foreground"
             >
-              全部 <ArrowUpRightIcon className="size-3" />
+              전체 <ArrowUpRightIcon className="size-3" />
             </Link>
           </div>
         </div>
         <table className="w-full border-collapse text-xs">
           <thead>
             <tr className="border-b">
-              {["任务", "状态", "引擎", "目标进度", "在途", "最近活动"].map((h) => (
+              {["작업", "상태", "엔진", "목표 진행", "진행 중", "최근 활동"].map((h) => (
                 <th
                   key={h}
                   className="px-4 py-2 text-left text-[9px] font-semibold uppercase tracking-widest text-muted-foreground first:pl-4"
@@ -987,7 +987,7 @@ export default function DashboardPage() {
             {sortedTasks.length === 0 ? (
               <tr>
                 <td colSpan={6} className="px-4 py-6 text-center text-xs text-muted-foreground">
-                  暂无任务
+                  작업 없음
                 </td>
               </tr>
             ) : (
@@ -1041,16 +1041,16 @@ export default function DashboardPage() {
         </table>
       </Card>
 
-      {/* ── Row 5: 资产分布 | 流量状态码 | 拦截 & 待审批 ── */}
+      {/* ── Row 5: 자산 분포 | 트래픽 상태 코드 | 가로채기 & 승인 대기 ── */}
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-        {/* 资产分布 */}
+        {/* 자산 분포 */}
         <Card className="p-4">
-          <SectionTitle icon={NetworkIcon} sub="按类型">
-            资产分布
+          <SectionTitle icon={NetworkIcon} sub="유형별">
+            자산 분포
           </SectionTitle>
 
           {assetByType.length === 0 ? (
-            <div className="py-6 text-center text-xs text-muted-foreground">暂无资产数据</div>
+            <div className="py-6 text-center text-xs text-muted-foreground">자산 데이터 없음</div>
           ) : (
             <div className="flex flex-col gap-2">
               {assetByType.map(([type, count]) => (
@@ -1070,18 +1070,18 @@ export default function DashboardPage() {
             </div>
           )}
 
-          <div className="mt-3 border-t pt-3 text-[10px] text-muted-foreground">共 {totalAssets} 节点</div>
+          <div className="mt-3 border-t pt-3 text-[10px] text-muted-foreground">총 {totalAssets} 노드</div>
         </Card>
 
-        {/* 流量状态码 */}
+        {/* 트래픽 상태 코드 */}
         <Card className="p-4">
-          <SectionTitle icon={ActivityIcon} sub={`${traffic.length} 次请求`}>
-            流量状态码
+          <SectionTitle icon={ActivityIcon} sub={`${traffic.length} 회 요청`}>
+            트래픽 상태 코드
           </SectionTitle>
 
           {/* bar chart */}
           {trafficByCodes.length === 0 ? (
-            <div className="py-6 text-center text-xs text-muted-foreground">暂无流量数据</div>
+            <div className="py-6 text-center text-xs text-muted-foreground">트래픽 데이터 없음</div>
           ) : (
             <>
               <div className="mb-3 flex items-end gap-2" style={{ height: 52 }}>
@@ -1098,7 +1098,7 @@ export default function DashboardPage() {
               </div>
 
               <div className="border-t pt-2.5">
-                <div className="mb-1.5 text-[10px] text-muted-foreground">最近请求</div>
+                <div className="mb-1.5 text-[10px] text-muted-foreground">최근 요청</div>
                 <div className="flex flex-col gap-1.5">
                   {recentTraffic.map((e) => (
                     <div key={e.id} className="flex items-center gap-1.5 text-[10px]">
@@ -1125,13 +1125,13 @@ export default function DashboardPage() {
           )}
         </Card>
 
-        {/* 系统状态 & 待审批 */}
+        {/* 시스템 상태 & 승인 대기 */}
         <Card className="p-4">
-          <SectionTitle icon={ShieldCheckIcon}>系统状态</SectionTitle>
+          <SectionTitle icon={ShieldCheckIcon}>시스템 상태</SectionTitle>
 
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between rounded-lg border bg-muted/20 px-3 py-2">
-              <div className="text-[10px] text-muted-foreground">LLM 配置</div>
+              <div className="text-[10px] text-muted-foreground">LLM 설정</div>
               <Badge
                 variant="outline"
                 className={cn(
@@ -1141,12 +1141,12 @@ export default function DashboardPage() {
                     : "border-red-500/30 bg-red-500/10 text-red-400",
                 )}
               >
-                {stats?.llm_configured ? "已配置" : "未配置"}
+                {stats?.llm_configured ? "설정됨" : "설정되지 않음"}
               </Badge>
             </div>
 
             <div className="flex items-center justify-between rounded-lg border bg-muted/20 px-3 py-2">
-              <div className="text-[10px] text-muted-foreground">流量捕获</div>
+              <div className="text-[10px] text-muted-foreground">트래픽 캡처</div>
               <Badge
                 variant="outline"
                 className={cn(
@@ -1156,13 +1156,13 @@ export default function DashboardPage() {
                     : "text-muted-foreground",
                 )}
               >
-                {settings?.traffic_capture ? "开启" : "关闭"}
+                {settings?.traffic_capture ? "켜짐" : "꺼짐"}
               </Badge>
             </div>
 
             {activeProfile && (
               <div className="flex items-center justify-between rounded-lg border bg-muted/20 px-3 py-2">
-                <div className="text-[10px] text-muted-foreground">激活模型</div>
+                <div className="text-[10px] text-muted-foreground">활성 모델</div>
                 <span className="font-mono text-[10px]">{activeProfile.model}</span>
               </div>
             )}
@@ -1171,7 +1171,7 @@ export default function DashboardPage() {
           {/* pending approvals */}
           {pendingCount > 0 && (
             <div className="mt-3">
-              <div className="mb-1.5 text-[10px] font-medium text-amber-400">待审批 ({pendingCount})</div>
+              <div className="mb-1.5 text-[10px] font-medium text-amber-400">승인 대기({pendingCount})</div>
               <div className="flex flex-col gap-1.5">
                 {pending.slice(0, 3).map((p) => (
                   <Link
@@ -1191,7 +1191,7 @@ export default function DashboardPage() {
                     href="/system/intercept/approvals"
                     className="text-center text-[10px] text-muted-foreground hover:text-foreground"
                   >
-                    还有 {pendingCount - 3} 条…
+                    추가로 {pendingCount - 3} 건…
                   </Link>
                 )}
               </div>
@@ -1201,7 +1201,7 @@ export default function DashboardPage() {
           {pendingCount === 0 && (
             <div className="mt-3 rounded-lg border bg-muted/10 px-3 py-3 text-center text-[10px] text-muted-foreground">
               <ShieldCheckIcon className="mx-auto mb-1 size-4 text-emerald-500/50" />
-              无待审批拦截
+              승인 대기 중인 가로채기 없음
             </div>
           )}
         </Card>

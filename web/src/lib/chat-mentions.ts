@@ -1,13 +1,13 @@
 export const mentionKinds = [
-  { kind: "finding", label: "漏洞", alias: "finding" },
-  { kind: "asset", label: "资产", alias: "asset" },
-  { kind: "company", label: "企业", alias: "company" },
-  { kind: "endpoint", label: "接口", alias: "api" },
+  { kind: "finding", label: "발견", alias: "finding" },
+  { kind: "asset", label: "자산", alias: "asset" },
+  { kind: "company", label: "기업", alias: "company" },
+  { kind: "endpoint", label: "엔드포인트", alias: "api" },
   { kind: "ip", label: "IP", alias: "ip" },
-  { kind: "app", label: "应用", alias: "app" },
-  { kind: "root_domain", label: "域名", alias: "domain" },
-  { kind: "subdomain", label: "子域名", alias: "subdomain" },
-  { kind: "service", label: "服务", alias: "service" },
+  { kind: "app", label: "앱", alias: "app" },
+  { kind: "root_domain", label: "도메인", alias: "domain" },
+  { kind: "subdomain", label: "서브도메인", alias: "subdomain" },
+  { kind: "service", label: "서비스", alias: "service" },
 ] as const;
 
 export type MentionKind = (typeof mentionKinds)[number]["kind"];
@@ -43,7 +43,7 @@ export function mentionSearch(query: string) {
 }
 
 export function mentionToken(item: ChatMention) {
-  const kind = mentionKinds.find((entry) => entry.kind === item.kind)?.label ?? "资产";
+  const kind = mentionKinds.find((entry) => entry.kind === item.kind)?.label ?? "자산";
   const label = item.label
     .replace(/[[\]]/g, (char) => (char === "[" ? "（" : "）"))
     .replace(/\s+/g, " ")
@@ -52,7 +52,7 @@ export function mentionToken(item: ChatMention) {
 }
 
 export function selectedMentions(value: string) {
-  return [...value.matchAll(/@\[(漏洞|资产|企业|接口|IP|应用|域名|子域名|服务)#([0-9]+)(?: ([^\]\r\n]*))?\]/g)].map(
+  return [...value.matchAll(/@\[(발견|자산|기업|엔드포인트|IP|앱|도메인|서브도메인|서비스|漏洞|资产|企业|接口|应用|域名|子域名|服务)#([0-9]+)(?: ([^\]\r\n]*))?\]/g /* han-allow 저장된 멘션 토큰 */)].map(
     (match) => ({
       token: match[0],
       label: `${match[1]} #${match[2]}${match[3] ? ` · ${match[3]}` : ""}`,

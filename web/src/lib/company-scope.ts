@@ -96,14 +96,14 @@ function domainHostname(value: string): string | null {
 
 export function companyScopeRuleError(rule: CompanyScopeRule): string {
   const value = rule.value.trim();
-  if (!value) return "请填写范围值";
+  if (!value) return "범위 값을 입력하세요";
   if (Array.from(value).length > MAX_COMPANY_SCOPE_VALUE_LENGTH) {
-    return `最多 ${MAX_COMPANY_SCOPE_VALUE_LENGTH} 个字符`;
+    return `최대 ${MAX_COMPANY_SCOPE_VALUE_LENGTH} 자`;
   }
   if (rule.kind === "domain") {
-    if (/\s/.test(value)) return "请输入不含空格的有效域名或 URL";
+    if (/\s/.test(value)) return "공백이 없는 유효한 도메인 또는 URL을 입력하세요";
     const hostname = domainHostname(value);
-    if (!hostname || ipVersion(hostname) !== null) return "请输入有效域名或 URL";
+    if (!hostname || ipVersion(hostname) !== null) return "유효한 도메인 또는 URL을 입력하세요";
     const labels = hostname.split(".");
     if (
       hostname.length > 253 ||
@@ -113,20 +113,20 @@ export function companyScopeRuleError(rule: CompanyScopeRule): string {
           !label || label.length > 63 || label.startsWith("-") || label.endsWith("-") || !/^[a-z0-9-]+$/i.test(label),
       )
     ) {
-      return "请输入有效域名或 URL";
+      return "유효한 도메인 또는 URL을 입력하세요";
     }
   }
-  if (rule.kind === "ip" && ipVersion(value) === null) return "请输入有效 IP";
+  if (rule.kind === "ip" && ipVersion(value) === null) return "유효한 IP를 입력하세요";
   if (rule.kind === "cidr") {
     const separator = value.lastIndexOf("/");
-    if (separator <= 0) return "请输入 CIDR 网段";
+    if (separator <= 0) return "CIDR 대역을 입력하세요";
     const address = value.slice(0, separator);
     const prefixText = value.slice(separator + 1);
     const version = ipVersion(address);
-    if (version === null || !/^\d+$/.test(prefixText)) return "请输入 CIDR 网段";
+    if (version === null || !/^\d+$/.test(prefixText)) return "CIDR 대역을 입력하세요";
     const prefix = Number(prefixText);
-    if (version === 4 && (prefix < 16 || prefix > 32)) return "IPv4 网段前缀需为 /16 至 /32";
-    if (version === 6 && (prefix < 32 || prefix > 128)) return "IPv6 网段前缀需为 /32 至 /128";
+    if (version === 4 && (prefix < 16 || prefix > 32)) return "IPv4 대역 접두사는 /16에서 /32여야 합니다";
+    if (version === 6 && (prefix < 32 || prefix > 128)) return "IPv6 대역 접두사는 /32에서 /128이어야 합니다";
   }
   return "";
 }
@@ -138,7 +138,7 @@ export function classifyCompanyScopeLine(
 ): CompanyScopeTextIssue {
   const value = raw.trim();
   if (Array.from(value).length > MAX_COMPANY_SCOPE_VALUE_LENGTH) {
-    return { line, error: `最多 ${MAX_COMPANY_SCOPE_VALUE_LENGTH} 个字符` };
+    return { line, error: `최대 ${MAX_COMPANY_SCOPE_VALUE_LENGTH} 자` };
   }
   if (preservedRule) {
     const rule = { kind: preservedRule.kind, value };
@@ -156,7 +156,7 @@ export function classifyCompanyScopeLine(
     return error ? { line, error } : { line, rule };
   }
   if (ipVersion(value) !== null) return { line, rule: { kind: "ip", value } };
-  if (looksLikeIPAddress(value)) return { line, error: "请输入有效 IP" };
+  if (looksLikeIPAddress(value)) return { line, error: "유효한 IP를 입력하세요" };
 
   const looksLikeDomain = value.includes("://") || (!/\s/.test(value) && value.includes("."));
   if (looksLikeDomain) {
@@ -166,7 +166,7 @@ export function classifyCompanyScopeLine(
     const error = companyScopeRuleError(rule);
     return error ? { line, error } : { line, rule };
   }
-  if (/icp|备案/i.test(value)) return { line, rule: { kind: "icp", value } };
+  if (/icp|备案|등록/i.test(value)) return { line, rule: { kind: "icp", value } }; // han-allow 사용자가 적은 등록 표기
   return { line, rule: { kind: "keyword", value } };
 }
 

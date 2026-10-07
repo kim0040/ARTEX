@@ -24,18 +24,18 @@ func decodeTaskCategoryRequest(w http.ResponseWriter, r *http.Request) (*taskCat
 	if err := decode(r, &request); err != nil {
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {
-			writeErr(w, http.StatusRequestEntityTooLarge, "请求正文过大")
+			writeErr(w, http.StatusRequestEntityTooLarge, "요청 본문이 너무 큽니다")
 		} else {
 			writeErr(w, http.StatusBadRequest, err.Error())
 		}
 		return nil, false
 	}
 	if request.Name == nil || strings.TrimSpace(*request.Name) == "" {
-		writeErr(w, http.StatusBadRequest, "分类名称不能为空")
+		writeErr(w, http.StatusBadRequest, "분류 이름은 비울 수 없습니다")
 		return nil, false
 	}
 	if utf8.RuneCountInString(strings.TrimSpace(*request.Name)) > db.MaxTaskCategoryNameRunes {
-		writeErr(w, http.StatusBadRequest, "分类名称最多 80 个字符")
+		writeErr(w, http.StatusBadRequest, "분류 이름은 최대 80자입니다")
 		return nil, false
 	}
 	return &request, true
@@ -46,7 +46,7 @@ func writeTaskCategoryError(w http.ResponseWriter, err error) {
 	case errors.Is(err, db.ErrTaskCategoryInvalid):
 		writeErr(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, db.ErrTaskCategoryNameConflict):
-		writeErr(w, http.StatusConflict, "分类名称已存在")
+		writeErr(w, http.StatusConflict, "분류 이름이 이미 있습니다")
 	case errors.Is(err, db.ErrTaskCategoryNotFound), errors.Is(err, db.ErrTaskCategoryTaskNotFound):
 		writeErr(w, http.StatusNotFound, err.Error())
 	default:
@@ -87,7 +87,7 @@ func (s *Server) pgCreateTaskCategory(w http.ResponseWriter, r *http.Request) {
 func (s *Server) pgRenameTaskCategory(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathInt(r, "id")
 	if !ok {
-		writeErr(w, http.StatusBadRequest, "bad task category id")
+		writeErr(w, http.StatusBadRequest, "작업 분류 id가 올바르지 않습니다")
 		return
 	}
 	request, ok := decodeTaskCategoryRequest(w, r)
@@ -105,7 +105,7 @@ func (s *Server) pgRenameTaskCategory(w http.ResponseWriter, r *http.Request) {
 func (s *Server) pgDeleteTaskCategory(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathInt(r, "id")
 	if !ok {
-		writeErr(w, http.StatusBadRequest, "bad task category id")
+		writeErr(w, http.StatusBadRequest, "작업 분류 id가 올바르지 않습니다")
 		return
 	}
 	deleted, err := s.m.DeleteTaskCategory(id)
@@ -114,7 +114,7 @@ func (s *Server) pgDeleteTaskCategory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !deleted {
-		writeErr(w, http.StatusNotFound, "task category not found")
+		writeErr(w, http.StatusNotFound, "작업 분류를 찾을 수 없습니다")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"deleted": id})
@@ -126,7 +126,7 @@ func (s *Server) pgDeleteTaskCategory(w http.ResponseWriter, r *http.Request) {
 // an explicit null from an omitted key.
 func parseCategoryIDField(w http.ResponseWriter, raw json.RawMessage) (*int64, bool) {
 	if len(raw) == 0 {
-		writeErr(w, http.StatusBadRequest, "category_id is required")
+		writeErr(w, http.StatusBadRequest, "category_id 는 필수입니다")
 		return nil, false
 	}
 	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
@@ -134,7 +134,7 @@ func parseCategoryIDField(w http.ResponseWriter, raw json.RawMessage) (*int64, b
 	}
 	var id int64
 	if err := json.Unmarshal(raw, &id); err != nil || id <= 0 {
-		writeErr(w, http.StatusBadRequest, "任务分类 id 无效")
+		writeErr(w, http.StatusBadRequest, "작업 분류 id가 올바르지 않습니다")
 		return nil, false
 	}
 	return &id, true
@@ -143,7 +143,7 @@ func parseCategoryIDField(w http.ResponseWriter, raw json.RawMessage) (*int64, b
 func (s *Server) updateTaskCategory(w http.ResponseWriter, r *http.Request) {
 	taskID := r.PathValue("id")
 	if _, ok := s.m.Task(taskID); !ok {
-		writeErr(w, http.StatusNotFound, "task not found")
+		writeErr(w, http.StatusNotFound, "작업을 찾을 수 없습니다")
 		return
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxTaskCategoryRequestBytes)
@@ -187,7 +187,7 @@ func (s *Server) updateTasksCategoryBatch(w http.ResponseWriter, r *http.Request
 	if err := decode(r, &request); err != nil {
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {
-			writeErr(w, http.StatusRequestEntityTooLarge, "请求正文过大")
+			writeErr(w, http.StatusRequestEntityTooLarge, "요청 본문이 너무 큽니다")
 		} else {
 			writeErr(w, http.StatusBadRequest, err.Error())
 		}
@@ -199,7 +199,7 @@ func (s *Server) updateTasksCategoryBatch(w http.ResponseWriter, r *http.Request
 	}
 	taskIDs := normalizeBatchTaskIDs(request.TaskIDs)
 	if len(taskIDs) == 0 || len(taskIDs) > db.MaxTaskCategoryBatchSize {
-		writeErr(w, http.StatusBadRequest, fmt.Sprintf("task_ids 数量必须为 1-%d", db.MaxTaskCategoryBatchSize))
+		writeErr(w, http.StatusBadRequest, fmt.Sprintf("task_ids 개수는 1-%d여야 합니다", db.MaxTaskCategoryBatchSize))
 		return
 	}
 	items := make([]batchCategoryItem, 0, len(taskIDs))
@@ -208,12 +208,12 @@ func (s *Server) updateTasksCategoryBatch(w http.ResponseWriter, r *http.Request
 		item := batchCategoryItem{ID: parsed.id}
 		switch {
 		case !parsed.valid:
-			item.Error = "bad task id"
+			item.Error = "작업 id가 올바르지 않습니다"
 		default:
 			if _, live := s.m.Task(parsed.id); live {
 				pending = append(pending, parsed.id)
 			} else {
-				item.Error = "task not found"
+				item.Error = "작업을 찾을 수 없습니다"
 			}
 		}
 		items = append(items, item)
@@ -233,7 +233,7 @@ func (s *Server) updateTasksCategoryBatch(w http.ResponseWriter, r *http.Request
 			if updated[items[i].ID] {
 				items[i].OK = true
 			} else {
-				items[i].Error = "task not found"
+				items[i].Error = "작업을 찾을 수 없습니다"
 			}
 		}
 	}

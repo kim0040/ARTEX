@@ -7,14 +7,14 @@ import "time"
 // these match the *target asset*: an exact/fuzzy domain·ip·url, or a CIDR range.
 // This layer only stores rules; the matching/enforcement logic lives elsewhere.
 type AssetInterceptRule struct {
-	ID        int64     `json:"id"`
-	Enabled   bool      `json:"enabled"`
-	Kind      string    `json:"kind"` // exact_domain|exact_ip|exact_url|fuzzy_domain|fuzzy_ip|fuzzy_url|cidr
-	Pattern   string    `json:"pattern"`
-	Note      string    `json:"note"`
-	Builtin   bool      `json:"builtin"`
-	// Action 仅用于任务级规则：'block'=拦截 'allow'=允许(白名单)。
-	// 全局规则(asset_intercept_rules)不带此列，恒为空，视为拦截。
+	ID      int64  `json:"id"`
+	Enabled bool   `json:"enabled"`
+	Kind    string `json:"kind"` // exact_domain|exact_ip|exact_url|fuzzy_domain|fuzzy_ip|fuzzy_url|cidr
+	Pattern string `json:"pattern"`
+	Note    string `json:"note"`
+	Builtin bool   `json:"builtin"`
+	// Action은 작업급 규칙에만 쓴다. block=가로채기 allow=허용(허용 목록).
+	// 전역 규칙(asset_intercept_rules)에는 이 열이 없고, 항상 비어 있으며, 가로채기로 본다.
 	Action    string    `json:"action,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`

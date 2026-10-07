@@ -7,8 +7,11 @@ import (
 	"github.com/Autumn-27/artex/db"
 )
 
-// 任务级资产拦截/允许规则的 CRUD。规则按 task_id 归属，仅对该任务生效：
-// action=block 拦截(禁止测试)，action=allow 允许(白名单)。执行判定见 db.EvaluateAssetGate。
+// 작업별 자산 가로채기/허용 규칙의 생성·조회·수정·삭제입니다.
+// 규칙은 task_id에 매여 그 작업에만 적용됩니다.
+// action=block 은 시험 금지(가로채기), action=allow 는 허용(화이트리스트)입니다.
+// 실제 판정은 db.EvaluateAssetGate에 있습니다.
+// 초보용: 자산 그래프에 있는 대상을 워커가 건드리기 전에, 이 작업에서 막을지 정하는 목록입니다. 탐색 그래프의 앵커와는 별개입니다.
 
 type taskInterceptRuleReq struct {
 	Enabled bool   `json:"enabled"`
@@ -18,23 +21,23 @@ type taskInterceptRuleReq struct {
 	Note    string `json:"note"`
 }
 
-// validateTaskInterceptRuleReq 归一并校验；复用全局规则的 kind/pattern 校验器。
+// validateTaskInterceptRuleReq는 값을 맞추고 검사합니다. 전역 규칙의 kind/pattern 검사기를 그대로 씁니다.
 func validateTaskInterceptRuleReq(req *taskInterceptRuleReq) error {
 	if req.Action == "" {
 		req.Action = "block"
 	}
 	if req.Action != "block" && req.Action != "allow" {
-		return fmt.Errorf("action 必须是 block 或 allow")
+		return fmt.Errorf("action은 block 또는 allow이어야 합니다")
 	}
 	v := assetInterceptRuleReq{Enabled: req.Enabled, Kind: req.Kind, Pattern: req.Pattern, Note: req.Note}
 	if err := validateAssetInterceptRuleReq(&v); err != nil {
 		return err
 	}
-	req.Pattern = v.Pattern // 已 trim
+	req.Pattern = v.Pattern // 앞뒤 공백은 이미 제거됨
 	return nil
 }
 
-// buildTaskInterceptRules 校验创建任务时录入的任务级规则并转换为 db 输入形态。
+// buildTaskInterceptRules는 작업을 만들 때 넣은 규칙을 검사해 db 입력 형태로 바꿉니다.
 func buildTaskInterceptRules(reqs []taskInterceptRuleReq) ([]db.TaskInterceptRuleInput, error) {
 	if len(reqs) == 0 {
 		return nil, nil
@@ -63,7 +66,7 @@ func (s *Server) taskInterceptListRules(w http.ResponseWriter, r *http.Request) 
 	}
 	taskID, ok := pathInt(r, "id")
 	if !ok || taskID <= 0 {
-		writeErr(w, 400, "bad task id")
+		writeErr(w, 400, "작업 id가 올바르지 않습니다")
 		return
 	}
 	rules, err := pg.Assets().ListTaskInterceptRules(taskID)
@@ -84,7 +87,7 @@ func (s *Server) taskInterceptCreateRule(w http.ResponseWriter, r *http.Request)
 	}
 	taskID, ok := pathInt(r, "id")
 	if !ok || taskID <= 0 {
-		writeErr(w, 400, "bad task id")
+		writeErr(w, 400, "작업 id가 올바르지 않습니다")
 		return
 	}
 	var req taskInterceptRuleReq
@@ -111,12 +114,12 @@ func (s *Server) taskInterceptUpdateRule(w http.ResponseWriter, r *http.Request)
 	}
 	taskID, ok := pathInt(r, "id")
 	if !ok || taskID <= 0 {
-		writeErr(w, 400, "bad task id")
+		writeErr(w, 400, "작업 id가 올바르지 않습니다")
 		return
 	}
 	ruleID, ok := pathInt(r, "rid")
 	if !ok || ruleID <= 0 {
-		writeErr(w, 400, "bad rule id")
+		writeErr(w, 400, "규칙 id가 올바르지 않습니다")
 		return
 	}
 	var req taskInterceptRuleReq
@@ -143,12 +146,12 @@ func (s *Server) taskInterceptDeleteRule(w http.ResponseWriter, r *http.Request)
 	}
 	taskID, ok := pathInt(r, "id")
 	if !ok || taskID <= 0 {
-		writeErr(w, 400, "bad task id")
+		writeErr(w, 400, "작업 id가 올바르지 않습니다")
 		return
 	}
 	ruleID, ok := pathInt(r, "rid")
 	if !ok || ruleID <= 0 {
-		writeErr(w, 400, "bad rule id")
+		writeErr(w, 400, "규칙 id가 올바르지 않습니다")
 		return
 	}
 	deleted, err := pg.Assets().DeleteTaskInterceptRule(taskID, ruleID)
@@ -166,12 +169,12 @@ func (s *Server) taskInterceptToggleRule(w http.ResponseWriter, r *http.Request)
 	}
 	taskID, ok := pathInt(r, "id")
 	if !ok || taskID <= 0 {
-		writeErr(w, 400, "bad task id")
+		writeErr(w, 400, "작업 id가 올바르지 않습니다")
 		return
 	}
 	ruleID, ok := pathInt(r, "rid")
 	if !ok || ruleID <= 0 {
-		writeErr(w, 400, "bad rule id")
+		writeErr(w, 400, "규칙 id가 올바르지 않습니다")
 		return
 	}
 	var req struct {

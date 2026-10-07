@@ -190,14 +190,14 @@ func ParseVerdict(text string) Verdict {
 	if action != "allow" && action != "ask" && action != "deny" {
 		return Verdict{}
 	}
-	if len(reason) > 2400 || !strings.HasPrefix(reason, "实际操作：") {
+	if len(reason) > 2400 || !strings.HasPrefix(reason, "实际操作：") { // han-allow 업스트림 프롬프트·픽스처
 		return Verdict{}
 	}
-	operation, rest, ok := strings.Cut(strings.TrimPrefix(reason, "实际操作："), "；成功后的后果：")
+	operation, rest, ok := strings.Cut(strings.TrimPrefix(reason, "实际操作："), "；成功后的后果：") // han-allow 업스트림 프롬프트·픽스처
 	if !ok || strings.TrimSpace(operation) == "" {
 		return Verdict{}
 	}
-	consequence, rule, ok := strings.Cut(rest, "；命中规则：")
+	consequence, rule, ok := strings.Cut(rest, "；命中规则：") // han-allow 업스트림 프롬프트·픽스처
 	if !ok || strings.TrimSpace(consequence) == "" || strings.TrimSpace(rule) == "" {
 		return Verdict{}
 	}

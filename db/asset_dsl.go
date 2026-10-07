@@ -207,14 +207,14 @@ func (p *dslParser) parseAtom() (*astNode, error) {
 			return nil, err
 		}
 		if p.peek().kind != tkRP {
-			return nil, fmt.Errorf("DSL 语法错误：缺少右括号 ')'")
+			return nil, fmt.Errorf("DSL 문법 오류: 오른쪽 괄호 ')' 가 없다")
 		}
 		p.consume()
 		return node, nil
 	case tkEOF:
-		return nil, fmt.Errorf("DSL 语法错误：表达式不完整")
+		return nil, fmt.Errorf("DSL 문법 오류: 표현식이 완전하지 않다")
 	default:
-		return nil, fmt.Errorf("DSL 语法错误：意外的 token '%s'", t.kind)
+		return nil, fmt.Errorf("DSL 문법 오류: 예상하지 못한 token '%s'", t.kind)
 	}
 }
 
@@ -244,7 +244,7 @@ func ParseDSL(s string) (*astNode, error) {
 		return nil, err
 	}
 	if p.peek().kind != tkEOF {
-		return nil, fmt.Errorf("DSL 语法错误：意外的内容 '%s'", p.peek().kind)
+		return nil, fmt.Errorf("DSL 문법 오류: 예상하지 못한 내용 '%s'", p.peek().kind)
 	}
 	return node, nil
 }
@@ -316,7 +316,7 @@ func (b *whereBuilder) buildLeaf(e Expr) (string, error) {
 	if f == "task_id" {
 		n, err := strconv.ParseInt(e.Value, 10, 64)
 		if err != nil {
-			return "", fmt.Errorf("task_id 需要整数值: %s", e.Value)
+			return "", fmt.Errorf("task_id 는 정수 값이어야 한다: %s", e.Value)
 		}
 		return b.next(n) + " = ANY(task_ids)", nil
 	}
@@ -325,7 +325,7 @@ func (b *whereBuilder) buildLeaf(e Expr) (string, error) {
 	if f == "company_id" {
 		n, err := strconv.ParseInt(e.Value, 10, 64)
 		if err != nil {
-			return "", fmt.Errorf("company_id 需要整数值: %s", e.Value)
+			return "", fmt.Errorf("company_id 는 정수 값이어야 한다: %s", e.Value)
 		}
 		return "company_id = " + b.next(n), nil
 	}
@@ -334,14 +334,14 @@ func (b *whereBuilder) buildLeaf(e Expr) (string, error) {
 	if col, ok := knownNumericFields[f]; ok {
 		n, err := strconv.Atoi(e.Value)
 		if err != nil {
-			return "", fmt.Errorf("字段 %s 需要整数值: %s", f, e.Value)
+			return "", fmt.Errorf("필드 %s 는 정수 값이어야 한다: %s", f, e.Value)
 		}
 		op := e.Op
 		if op == "==" {
 			op = "="
 		}
 		if op != "=" && op != "!=" && op != ">" && op != ">=" && op != "<" && op != "<=" {
-			return "", fmt.Errorf("字段 %s 不支持运算符 %s", f, e.Op)
+			return "", fmt.Errorf("필드 %s 는 연산자 %s 를 지원하지 않는다", f, e.Op)
 		}
 		return fmt.Sprintf("%s %s %s", col, op, b.next(n)), nil
 	}
@@ -357,7 +357,7 @@ func (b *whereBuilder) buildLeaf(e Expr) (string, error) {
 			p := b.next("%" + e.Value + "%")
 			return "EXISTS (SELECT 1 FROM unnest(" + col + ") t(v) WHERE v ILIKE " + p + ")", nil
 		default:
-			return "", fmt.Errorf("数组字段 %s 不支持运算符 %s", f, e.Op)
+			return "", fmt.Errorf("배열 필드 %s 는 연산자 %s 를 지원하지 않는다", f, e.Op)
 		}
 	}
 
@@ -371,11 +371,11 @@ func (b *whereBuilder) buildLeaf(e Expr) (string, error) {
 		case "!=":
 			return col + " NOT ILIKE " + b.next("%"+e.Value+"%"), nil
 		default:
-			return "", fmt.Errorf("字符串字段 %s 不支持运算符 %s", f, e.Op)
+			return "", fmt.Errorf("문자열 필드 %s 는 연산자 %s 를 지원하지 않는다", f, e.Op)
 		}
 	}
 
-	return "", fmt.Errorf("未知字段: %s", f)
+	return "", fmt.Errorf("알 수 없는 필드: %s", f)
 }
 
 func buildDSLWhere(node *astNode) (string, []any, error) {
@@ -549,13 +549,12 @@ func (s *AssetStore) QueryDSL(dsl, typ string, taskID int64, limit, offset int) 
 	return assets, nil
 }
 
-// QueryDSLInScope is QueryDSL restricted to assets that BELONG to taskID's (and its
-// direct source tasks') declared scope — membership, not literal value: a
-// root_domain scope returns every subdomain / service / endpoint under it. This is
-// the agent-facing list_assets path, so an agent queries the task's relevant assets
-// instead of the whole shared库. taskID<=0 (non-task contexts: Auto / pentest / chat)
-// has no scope to honor and falls back to the plain global QueryDSL. Rows carry the
-// same per-task source metadata as QueryByTask.
+// QueryDSLInScope 는 QueryDSL 을 taskID 의(그리고 그 직접 원본 작업들의) 선언된 범위에 속하는 자산으로 제한한다. 소속이지 리터럴 값이 아니다. 즉
+// root_domain 범위는 그 아래의 모든 subdomain / service / endpoint 를 돌려준다. 이것은
+// 에이전트가 쓰는 list_assets 경로라서, 에이전트는 공유 자산 그래프 전체가 아니라 그 작업과 관련된 자산을 조회한다.
+// taskID<=0 (작업이 아닌 맥락: Auto / pentest / chat)
+// 에는 지킬 범위가 없어서 평범한 전역 QueryDSL 로 돌아간다. 각 행은
+// QueryByTask 와 같은 작업별 출처 메타데이터를 담는다.
 func (s *AssetStore) QueryDSLInScope(dsl, typ string, taskID int64, limit, offset int) ([]*Asset, error) {
 	if taskID <= 0 {
 		return s.QueryDSL(dsl, typ, 0, limit, offset)

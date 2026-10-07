@@ -120,7 +120,7 @@ func TestTaskLifecycleRechecksDeleteBarrierAfterConcLock(t *testing.T) {
 		t.Fatal("install delete barrier")
 	}
 	s.concMu.Unlock()
-	if err := <-pauseDone; err == nil || !strings.Contains(err.Error(), "正在删除") {
+	if err := <-pauseDone; err == nil || !strings.Contains(err.Error(), "삭제하는 중") {
 		t.Fatalf("pause passed a delete barrier installed while waiting for concMu: %v", err)
 	}
 	s.engine.AbortDelete(task.ID, false)
@@ -138,7 +138,7 @@ func TestTaskLifecycleRechecksDeleteBarrierAfterConcLock(t *testing.T) {
 		t.Fatal("install second delete barrier")
 	}
 	s.concMu.Unlock()
-	if err := <-admitDone; err == nil || !strings.Contains(err.Error(), "being deleted") {
+	if err := <-admitDone; err == nil || !strings.Contains(err.Error(), "삭제하는 중") {
 		t.Fatalf("admission passed a delete barrier installed while waiting for concMu: %v", err)
 	}
 	s.engine.AbortDelete(task.ID, false)

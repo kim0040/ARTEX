@@ -1,5 +1,7 @@
-// Package sidequestion captures immutable main-agent checkpoints. It never owns
-// an agent session or a tool executor.
+// Package sidequestion 는 메인 에이전트 대화의 곁길 질문을 그 시점 그대로 고정합니다.
+//
+// 초보: 본 대화의 세션이나 도구 실행기를 소유하지 않습니다. 그때의 맥락만 잘라
+// 짧은 질문에 답하게 하고, 탐색 그래프의 의도 대기열은 건드리지 않습니다.
 package sidequestion
 
 import (

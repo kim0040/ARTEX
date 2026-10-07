@@ -1,5 +1,7 @@
-// Package config loads runtime configuration from a JSON file, with environment
-// variables taking precedence. Currently it carries the PostgreSQL connection.
+// Package config 는 JSON 설정 파일을 읽고, 환경 변수가 있으면 그 값을 우선합니다.
+//
+// 초보: 지금 이 파일이 주로 들고 있는 것은 PostgreSQL 접속 정보입니다.
+// 자산 그래프와 탐색 그래프는 그 데이터베이스에 있습니다.
 package config
 
 import (
@@ -136,16 +138,16 @@ func SkillDir() string {
 // DSN came from (for startup logging).
 func PostgresDSN() (dsn, source string, err error) {
 	if v := strings.TrimSpace(os.Getenv("ARTEX_PG_DSN")); v != "" {
-		return v, "环境变量 ARTEX_PG_DSN", nil
+		return v, "환경 변수 ARTEX_PG_DSN", nil
 	}
 	db := Load().Database
 	if d := strings.TrimSpace(db.DSN); d != "" {
-		return d, "配置文件 " + Path() + " (database.dsn)", nil
+		return d, "설정 파일 " + Path() + " (database.dsn)", nil
 	}
 	if db.Host != "" || db.DBName != "" || db.User != "" {
-		return db.buildDSN(), "配置文件 " + Path() + " (database 字段)", nil
+		return db.buildDSN(), "설정 파일 " + Path() + " (database 필드)", nil
 	}
-	return "", "", fmt.Errorf("未找到数据库配置：环境变量 ARTEX_PG_DSN 未设置，且配置文件 %s 未提供 database（dsn 或 host/user/dbname）。请创建该配置文件或设置环境变量后重试", Path())
+	return "", "", fmt.Errorf("데이터베이스 설정을 찾지 못했습니다. 환경 변수 ARTEX_PG_DSN이 없고, 설정 파일 %s에도 database(dsn 또는 host/user/dbname)가 없습니다. 설정 파일을 만들거나 환경 변수를 지정한 뒤 다시 시도하세요", Path())
 }
 
 func (d Database) buildDSN() string {

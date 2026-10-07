@@ -38,7 +38,7 @@ func (s *Server) listFindingRetests(w http.ResponseWriter, r *http.Request) {
 	}
 	id, ok := pathInt(r, "id")
 	if !ok || id <= 0 {
-		writeErr(w, 400, "bad finding id")
+		writeErr(w, 400, "발견 id가 올바르지 않습니다")
 		return
 	}
 	f, err := pg.GetFinding(id)
@@ -47,7 +47,7 @@ func (s *Server) listFindingRetests(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if f == nil {
-		writeErr(w, 404, "finding not found")
+		writeErr(w, 404, "발견을 찾을 수 없습니다")
 		return
 	}
 	items, err := pg.ListFindingRetests(id)
@@ -65,7 +65,7 @@ func (s *Server) startFindingRetest(w http.ResponseWriter, r *http.Request) {
 	}
 	id, ok := pathInt(r, "id")
 	if !ok || id <= 0 {
-		writeErr(w, 400, "bad finding id")
+		writeErr(w, 400, "발견 id가 올바르지 않습니다")
 		return
 	}
 	var req struct {
@@ -76,7 +76,7 @@ func (s *Server) startFindingRetest(w http.ResponseWriter, r *http.Request) {
 	}
 	req.Notes = strings.TrimSpace(req.Notes)
 	if utf8.RuneCountInString(req.Notes) > 4000 {
-		writeErr(w, 400, "复测补充说明最多 4000 个字符")
+		writeErr(w, 400, "재검증 보충 설명은 최대 4000자입니다")
 		return
 	}
 	f, err := pg.GetFinding(id)
@@ -85,7 +85,7 @@ func (s *Server) startFindingRetest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if f == nil {
-		writeErr(w, 404, "finding not found")
+		writeErr(w, 404, "발견을 찾을 수 없습니다")
 		return
 	}
 	a, err := pg.GetAgentByKey(db.FindingRetestAgentKey)
@@ -94,7 +94,7 @@ func (s *Server) startFindingRetest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if a == nil || !a.Enabled {
-		writeErr(w, 409, "漏洞复测 Agent 不存在或未启用，请在 Agent 管理中配置 retester")
+		writeErr(w, 409, "발견 재검사 Agent가 없거나 켜져 있지 않습니다. Agent 관리에서 retester를 설정하세요")
 		return
 	}
 	for _, key := range []string{"get_finding_retest_context", "record_finding_retest_result"} {
@@ -104,7 +104,7 @@ func (s *Server) startFindingRetest(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if t == nil || !t.Enabled || !slices.Contains(t.Agents, a.Key) {
-			writeErr(w, 409, "请为复测 Agent 启用并绑定工具："+key)
+			writeErr(w, 409, "재검증 Agent를 활성화하고 도구를 바인딩하세요: "+key)
 			return
 		}
 	}
@@ -113,12 +113,12 @@ func (s *Server) startFindingRetest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.ctx.Err() != nil {
-		writeErr(w, 503, "服务正在停止")
+		writeErr(w, 503, "서비스가 중지되는 중입니다")
 		return
 	}
 	retest, conv, created, err := pg.CreateFindingRetest(r.Context(), id, req.Notes)
 	if errors.Is(err, sql.ErrNoRows) {
-		writeErr(w, 404, "finding not found")
+		writeErr(w, 404, "발견을 찾을 수 없습니다")
 		return
 	}
 	if err != nil {
@@ -143,14 +143,14 @@ func (s *Server) startFindingRetest(w http.ResponseWriter, r *http.Request) {
 // arguments cannot redirect a result into a different finding or conversation.
 func (s *Server) findingRetestTools() []actool.CoreTool {
 	return []actool.CoreTool{
-		roTool("get_finding_retest_context", "读取当前复测会话关联的漏洞证据快照、复测状态、补充说明与当前任务约束。无参数，只能读取本会话。",
+		roTool("get_finding_retest_context", "현재 재검증 세션에 연결된 발견(finding) 증거 스냅샷, 재검증 상태, 보충 설명, 현재 작업 제약을 읽습니다. 매개변수가 없으며 이 세션만 읽을 수 있습니다.",
 			objSchema(map[string]any{}), func(ctx context.Context, _ json.RawMessage) (actool.Result, error) {
 				r, err := s.m.pg.FindingRetestForConversation(ctx, intercept.ConvIDFromContext(ctx))
 				if err != nil {
 					return actool.Errorf(err.Error()), nil
 				}
 				if r == nil {
-					return actool.Errorf("当前会话未关联复测记录，请从漏洞详情发起复测"), nil
+					return actool.Errorf("현재 세션에 연결된 재검증 기록이 없습니다. 발견(finding) 상세에서 재검증을 시작하세요"), nil
 				}
 				var constraints []db.Constraint
 				f, err := s.m.pg.GetFinding(r.FindingID)
@@ -167,11 +167,11 @@ func (s *Server) findingRetestTools() []actool.CoreTool {
 				}
 				return jsonResult(map[string]any{"retest": r, "current_constraints": constraints})
 			}),
-		wrTool("record_finding_retest_result", "为当前复测会话保存唯一结论；原漏洞证据与报告保持不变。会话成功结束且结论为 fixed 时，系统自动将漏洞状态改为已修复；其他结论保留原状态。必须提供本次实际检查的证据，无法确认时写明阻塞原因。",
+		wrTool("record_finding_retest_result", "현재 재검증 세션에 유일한 결론을 저장합니다. 원래 발견(finding) 증거와 보고서는 그대로 둡니다. 세션이 성공적으로 끝나고 결론이 fixed이면 시스템이 발견(finding) 상태를 수정됨으로 바꿉니다. 그 외 결론은 원래 상태를 유지합니다. 이번 실제 검사의 증거를 반드시 제공하고, 확인할 수 없으면 차단 사유를 적습니다.",
 			objSchema(map[string]any{
 				"verdict":  map[string]any{"type": "string", "enum": []string{"reproduced", "fixed", "inconclusive"}},
-				"summary":  strParam("本次复测结论摘要"),
-				"evidence": strParam("Markdown：本次实际步骤、观察、对照、结论依据；无法确认则列出已检查内容和阻塞原因"),
+				"summary":  strParam("이번 재검증 결론 요약"),
+				"evidence": strParam("Markdown: 이번 실제 단계, 관찰, 대조, 결론 근거. 확인할 수 없으면 이미 검사한 내용과 차단 사유를 나열합니다"),
 			}, "verdict", "summary", "evidence"), func(ctx context.Context, in json.RawMessage) (actool.Result, error) {
 				var a struct {
 					Verdict  string `json:"verdict"`
@@ -219,7 +219,7 @@ func (s *Server) seedFindingRetester() error {
 	}
 	var id int64
 	err = tx.QueryRow(`INSERT INTO agents(key,name,description,role,builtin,enabled)
-	VALUES ($1,'漏洞复测','从漏洞详情手动启动，读取原证据并保存独立复测结论。','assistant',false,true)
+	VALUES ($1,'발견 재검사','발견 상세에서 직접 시작하며, 원래 증거를 읽고 별도의 재검사 결론을 저장합니다.','assistant',false,true)
 	ON CONFLICT (key) DO NOTHING RETURNING id`, db.FindingRetestAgentKey).Scan(&id)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return err
@@ -227,7 +227,7 @@ func (s *Server) seedFindingRetester() error {
 	if id > 0 {
 		var pid int64
 		if err = tx.QueryRow(`INSERT INTO agent_prompts(agent_id,version,template_text,note,updated_by)
-		VALUES ($1,1,$2,'内置默认','system') RETURNING id`, id, agent.RetesterDefaultPrompt).Scan(&pid); err != nil {
+		VALUES ($1,1,$2,'내장 기본값','system') RETURNING id`, id, agent.RetesterDefaultPrompt).Scan(&pid); err != nil {
 			return err
 		}
 		if _, err = tx.Exec(`UPDATE agents SET current_prompt_id=$1 WHERE id=$2`, pid, id); err != nil {

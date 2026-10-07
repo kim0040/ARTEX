@@ -1,6 +1,10 @@
-// Command artex runs the ARTEX backend: the dual SQLite graph stores,
-// the event-driven exploration engine, and the JSON HTTP API consumed by the
-// shadcn/ui frontend.
+// Command artex 는 ARTEX 백엔드의 진입점입니다.
+//
+// 초보: 기본 수신 주소는 :8787 이고, 기록 프록시는 127.0.0.1:8788 입니다.
+// PostgreSQL 이 자산 그래프(작업들이 공유하는 장부)와 탐색 그래프(작업마다 있는
+// 목표·의도·사실·발견)를 담습니다. 트래픽 색인과 본문은 data/ 아래 SQLite 와 파일입니다.
+// 화면은 이 프로세스의 JSON API 를 읽습니다. 그래프가 바뀌면 플래너가 깨어나 의도를 만들고,
+// 워커는 그 의도 하나를 실행합니다.
 package main
 
 import (
@@ -37,8 +41,8 @@ const banner = `
 // printBanner writes the startup banner + version/runtime info to stdout.
 func printBanner(addr string) {
 	fmt.Print(banner)
-	fmt.Println("  AI 自主渗透测试系统")
-	fmt.Printf("  版本 %s  ·  %s/%s  ·  %s  ·  监听 %s\n\n",
+	fmt.Println("  AI 자율 모의침투 시스템")
+	fmt.Printf("  버전 %s  ·  %s/%s  ·  %s  ·  수신 %s\n\n",
 		version, runtime.GOOS, runtime.GOARCH, runtime.Version(), addr)
 }
 
@@ -85,9 +89,9 @@ func run() int {
 		cfgPath = abs
 	}
 	if _, e := os.Stat(cfgPath); e == nil {
-		log.Printf("[config] 配置文件: %s", cfgPath)
+		log.Printf("[config] 설정 파일: %s", cfgPath)
 	} else {
-		log.Printf("[config] 配置文件: %s (不存在 — 将仅尝试环境变量 ARTEX_PG_DSN)", cfgPath)
+		log.Printf("[config] 설정 파일: %s (없음 — 환경 변수 ARTEX_PG_DSN만 시도합니다)", cfgPath)
 	}
 
 	sigCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -111,7 +115,7 @@ func run() int {
 	if abs, err := filepath.Abs(skillDir); err == nil {
 		skillDir = abs
 	}
-	log.Printf("[config] skill 目录: %s", skillDir)
+	log.Printf("[config] skill 디렉터리: %s", skillDir)
 	srv := server.New(ctx, mgr, skillDir, *dataDir, config.BaseDir())
 	httpSrv := &http.Server{
 		Addr:              *addr,

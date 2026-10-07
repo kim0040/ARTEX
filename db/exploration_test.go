@@ -12,7 +12,7 @@ func TestExplorationFlow(t *testing.T) {
 	}
 	defer d.Close()
 
-	expID, err := d.CreateExploration("test", "拿下测试目标")
+	expID, err := d.CreateExploration("test", "테스트 목표 장악")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -247,8 +247,8 @@ func TestIntentPauseResumeAndCancelCleanup(t *testing.T) {
 	assertCount(`SELECT COUNT(*) FROM assets WHERE id=$1`, 1, assetID)
 }
 
-// TestNodesPageQueryMatchesID verifies the 播报板 search filters on node id (both
-// the bare number and the「#id」form the UI shows) in addition to payload/origin.
+// TestNodesPageQueryMatchesID 는 방송판 검색이 node id 로도 거르는지 확인한다(UI 가 보여주는
+// 숫자만인 형태와 「#id」 형태 둘 다). payload/origin 조건에 더해서다.
 func TestNodesPageQueryMatchesID(t *testing.T) {
 	d, err := Open(testDSN(t))
 	if err != nil {
@@ -256,7 +256,7 @@ func TestNodesPageQueryMatchesID(t *testing.T) {
 	}
 	defer d.Close()
 
-	expID, err := d.CreateExploration("test", "id 搜索")
+	expID, err := d.CreateExploration("test", "id 검색")
 	if err != nil {
 		t.Fatal(err)
 	}

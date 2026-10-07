@@ -5,8 +5,9 @@ import (
 	"fmt"
 )
 
-// TaskInterceptRuleInput is one task-level rule supplied at task creation.
-// Action: 'block'=拦截 'allow'=允许(白名单)；空视为 'block'。
+// TaskInterceptRuleInput은 작업을 만들 때 넣는 작업 단위 규칙 하나다.
+// Action: block=가로채기, allow=허용(허용 목록). 비어 있으면 block으로 본다.
+// 이 타입은 작업 생성 화면에서 넘긴 가로채기 규칙으로, 워커가 자산 그래프의 자산을 다루기 전에 block 또는 allow을 정한다.
 type TaskInterceptRuleInput struct {
 	Enabled bool   `json:"enabled"`
 	Action  string `json:"action"`

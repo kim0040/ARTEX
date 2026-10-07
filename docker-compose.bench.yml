@@ -1,12 +1,12 @@
-# ARTEX 腾讯 TSec Benchmark 测评镜像 —— 本地一键 build + run。
-# 与生产用的 docker-compose.yml(多服务:artex+postgres)互不影响。
-# 用法：
-#   cp bench/.env.example bench/.env   # 填 LLM_API_KEY / BENCHMARK_TOKEN 等
-#   docker compose -f docker-compose.bench.yml up --build      # 构建并前台运行(看日志)
-#   docker compose -f docker-compose.bench.yml up --build -d   # 后台
+# ARTEX Tencent TSec Benchmark 이미지. 로컬에서 한 번에 build + run.
+# 운영용 docker-compose.yml(artex와 postgres)과는 서로 영향을 주지 않습니다.
+# 사용법:
+#   cp bench/.env.example bench/.env   # LLM_API_KEY / BENCHMARK_TOKEN 등을 채움
+#   docker compose -f docker-compose.bench.yml up --build      # 빌드하고 포그라운드로 실행(로그를 봄)
+#   docker compose -f docker-compose.bench.yml up --build -d   # 백그라운드
 #   docker compose -f docker-compose.bench.yml logs -f
-#   docker compose -f docker-compose.bench.yml down            # 停止(加 -v 连数据卷一起删)
-# 浏览器：http://localhost:8787（用 ADMIN_PASSWORD 登录）
+#   docker compose -f docker-compose.bench.yml down            # 중지(-v 를 주면 데이터 볼륨도 삭제)
+# 브라우저: http://localhost:8787 (ADMIN_PASSWORD 로 로그인)
 
 services:
   artex-bench:
@@ -17,9 +17,9 @@ services:
     container_name: artex-bench
     env_file:
       - bench/.env
-    # 与物理机共享网络：容器直接用宿主网络栈，可直连宿主/VPN 上的靶机网络。
-    # host 模式下不用 ports 映射，容器直接绑宿主端口：8787(UI/API)、8788(代理)、
-    # 以及内部 PostgreSQL 5432 —— 请确保宿主这三个端口空闲（本地测前先停掉占用它们的服务）。
+    # 물리 머신과 네트워크를 공유합니다. 컨테이너가 호스트 네트워크 스택을 그대로 씁니다.
+    # host 모드에서는 ports 매핑을 쓰지 않고 컨테이너가 호스트 포트에 직접 붙습니다.
+    # 8787(UI/API), 8788(기록 프록시), 내부 PostgreSQL 5432. 이 세 포트가 비어 있어야 합니다.
     network_mode: host
     restart: "no"
 

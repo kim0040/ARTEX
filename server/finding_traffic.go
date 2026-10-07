@@ -104,7 +104,7 @@ func evidenceError(w http.ResponseWriter, err error) {
 func (s *Server) findingTrafficAccess(w http.ResponseWriter, r *http.Request, write bool) (int64, bool) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil || id <= 0 {
-		writeErr(w, 400, "invalid finding id")
+		writeErr(w, 400, "발견 id가 올바르지 않습니다")
 		return 0, false
 	}
 	f, err := s.m.pg.GetFinding(id)
@@ -113,22 +113,22 @@ func (s *Server) findingTrafficAccess(w http.ResponseWriter, r *http.Request, wr
 		return 0, false
 	}
 	if f == nil {
-		writeErr(w, 404, "finding not found")
+		writeErr(w, 404, "발견을 찾을 수 없습니다")
 		return 0, false
 	}
 	if taskID := r.URL.Query().Get("context_task"); taskID != "" {
 		task := s.m.ResolveTask(taskID)
 		if task == nil {
-			writeErr(w, 404, "context task not found")
+			writeErr(w, 404, "맥락의 작업을 찾을 수 없습니다")
 			return 0, false
 		}
 		_, inherited, allowed := findingProvenanceInTask(task, f.TaskID)
 		if !allowed {
-			writeErr(w, 404, "finding not available in task context")
+			writeErr(w, 404, "작업 맥락에서 발견을 쓸 수 없습니다")
 			return 0, false
 		}
 		if write && inherited {
-			writeErr(w, 403, "继承漏洞只读，请在来源任务中修改")
+			writeErr(w, 403, "상속된 발견(finding)은 읽기 전용입니다. 원본 작업에서 수정하세요")
 			return 0, false
 		}
 	}
@@ -167,11 +167,11 @@ func (s *Server) bindFindingTraffic(w http.ResponseWriter, r *http.Request) {
 		Refs []db.TrafficRef `json:"traffic_refs"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&body); err != nil {
-		writeErr(w, 400, "invalid body")
+		writeErr(w, 400, "본문이 올바르지 않습니다")
 		return
 	}
 	if len(body.Refs) == 0 {
-		writeErr(w, 400, "请选择流量")
+		writeErr(w, 400, "트래픽을 선택하세요")
 		return
 	}
 	out, err := s.evidenceStore().Bind(r.Context(), id, body.Refs)
@@ -194,21 +194,21 @@ func (s *Server) editFindingTraffic(w http.ResponseWriter, r *http.Request) {
 		Order   []string `json:"binding_ids"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&body); err != nil || body.Version == nil {
-		writeErr(w, 400, "version 和有效请求体必填")
+		writeErr(w, 400, "version과 유효한 요청 본문은 필수입니다")
 		return
 	}
 	var order []int64
 	bindingID := int64(0)
 	if r.Method == http.MethodPut {
 		if body.Order == nil {
-			writeErr(w, 400, "binding_ids 必填")
+			writeErr(w, 400, "binding_ids는 필수입니다")
 			return
 		}
 		order = []int64{}
 		for _, raw := range body.Order {
 			v, err := strconv.ParseInt(raw, 10, 64)
 			if err != nil || v <= 0 {
-				writeErr(w, 400, "invalid binding id")
+				writeErr(w, 400, "연결 id가 올바르지 않습니다")
 				return
 			}
 			order = append(order, v)
@@ -217,7 +217,7 @@ func (s *Server) editFindingTraffic(w http.ResponseWriter, r *http.Request) {
 		var err error
 		bindingID, err = strconv.ParseInt(r.PathValue("binding_id"), 10, 64)
 		if err != nil || bindingID <= 0 {
-			writeErr(w, 400, "invalid binding id")
+			writeErr(w, 400, "연결 id가 올바르지 않습니다")
 			return
 		}
 	}
@@ -240,7 +240,7 @@ type evidencePreview struct {
 
 func readEvidencePreview(store *evidence.Store, snapshot db.TrafficEvidenceSnapshot, side string, offset, length int64) (out evidencePreview, err error) {
 	if offset < 0 || length < 0 {
-		return out, errors.New("offset / length 不能为负数")
+		return out, errors.New("offset / length는 음수일 수 없습니다")
 	}
 	if length == 0 || length > 8192 {
 		length = 8192
@@ -251,7 +251,7 @@ func readEvidencePreview(store *evidence.Store, snapshot db.TrafficEvidenceSnaps
 	}
 	defer f.Close()
 	if offset > total {
-		return out, errors.New("offset 超出正文长度")
+		return out, errors.New("offset이 본문 길이를 넘습니다")
 	}
 	if _, err = f.Seek(offset, io.SeekStart); err != nil {
 		return out, err
@@ -274,7 +274,7 @@ func readEvidencePreview(store *evidence.Store, snapshot db.TrafficEvidenceSnaps
 	out = evidencePreview{Offset: offset, Total: total, NextOffset: offset + int64(len(raw)), Truncated: offset+int64(len(raw)) < total,
 		Binary: bytes.IndexByte(raw, 0) >= 0 || (offset == 0 && !utf8.Valid(raw))}
 	if out.Binary {
-		out.Content = fmt.Sprintf("[二进制正文，%d 字节；请下载查看]", total)
+		out.Content = fmt.Sprintf("[바이너리 본문, %d바이트. 다운로드해서 보세요]", total)
 	} else {
 		out.Content = string(bytes.ToValidUTF8(raw, []byte("�")))
 	}
@@ -288,7 +288,7 @@ func (s *Server) getFindingTrafficDetail(w http.ResponseWriter, r *http.Request)
 	}
 	bid, err := strconv.ParseInt(r.PathValue("binding_id"), 10, 64)
 	if err != nil || bid <= 0 {
-		writeErr(w, 400, "invalid binding id")
+		writeErr(w, 400, "연결 id가 올바르지 않습니다")
 		return
 	}
 	store := s.evidenceStore()
@@ -319,7 +319,7 @@ func (s *Server) getFindingTrafficBody(w http.ResponseWriter, r *http.Request) {
 	}
 	bid, err := strconv.ParseInt(r.PathValue("binding_id"), 10, 64)
 	if err != nil || bid <= 0 {
-		writeErr(w, 400, "invalid binding id")
+		writeErr(w, 400, "연결 id가 올바르지 않습니다")
 		return
 	}
 	side := r.URL.Query().Get("side")
@@ -366,8 +366,8 @@ func (s *Server) getFindingTrafficBody(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) toolGetFindingTraffic() actool.CoreTool {
-	return roTool("get_finding_traffic", "读取漏洞已绑定的真实流量证据，不依赖捕获开关。finding_id 使用 report_finding JSON 返回的独立漏洞记录 ID（不是第一行的探索节点 ID）。先不传 binding_id 获取清单及 version；空清单是正常情况，TCP 等非 HTTP 漏洞或未采集时仍可依据文字/命令证据编写报告，不强制绑定。有绑定时按 binding_id、side(request/response)、offset 分段读取正文。写报告时将读取的 version 作为 evidence_version 传给 update_finding_report，后者 finding_id 仍使用探索节点 ID。",
-		objSchema(map[string]any{"finding_id": strParam("独立漏洞记录 ID"), "binding_id": strParam("清单里的绑定 ID，省略则返回清单"), "side": strParam("request 或 response，默认 response"), "offset": map[string]any{"type": "integer"}, "length": map[string]any{"type": "integer"}}, "finding_id"),
+	return roTool("get_finding_traffic", "발견(finding)에 묶인 실제 트래픽 증거를 읽습니다. 캡처 스위치에 의존하지 않습니다. finding_id에는 report_finding JSON이 반환한 독립 발견(finding) 기록 ID를 사용합니다(첫 줄의 탐색 노드 ID가 아닙니다). 먼저 binding_id 없이 목록과 version을 가져옵니다. 빈 목록은 정상입니다. TCP처럼 HTTP가 아닌 발견(finding)이거나 아직 수집되지 않은 경우에도 글이나 명령 증거로 보고서를 쓸 수 있으며, 바인딩은 강제하지 않습니다. 바인딩이 있으면 binding_id, side(request/response), offset으로 본문을 나누어 읽습니다. 보고서를 쓸 때는 읽은 version을 evidence_version으로 update_finding_report에 넘기고, 그 호출의 finding_id는 여전히 탐색 노드 ID를 사용합니다. 이 읽기는 탐색 그래프의 발견(finding)과 기록 프록시가 남긴 트래픽을 맞춰 보고서 본문을 만듭니다.",
+		objSchema(map[string]any{"finding_id": strParam("독립 발견 기록 ID"), "binding_id": strParam("목록에 있는 바인딩 ID입니다. 생략하면 목록을 반환합니다"), "side": strParam("request 또는 response이며, 기본값은 response입니다"), "offset": map[string]any{"type": "integer"}, "length": map[string]any{"type": "integer"}}, "finding_id"),
 		func(ctx context.Context, in json.RawMessage) (actool.Result, error) {
 			var a struct {
 				FindingID      json.RawMessage `json:"finding_id"`

@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# ARTEX 更新脚本：① Docker 更新（拉新镜像重建）  ② 本地编译更新（重建二进制）
-# 与 install.sh 对应：install 负责首次落地，update 负责升级到新版本。
-# DB 迁移无需手动执行——artex 每次启动都会幂等重跑 schema.sql（含 ADD COLUMN/CREATE
-# INDEX IF NOT EXISTS），所以“重启即迁移”。数据（pgdata 卷、./data、./skills）不受影响。
+# ARTEX 업데이트 스크립트: ① Docker(새 이미지를 받아 다시 만듦)  ② 로컬 컴파일(바이너리를 다시 빌드)
+# install.sh와 짝입니다. install은 처음 설치, update는 새 버전으로 올리는 일입니다.
+# DB 이전은 손으로 하지 않습니다. artex는 켜질 때마다 schema.sql을 멱등으로 다시 적용합니다
+# (ADD COLUMN, CREATE INDEX IF NOT EXISTS). 다시 켜는 것이 이전입니다.
+# 데이터(pgdata 볼륨, ./data, ./skills)는 그대로입니다.
 set -euo pipefail
 cd "$(cd "$(dirname "$0")" && pwd)"
 
@@ -12,71 +13,72 @@ warn(){ printf '\033[33m[!]\033[0m %s\n' "$*"; }
 die(){  printf '\033[31m[x]\033[0m %s\n' "$*" >&2; exit 1; }
 ask(){  local p="$1" d="${2:-}" a; read -rp "$p${d:+ [$d]}: " a; echo "${a:-$d}"; }
 
-# ── 可选：同步仓库到最新代码（compose/脚本/本地编译源码都靠它更新）───────
+# ── 선택: 저장소를 최신 코드로 맞춥니다. compose, 스크립트, 로컬 빌드 소스가 이것으로 갱신됩니다.
 sync_repo(){
-  [ -d .git ] && command -v git >/dev/null 2>&1 || { warn "非 git 工作副本，跳过 git pull"; return; }
-  [ "$(ask '拉取最新代码 (git pull --ff-only)? (y/n)' y)" = y ] || return
+  [ -d .git ] && command -v git >/dev/null 2>&1 || { warn "git 작업 사본이 아니라 git pull을 건너뜁니다"; return; }
+  [ "$(ask '최신 코드를 받을까요 (git pull --ff-only)? (y/n)' y)" = y ] || return
   if ! git pull --ff-only; then
-    warn "git pull 未能快进（本地有改动或分支分叉）——请手动处理后重试，本次沿用当前代码"
+    warn "git pull이 빨리감기로 되지 않았습니다(로컬 변경 또는 분기). 직접 맞춘 뒤 다시 하세요. 이번은 현재 코드를 씁니다"
   fi
 }
 
-# ── ① Docker 更新 ───────────────────────────────
+# ── ① Docker 업데이트 ───────────────────────────────
 update_docker(){
   command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1 \
-    || die "未检测到 docker / docker compose，请先用 ./install.sh 安装部署"
-  [ -f .env ] || die "未找到 .env，请先运行 ./install.sh 完成首次部署"
+    || die "docker / docker compose 가 없습니다. 먼저 ./install.sh 로 설치하세요"
+  [ -f .env ] || die ".env가 없습니다. 먼저 ./install.sh 로 처음 설치를 하세요"
 
-  # 可选：升级到指定版本 tag（不填则沿用 .env 中的 ARTEX_TAG，缺省为 latest）
-  local tag; tag="$(ask '目标镜像 tag（回车沿用 .env / latest）' '')"
+  # 선택: 올릴 이미지 태그. 비우면 .env의 ARTEX_TAG, 그것도 없으면 latest.
+  local tag; tag="$(ask '대상 이미지 태그(엔터면 .env / latest)' '')"
   if [ -n "$tag" ]; then
     if grep -q '^ARTEX_TAG=' .env; then
       sed -i.bak "s|^ARTEX_TAG=.*|ARTEX_TAG=${tag}|" .env && rm -f .env.bak
     else
       printf '\nARTEX_TAG=%s\n' "$tag" >> .env
     fi
-    ok "已将 ARTEX_TAG 设为 ${tag}"
+    ok "ARTEX_TAG를 ${tag}(으)로 두었습니다"
   fi
 
-  # 只动 artex：postgres 是固定的 16-alpine，不需要跟着升级（拉它纯属浪费带宽，
-  # 且大版本变动还会有兼容风险）。artex 声明了 depends_on postgres，所以带服务名
-  # up 时若 pg 没起会自动拉起，已在跑的则原样保留、不重建。
-  info "拉取新镜像（仅 artex）…"
+  # artex만 바꿉니다. postgres는 16-alpine으로 고정이라 같이 올리지 않습니다.
+  # 받아 봤자 대역만 쓰고, 메이저가 바뀌면 호환 위험도 있습니다.
+  # artex는 depends_on postgres라, 서비스 이름을 주고 up 하면 pg가 꺼져 있을 때만 켜고
+  # 이미 돌고 있으면 그대로 둡니다. 다시 만들지 않습니다.
+  info "새 이미지를 받습니다(artex만)…"
   docker compose pull artex
-  info "重建并启动（artex 重启时自动迁移 schema）…"
+  info "다시 만들어 시작합니다(artex가 다시 뜰 때 스키마를 맞춥니다)…"
   docker compose up -d artex
-  ok "更新完成 → http://localhost:8787"
-  info "查看日志：docker compose logs -f artex"
-  info "清理旧镜像（可选）：docker image prune -f"
+  ok "업데이트 완료 → http://localhost:8787"
+  info "로그: docker compose logs -f artex"
+  info "옛 이미지 정리(선택): docker image prune -f"
 }
 
-# ── ② 本地编译更新 ──────────────────────────────
+# ── ② 로컬 컴파일 업데이트 ──────────────────────────────
 update_local(){
-  command -v go >/dev/null 2>&1 || die "未检测到 Go（>=1.26）：https://go.dev/dl/"
-  [ -f config.json ] || warn "未找到 config.json——若首次部署请改用 ./install.sh"
+  command -v go >/dev/null 2>&1 || die "Go(>=1.26)가 없습니다: https://go.dev/dl/"
+  [ -f config.json ] || warn "config.json이 없습니다. 처음 설치라면 ./install.sh 를 쓰세요"
   ok "Go: $(go version)"
 
   if command -v npm >/dev/null 2>&1; then
-    info "重建前端静态产物…"
+    info "프론트 정적 파일을 다시 만듭니다…"
     ( cd web && npm ci && npm run build:static )
     rm -rf server/webui/dist && cp -r web/out server/webui/dist
-    info "重新编译内嵌单二进制…"
+    info "화면이 들어 있는 바이너리를 다시 컴파일합니다…"
     CGO_ENABLED=0 go build -tags embedui -trimpath -o artex ./cmd/artex
   else
-    warn "未检测到 npm：编译**不内嵌前端**的后端（前端需另跑 npm run dev）"
+    warn "npm이 없습니다. 화면을 넣지 않은 백엔드를 컴파일합니다(프론트는 npm run dev로 따로 띄우세요)"
     CGO_ENABLED=0 go build -o artex ./cmd/artex
   fi
-  ok "编译完成 → ./artex"
-  warn "请重启正在运行的 artex 进程以生效（重启时会自动迁移 schema）"
+  ok "컴파일 완료 → ./artex"
+  warn "돌고 있는 artex 프로세스를 다시 시작해야 반영됩니다(다시 켤 때 스키마를 맞춥니다)"
 }
 
 echo "=============================="
-echo "  ARTEX 更新"
-echo "  1) Docker 更新（拉新镜像重建）"
-echo "  2) 本地更新（go 重新编译）"
+echo "  ARTEX 업데이트"
+echo "  1) Docker 업데이트(새 이미지를 받아 다시 만듦)"
+echo "  2) 로컬 업데이트(go로 다시 컴파일)"
 echo "=============================="
-case "$(ask '选择' 1)" in
+case "$(ask '선택' 1)" in
   1) sync_repo; update_docker ;;
   2) sync_repo; update_local ;;
-  *) die "无效选择" ;;
+  *) die "잘못된 선택" ;;
 esac

@@ -6,9 +6,9 @@ import (
 	"testing"
 )
 
-// cleanupTreeFixtures 删除一个用例造出来的资产与发现。必须用 defer 注册(而不是
-// t.Cleanup):t.Cleanup 跑在测试函数返回之后,那时 defer d.Close() 已经把连接关了,
-// 清理会静默失败并把脏数据留在共享开发库里。
+// cleanupTreeFixtures는 한 테스트 케이스가 만든 자산과 발견을 지운다. defer로 등록해야 한다(
+// t.Cleanup이 아니다). t.Cleanup은 테스트 함수가 반환된 뒤에 돈다. 그때는 defer d.Close()가 이미 연결을 닫아서,
+// 정리가 조용히 실패하고 더러운 데이터가 공유 개발 데이터베이스에 남는다.
 func cleanupTreeFixtures(d *DB, taskID int64, rootDomains ...string) {
 	d.Exec(`DELETE FROM assets WHERE root_domain = ANY($1::text[])`, rootDomains) //nolint:errcheck
 	d.DeleteFindingsByTask(taskID)                                                //nolint:errcheck
@@ -43,11 +43,10 @@ func nodeByKey(tree *FindingAssetTree, key string) *FindingAssetNode {
 	return nil
 }
 
-// TestBuildFindingAssetTree covers the whole shape of the「按资产」tree: the
-// root→subdomain→service→endpoint chain gets rebuilt from a finding that only
-// points at the leaf, ancestors aggregate their subtree, assets without any
-// finding stay out, and a finding whose asset row is gone lands in the
-// unassigned bucket.
+// TestBuildFindingAssetTree는 자산별 트리의 전체 형태를 다룬다. 리프만
+// 가리키는 발견에서 root→subdomain→service→endpoint 체인을 다시 만들고, 조상은 자신의 서브트리를 모으며, 발견이 없는
+// 자산은 빠지고, 자산 행이 사라진 발견은
+// 미연결 버킷에 들어간다.
 func TestBuildFindingAssetTree(t *testing.T) {
 	d, err := Open(testDSN(t))
 	if err != nil {
@@ -55,7 +54,7 @@ func TestBuildFindingAssetTree(t *testing.T) {
 	}
 	defer d.Close()
 
-	tk, err := d.CreateTask("资产树测试", "目标", nil, 0, 0)
+	tk, err := d.CreateTask("자산 트리 테스트", "목표", nil, 0, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,21 +71,21 @@ func TestBuildFindingAssetTree(t *testing.T) {
 	epID := seedTreeAsset(t, d, "endpoint", map[string]any{
 		"domain": sub, "root_domain": root, "url": "https://" + sub + "/admin", "port": 443, "method": "GET",
 	})
-	// 同域名下另一个服务,不挂任何发现 —— 不应出现在树里。
+	// 같은 도메인 아래의 다른 서비스이며, 발견이 하나도 달리지 않는다. 트리에 나타나면 안 된다.
 	seedTreeAsset(t, d, "service", map[string]any{
 		"domain": sub, "root_domain": root, "url": "http://" + sub + ":8080", "port": 8080, "service_type": "http",
 	})
 
-	// 只把发现挂在最深的 endpoint 上,祖先链要靠构树自己补出来。
-	if _, err := d.AddFinding(tk.ID, 0, "XSS", "反射型 XSS", "high", "s", "e", "w", []int64{epID}); err != nil {
+	// 발견은 가장 깊은 endpoint에만 건다. 조상 체인은 트리를 만들 때 스스로 채워야 한다.
+	if _, err := d.AddFinding(tk.ID, 0, "XSS", "반사형 XSS", "high", "s", "e", "w", []int64{epID}); err != nil {
 		t.Fatal(err)
 	}
-	// 直接挂在服务上的一条,用来验证 Self 与 Total 的区别。
-	if _, err := d.AddFinding(tk.ID, 0, "Info", "信息泄露", "low", "s", "e", "w", []int64{svcID}); err != nil {
+	// 서비스에 직접 달린 한 건이며, Self와 Total의 차이를 검증하는 데 쓴다.
+	if _, err := d.AddFinding(tk.ID, 0, "Info", "정보 유출", "low", "s", "e", "w", []int64{svcID}); err != nil {
 		t.Fatal(err)
 	}
-	// 资产行不存在(已删除资产)→ 未关联桶。
-	if _, err := d.AddFinding(tk.ID, 0, "Misc", "孤儿", "medium", "s", "e", "w", []int64{999000111}); err != nil {
+	// 자산 행이 없다(이미 삭제된 자산) → 미연결 버킷.
+	if _, err := d.AddFinding(tk.ID, 0, "Misc", "고아", "medium", "s", "e", "w", []int64{999000111}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -110,7 +109,7 @@ func TestBuildFindingAssetTree(t *testing.T) {
 		}
 	}
 
-	// 父子链:endpoint → service → subdomain → root_domain。
+	// 부모-자식 체인: endpoint → service → subdomain → root_domain.
 	if epNode.Parent != svcNode.Key {
 		t.Errorf("endpoint parent: want %s, got %s", svcNode.Key, epNode.Parent)
 	}
@@ -124,12 +123,12 @@ func TestBuildFindingAssetTree(t *testing.T) {
 		t.Errorf("root parent: want top level, got %s", rootNode.Parent)
 	}
 
-	// 聚合:根域名两条(endpoint 的 high + service 的 low),service 自身一条、子树两条。
+	// 집계: 루트 도메인 두 건(endpoint의 high + service의 low), service 자신 한 건, 서브트리 두 건.
 	if rootNode.Total != 2 || rootNode.High != 1 || rootNode.Low != 1 {
 		t.Errorf("root totals: want 2/high1/low1, got %d/high%d/low%d", rootNode.Total, rootNode.High, rootNode.Low)
 	}
 	if rootNode.Self != 0 {
-		t.Errorf("root self: want 0 (只是祖先), got %d", rootNode.Self)
+		t.Errorf("root self: want 0 (조상일 뿐), got %d", rootNode.Self)
 	}
 	if svcNode.Total != 2 || svcNode.Self != 1 {
 		t.Errorf("service total/self: want 2/1, got %d/%d", svcNode.Total, svcNode.Self)
@@ -138,22 +137,22 @@ func TestBuildFindingAssetTree(t *testing.T) {
 		t.Errorf("endpoint total/self: want 1/1, got %d/%d", epNode.Total, epNode.Self)
 	}
 
-	// 没有发现的兄弟服务不进树。
+	// 발견이 없는 형제 서비스는 트리에 들어가지 않는다.
 	for _, n := range tree.Nodes {
 		if n.Label == "http://"+sub+":8080" {
 			t.Errorf("asset without findings should be hidden: %+v", n)
 		}
 	}
 
-	// 未关联桶收下那条指向已删资产的发现。
+	// 미연결 버킷이 삭제된 자산을 가리키는 그 발견을 받는다.
 	none := nodeByKey(tree, FindingUnassignedAsset)
 	if none == nil || none.Total != 1 || none.Medium != 1 {
 		t.Fatalf("unassigned bucket: want 1 medium, got %+v", none)
 	}
 }
 
-// TestFindingAssetScopeFilter verifies选中一个节点 narrows the findings list to
-// that node's whole subtree, and that the unassigned sentinel works too.
+// TestFindingAssetScopeFilter는 노드 하나를 고르면 발견 목록이
+// 그 노드의 하위 트리 전체로 좁아지는지, 그리고 미연결 센티널도 동작하는지 검증한다.
 func TestFindingAssetScopeFilter(t *testing.T) {
 	d, err := Open(testDSN(t))
 	if err != nil {
@@ -161,7 +160,7 @@ func TestFindingAssetScopeFilter(t *testing.T) {
 	}
 	defer d.Close()
 
-	tk, err := d.CreateTask("资产筛选测试", "目标", nil, 0, 0)
+	tk, err := d.CreateTask("자산 필터 테스트", "목표", nil, 0, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,18 +174,18 @@ func TestFindingAssetScopeFilter(t *testing.T) {
 	subID := seedTreeAsset(t, d, "subdomain", map[string]any{"domain": sub, "root_domain": root})
 	otherID := seedTreeAsset(t, d, "root_domain", map[string]any{"domain": other, "root_domain": other})
 
-	if _, err := d.AddFinding(tk.ID, 0, "A", "子域名上的", "high", "s", "e", "w", []int64{subID}); err != nil {
+	if _, err := d.AddFinding(tk.ID, 0, "A", "서브도메인에 있는", "high", "s", "e", "w", []int64{subID}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := d.AddFinding(tk.ID, 0, "B", "别的根域名上的", "high", "s", "e", "w", []int64{otherID}); err != nil {
+	if _, err := d.AddFinding(tk.ID, 0, "B", "다른 루트 도메인에 있는", "high", "s", "e", "w", []int64{otherID}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := d.AddFinding(tk.ID, 0, "C", "没有资产的", "high", "s", "e", "w", nil); err != nil {
+	if _, err := d.AddFinding(tk.ID, 0, "C", "자산이 없는", "high", "s", "e", "w", nil); err != nil {
 		t.Fatal(err)
 	}
-	// 指向已删除资产的发现,和 asset_ids 为空的一样属于「未关联」——树的桶收下它,
-	// 列表筛选也必须查得出来,两处口径不一致会让桶上的数字大于点开后的条数。
-	if _, err := d.AddFinding(tk.ID, 0, "D", "资产已删除", "high", "s", "e", "w", []int64{999000333}); err != nil {
+	// 삭제된 자산을 가리키는 발견은 asset_ids가 빈 것과 같이 「미연결」에 속한다 —— 트리 버킷이 그것을 받는다,
+	// 목록 필터에서도 조회되어야 한다. 두 기준이 어긋나면 버킷의 숫자가 열었을 때의 건수보다 커진다.
+	if _, err := d.AddFinding(tk.ID, 0, "D", "자산이 삭제됨", "high", "s", "e", "w", []int64{999000333}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -196,11 +195,11 @@ func TestFindingAssetScopeFilter(t *testing.T) {
 		scope string
 		want  int
 	}{
-		{"整棵子树", assetKey(rootID), 1},      // 根域名下只有子域名那条
-		{"叶子节点", assetKey(subID), 1},       // 子域名自身
-		{"另一棵树", assetKey(otherID), 1},     // 互不串味
-		{"未关联", FindingUnassignedAsset, 2}, // asset_ids 为空的 + 指向已删资产的
-		{"不存在的节点", "a:999000222", 0},       // 当前筛选下没有该节点 → 空结果,不是不过滤
+		{"하위 트리 전체", assetKey(rootID), 1},  // 루트 도메인 아래에는 서브도메인 한 건만 있다
+		{"리프 노드", assetKey(subID), 1},      // 서브도메인 자신
+		{"다른 트리", assetKey(otherID), 1},    // 서로 섞이지 않는다
+		{"미연결", FindingUnassignedAsset, 2}, // asset_ids가 빈 것 + 삭제된 자산을 가리키는 것
+		{"존재하지 않는 노드", "a:999000222", 0},   // 현재 필터에 그 노드가 없으면 → 빈 결과이다. 필터를 적용하지 않는 것이 아니다
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -216,12 +215,12 @@ func TestFindingAssetScopeFilter(t *testing.T) {
 		})
 	}
 
-	// 不带 scope 时四条都在。
+	// scope가 없으면 네 건이 모두 있다.
 	if _, total, err := d.ListFindingsPage(base, 1, 50); err != nil || total != 4 {
 		t.Fatalf("unscoped: want 4, got %d (%v)", total, err)
 	}
 
-	// 树上未关联桶的计数必须与点开后查到的条数一致 —— 这正是两处口径分家时会崩的断言。
+	// 트리에서 미연결 버킷의 개수는 열어서 조회한 건수와 같아야 한다 —— 두 기준이 갈라질 때 깨지는 바로 그 검증이다.
 	tree, err := d.BuildFindingAssetTree(base)
 	if err != nil {
 		t.Fatal(err)

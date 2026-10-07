@@ -4,19 +4,19 @@ import type { NextRequest } from "next/server";
 const AUTH_PAGES = ["/login", "/setup"];
 
 export function proxy(request: NextRequest) {
-  // Mock demo：无真实登录，放行所有页面（客户端 auth 守卫也会放行）。
+  // Mock demo: 진짜 로그인이 없어, 모든 페이지를 통과시킵니다(클라이언트 auth 가드도 통과시킴).
   if (process.env.NEXT_PUBLIC_MOCK === "1") return NextResponse.next();
 
   const { pathname } = request.nextUrl;
   const token = request.cookies.get("artex_token")?.value;
   const isAuthPage = AUTH_PAGES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 
-  // 未登录 → 跳转登录页
+  // 로그인 안 됨 → 로그인 페이지로 이동
   if (!token && !isAuthPage) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  // 已登录时访问登录/初始化页 → 跳转主界面
+  // 로그인된 상태에서 로그인/초기화 페이지에 들어가면 → 메인 화면으로 이동
   if (token && isAuthPage) {
     return NextResponse.redirect(new URL("/function/tasks", request.url));
   }
@@ -25,6 +25,6 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  // 跳过 Next.js 内部路由、API 路由、favicon 及 public/ 下的静态文件（含图片、字体等）
+  // Next.js 내부 라우트, API 라우트, favicon, public/ 아래 정적 파일(이미지, 글꼴 등)은 건너뜀
   matcher: ["/((?!_next/static|_next/image|favicon\\.ico|api/|.*\\.(?:png|jpg|jpeg|gif|webp|svg|ico|woff2?|ttf|otf)$).*)"],
 };

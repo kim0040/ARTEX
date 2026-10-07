@@ -15,7 +15,7 @@ func retestDB(t *testing.T) (*DB, int64) {
 	if err != nil {
 		t.Fatalf("open test database: %v", err)
 	}
-	fid, err := d.AddFinding(0, 0, "retest-test", "测试漏洞", "high", "original summary", "original evidence", "worker", nil)
+	fid, err := d.AddFinding(0, 0, "retest-test", "테스트 발견", "high", "original summary", "original evidence", "worker", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,7 +35,7 @@ func TestRetestAtomicDeduplicationAndHistory(t *testing.T) {
 	ids := make([]int64, 0, 8)
 	for range 8 {
 		wg.Go(func() {
-			r, c, created, err := d.CreateFindingRetest(t.Context(), fid, "  修复版本 v2  ")
+			r, c, created, err := d.CreateFindingRetest(t.Context(), fid, "  수정 버전 v2  ")
 			if err != nil {
 				t.Error(err)
 				return
@@ -92,7 +92,7 @@ func TestRetestAtomicDeduplicationAndHistory(t *testing.T) {
 		t.Fatal("unscoped write accepted", err)
 	}
 	for range 2 {
-		if err := d.RecordFindingRetestResult(ctx, *r.ConversationID, "fixed", "修复验证通过", "正常对照可用，原触发条件失效"); err != nil {
+		if err := d.RecordFindingRetestResult(ctx, *r.ConversationID, "fixed", "수정 검증 통과", "정상 대조는 사용할 수 있고, 원래 트리거 조건은 무효이다"); err != nil {
 			t.Fatal(err)
 		}
 	}

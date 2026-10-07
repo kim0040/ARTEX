@@ -4,10 +4,10 @@ on:
     tags: ["v*"]
 
 permissions:
-  contents: write # 创建 Release 需要
+  contents: write # Release를 만들 때 필요
 
 jobs:
-  # ① 前端静态导出（一次），产物给交叉编译各平台复用
+  # ① 프론트 정적 내보내기(한 번). 결과물을 각 플랫폼 교차 컴파일이 재사용합니다.
   frontend:
     runs-on: ubuntu-latest
     steps:
@@ -26,7 +26,7 @@ jobs:
           name: web-dist
           path: web/out
 
-  # ② 五平台交叉编译（内嵌前端）+ 打 zip
+  # ② 다섯 플랫폼 교차 컴파일(프론트 내장)과 zip 묶기
   binaries:
     needs: frontend
     runs-on: ubuntu-latest
@@ -55,8 +55,8 @@ jobs:
           ARTEX_BUILD_VERSION: ${{ github.ref_name }}
           ARTEX_SKIP_FRONTEND: "1"
           ARTEX_SKIP_NPM_CI: "1"
-          # UPX 自解压 ELF 在部分 Linux 内核、虚拟化和安全策略下会崩溃。
-          # Release 使用 Go linker 裁剪和 zip 压缩，优先保证可移植性。
+          # UPX로 압축한 ELF는 일부 리눅스 커널, 가상화, 보안 정책에서 죽습니다.
+          # 릴리스는 Go 링커로 줄이고 zip으로 묶어 옮기기 쉽게 합니다.
           ARTEX_COMPRESS: "0"
           ARTEX_PACKAGE: "1"
           ARTEX_PACKAGE_DIR: dist
@@ -69,14 +69,14 @@ jobs:
         with:
           name: pkg-${{ matrix.goos }}-${{ matrix.goarch }}
           path: "dist/*.zip"
-      # Linux 生二进制单独上传，供 docker job 复用（免在镜像里重编前端+Go）
+      # 리눅스 바이너리만 따로 올립니다. docker 잡이 재사용합니다(이미지 안에서 프론트와 Go를 다시 빌드하지 않음).
       - if: matrix.goos == 'linux'
         uses: actions/upload-artifact@v4
         with:
           name: bin-linux-${{ matrix.goarch }}
           path: dist/artex-linux-${{ matrix.goarch }}/artex
 
-  # ③ 汇总所有 zip → 创建 GitHub Release
+  # ③ zip을 모아 GitHub Release를 만듭니다.
   release:
     needs: binaries
     runs-on: ubuntu-latest
@@ -96,13 +96,13 @@ jobs:
             dist/SHA256SUMS
           generate_release_notes: true
 
-  # ④ 多架构镜像 → 推 Docker Hub（复用 binaries 编好的 Linux 二进制，
-  #    镜像里只装工具 + 放二进制；arm64 仅需模拟 apt 层，构建快很多）
+  # ④ 여러 아키텍처 이미지를 Docker Hub에 푸시합니다(binaries가 만든 리눅스 바이너리를 재사용).
+  #    이미지에는 도구와 바이너리만 넣습니다. arm64는 apt 층만 에뮬레이션하면 되어 빌드가 짧습니다.
   docker:
     needs: binaries
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4 # 取 Dockerfile 与 skills/
+      - uses: actions/checkout@v4 # Dockerfile과 skills/를 가져옵니다.
       - uses: actions/download-artifact@v4
         with:
           name: bin-linux-amd64

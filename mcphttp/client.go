@@ -1,11 +1,8 @@
-// Package mcphttp contains remote Streamable HTTP and legacy SSE MCP clients.
+// Package mcphttp 는 원격 MCP 서버(Streamable HTTP, 예전 SSE) 클라이언트입니다.
 //
-// The core mcp package only speaks stdio; this adapts an HTTP/JSON-RPC MCP server
-// to the same tool.CoreTool shape (mcp__server__tool) WITHOUT touching the SDK.
-// It implements the MCP "Streamable HTTP" transport: JSON-RPC over HTTP POST, with
-// the server free to answer either as application/json or a text/event-stream (SSE)
-// carrying the response. Custom headers (e.g. Authorization) come from the MCP
-// row's env map, so a bearer token is configured as {"Authorization":"Bearer …"}.
+// 초보: MCP 는 모델이 부르는 외부 도구 묶음입니다. 핵심 SDK 는 표준입출력만 알아서,
+// 이 패키지가 HTTP JSON-RPC 를 같은 도구 모양(mcp__서버__도구)으로 바꿉니다.
+// 응답은 JSON 한 덩어리이거나 SSE 흐름일 수 있습니다. 인증 헤더는 MCP 설정의 env 에서 옵니다.
 package mcphttp
 
 import (
@@ -315,9 +312,9 @@ func (c *Client) wrap(rt remoteTool) actool.CoreTool {
 			for _, blk := range res.Content {
 				text += blk.Text
 			}
-			// 与内置/自定义工具一致：超长输出走 Capture——按会话 MaxOutputChars（默认
-			// 30000）截断，配了 ToolOutputDir 时全量溢写到磁盘只留 head + 指针，避免大
-			// MCP 结果整段灌爆上下文。
+			// 내장/사용자 도구와 같습니다. 너무 긴 출력은 Capture로 갑니다. 세션 MaxOutputChars
+			// (기본 30000)로 자르고, ToolOutputDir이 있으면 전문은 디스크에 넘기고 head와
+			// 포인터만 남겨, 큰 MCP 결과가 컨텍스트를 통째로 채우지 않게 합니다.
 			return actool.Result{Content: []llm.ContentBlock{llm.TextBlock(actool.Capture(tc, text))}, IsError: res.IsError}, nil
 		},
 	})

@@ -40,8 +40,8 @@ const (
 
 var (
 	ErrTaskArchiveNotFound       = errors.New("task archive not found")
-	ErrTaskArchiveIneligible     = errors.New("task must be paused or terminal before archiving")
-	ErrTaskArchiveQueued         = errors.New("queued task must be paused before archiving")
+	ErrTaskArchiveIneligible     = errors.New("작업은 보관하기 전에 일시정지이거나 종료 상태여야 합니다")
+	ErrTaskArchiveQueued         = errors.New("대기 중인 작업은 보관하기 전에 일시정지해야 합니다")
 	ErrTaskArchiveDependent      = errors.New("task is inherited by a live task")
 	ErrTaskArchiveState          = errors.New("task archive state does not allow this operation")
 	ErrTaskArchiveDeleteBlocked  = errors.New("task archive is required by another archive")
@@ -361,7 +361,7 @@ func (d *DB) RecoverTaskArchiveJobs() error {
 	                  WHEN 'restoring' THEN 'restore_queued'
 	                  WHEN 'deleting' THEN 'delete_queued' ELSE state END,
 	 phase='interrupted',
-	 error=CASE WHEN state='archiving' THEN '上次归档进程异常退出，请手动重试' ELSE '' END
+	 error=CASE WHEN state='archiving' THEN '이전 아카이브 프로세스가 비정상 종료되었습니다. 직접 다시 시도하세요' ELSE '' END
 	WHERE state IN ('archiving','restoring','deleting')`)
 	return err
 }

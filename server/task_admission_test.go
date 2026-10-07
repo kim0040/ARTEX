@@ -720,7 +720,7 @@ func TestBatchControlLimitCountsDeduplicatedIDs(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(normalizedPayload.Items) != 2 || normalizedPayload.Items[0].ID != "9223372036854775807" ||
-		normalizedPayload.Items[1].ID != "bad-id" || normalizedPayload.Items[1].Error != "bad task id" {
+		normalizedPayload.Items[1].ID != "bad-id" || normalizedPayload.Items[1].Error != "작업 id가 올바르지 않습니다" {
 		t.Fatalf("normalized task response=%+v", normalizedPayload.Items)
 	}
 

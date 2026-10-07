@@ -399,11 +399,11 @@ FROM task_llm_profiles WHERE task_id=$1 ORDER BY position`, taskID)
 	return out, rows.Err()
 }
 
-// ReplaceTaskLLMProfiles atomically replaces and resets the explicit task chain.
-// activeProfileID=0 selects the first entry. An empty list restores the existing
-// agent-binding/global fallback behavior.
-// 终态(done/failed/timeout)任务同样允许改链:任务结束后主 Agent 对话仍会走这条链,
-// 链上模型不可用时必须能换,否则已完成任务就再也没法交互了。
+// ReplaceTaskLLMProfiles는 명시적 작업 체인을 원자적으로 교체하고 재설정한다.
+// activeProfileID=0은 첫 항목을 선택한다. 빈 목록은 기존의
+// agent-binding/global 폴백 동작을 복원한다.
+// 종료 상태(done/failed/timeout) 작업도 체인 변경을 허용한다. 작업이 끝난 뒤에도 주 Agent 대화는 이 체인을 타므로,
+// 체인의 모델을 쓸 수 없을 때는 바꿀 수 있어야 한다. 그렇지 않으면 이미 완료된 작업과는 다시 상호작용할 수 없다.
 func (d *DB) ReplaceTaskLLMProfiles(taskID int64, profileIDs []int64, activeProfileID int64) error {
 	tx, err := d.Begin()
 	if err != nil {
@@ -416,7 +416,7 @@ func (d *DB) ReplaceTaskLLMProfiles(taskID int64, profileIDs []int64, activeProf
 	var lockedID int64
 	if err := tx.QueryRow(`SELECT id FROM tasks WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`, taskID).Scan(&lockedID); err != nil {
 		if err == sql.ErrNoRows {
-			return fmt.Errorf("task %d not found", taskID)
+			return fmt.Errorf("작업 %d 을(를) 찾을 수 없습니다", taskID)
 		}
 		return err
 	}

@@ -50,18 +50,18 @@ function fmtTime(value?: string) {
 function source(row: InterceptApprovalRow) {
   if (row.decision_source) return row.decision_source;
   if (row.rule_id) return "rule";
-  return row.reason?.startsWith("[模型]") ? "model" : "unknown";
+  return row.reason?.startsWith("[模型]") ? "model" : "unknown"; // han-allow 프로토콜 토큰
 }
 
 function originLabel(row: InterceptApprovalRow) {
   if (row.task_id) return row.task_id;
-  if (row.conversation_id) return `对话 #${row.conversation_id}`;
+  if (row.conversation_id) return `대화 #${row.conversation_id}`;
   return "—";
 }
 
 function ApprovalOrigin({ row, detail = false }: { row: InterceptApprovalRow; detail?: boolean }) {
   const [locating, setLocating] = React.useState(false);
-  const label = detail && row.task_id ? `任务 ${row.task_id}` : originLabel(row);
+  const label = detail && row.task_id ? `작업 ${row.task_id}` : originLabel(row);
   const query = new URLSearchParams({ approval: String(row.id) });
   let href: string | undefined;
   if (row.conversation_id) {
@@ -75,7 +75,7 @@ function ApprovalOrigin({ row, detail = false }: { row: InterceptApprovalRow; de
     <a
       href={href}
       className="text-primary underline-offset-4 hover:underline"
-      aria-label={`定位审批 #${row.id} 的来源：${label}`}
+      aria-label={`승인 찾기 #${row.id} 의 출처:${label}`}
       aria-busy={locating}
       onClick={async (e) => {
         e.stopPropagation();
@@ -87,7 +87,7 @@ function ApprovalOrigin({ row, detail = false }: { row: InterceptApprovalRow; de
           await api.interceptExecution(row.id, row.conversation_id ?? undefined);
           window.location.assign(href);
         } catch (error) {
-          toast.error((error as Error).message || "无法定位对应执行");
+          toast.error((error as Error).message || "해당 실행을 찾을 수 없습니다");
           setLocating(false);
         }
       }}
@@ -100,7 +100,7 @@ function ApprovalOrigin({ row, detail = false }: { row: InterceptApprovalRow; de
 }
 
 function StatusBadge({ status }: { status: string }) {
-  const labels: Record<string, string> = { pending: "待审批", allowed: "已允许", denied: "已拒绝", timeout: "已超时" };
+  const labels: Record<string, string> = { pending: "승인 대기", allowed: "허용함", denied: "거부함", timeout: "시간 초과됨" };
   let variant: "default" | "destructive" | "secondary" | "outline" = "outline";
   if (status === "allowed") variant = "default";
   if (status === "denied") variant = "destructive";
@@ -109,20 +109,20 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 function MatchCell({ row, showReason = true }: { row: InterceptApprovalRow; showReason?: boolean }) {
-  const reason = row.reason?.replace(/^\[模型\]\s*/, "");
+  const reason = row.reason?.replace(/^\[模型\]\s*/, ""); // han-allow 프로토콜 접두사
   return (
     <div className="flex min-w-0 flex-col gap-1">
       {source(row) === "model" ? (
         <Badge variant="outline">
           <BotIcon />
-          模型判定
+          모델 판정
         </Badge>
       ) : (
-        <span className="truncate">{row.rule_name || "规则未记录或已删除"}</span>
+        <span className="truncate">{row.rule_name || "규칙이 기록되지 않았거나 삭제되었습니다"}</span>
       )}
       {showReason ? (
         <p className="truncate text-muted-foreground text-xs" title={reason}>
-          {reason || "未记录理由"}
+          {reason || "이유가 기록되지 않음"}
         </p>
       ) : null}
     </div>
@@ -133,9 +133,9 @@ function CodeBlock({ label, text, truncated = false }: { label: string; text: st
   async function copy() {
     try {
       await navigator.clipboard.writeText(text);
-      toast.success("已复制");
+      toast.success("복사했습니다");
     } catch {
-      toast.error("复制失败，请手动选择内容复制");
+      toast.error("복사 실패, 내용을 직접 선택해 복사하세요");
     }
   }
   return (
@@ -143,106 +143,106 @@ function CodeBlock({ label, text, truncated = false }: { label: string; text: st
       <div className="flex items-center justify-between gap-2">
         <h3 className="font-medium text-muted-foreground text-xs">{label}</h3>
         {text ? (
-          <Button variant="ghost" size="icon-xs" aria-label={`复制${label}`} onClick={() => void copy()}>
+          <Button variant="ghost" size="icon-xs" aria-label={`복사${label}`} onClick={() => void copy()}>
             <CopyIcon />
           </Button>
         ) : null}
       </div>
       <pre className="max-h-80 min-w-0 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-muted/60 p-3 font-mono text-xs leading-6 [overflow-wrap:anywhere]">
-        {text || "未记录"}
+        {text || "기록되지 않음"}
       </pre>
-      {truncated ? <p className="text-muted-foreground text-xs">内容已截断，以上为保存的片段。</p> : null}
+      {truncated ? <p className="text-muted-foreground text-xs">내용이 잘렸습니다. 위는 저장된 일부입니다.</p> : null}
     </section>
   );
 }
 
 const contextLabels: Record<string, string> = {
-  user: "用户消息",
-  assistant: "Agent 消息",
-  text: "Agent 消息",
-  tool_use: "工具请求",
-  tool_result: "工具输出",
+  user: "사용자 메시지",
+  assistant: "Agent 메시지",
+  text: "Agent 메시지",
+  tool_use: "도구 요청",
+  tool_result: "도구 출력",
 };
 
-const actionLabels: Record<string, string> = { allow: "允许", ask: "转人工审批", deny: "拒绝" };
+const actionLabels: Record<string, string> = { allow: "허용", ask: "수동 승인으로 전환", deny: "거부" };
 const executionLabels: Record<InterceptAudit["execution_status"], string> = {
-  not_started: "尚未执行",
-  not_executed: "未执行",
-  awaiting_result: "已允许，等待执行结果",
-  succeeded: "执行成功",
-  failed: "执行失败",
-  unknown: "执行结果未知",
+  not_started: "아직 실행하지 않음",
+  not_executed: "실행되지 않음",
+  awaiting_result: "허용함, 실행 결과를 기다림",
+  succeeded: "실행 성공",
+  failed: "실행 실패",
+  unknown: "실행 결과를 알 수 없음",
 };
 
 function ModelReviewContext({ input }: { input: InterceptReviewInput }) {
   return (
-    <section className="flex min-w-0 flex-col gap-4" aria-label="模型审查上下文">
+    <section className="flex min-w-0 flex-col gap-4" aria-label="모델 검토 컨텍스트">
       <div className="flex flex-col gap-2">
-        <h3 className="font-medium text-sm">模型审查上下文</h3>
+        <h3 className="font-medium text-sm">모델 검토 컨텍스트</h3>
         <p className="text-muted-foreground text-xs">
-          以下为本次实际发送给审查模型的输入快照。背景仅用于理解当前动作，裁决依据为审查策略。
-          {input.version < 4 ? "此记录使用旧版输入，保留当时实际发送的内容。" : null}
+          아래는 이번에 검토 모델에 실제로 보낸 입력 스냅샷입니다. 배경은 현재 동작을 이해하는 데만 쓰이며, 판단 기준은 검토 정책입니다.
+          {input.version < 4 ? "이 기록은 이전 버전 입력을 사용하며, 당시 실제로 보낸 내용을 남깁니다." : null}
         </p>
       </div>
       <CodeBlock
-        label="当前待审查调用"
+        label="현재 검토 대기 중인 호출"
         text={JSON.stringify({ tool_name: input.tool_name, arguments: input.arguments }, null, 2)}
       />
       {input.version >= 2 ? (
         input.background ? (
           <div className="flex min-w-0 flex-col gap-2">
             <CodeBlock
-              label={input.background.source === "user_message" ? "背景 · 用户消息" : "背景 · Worker 意图摘要（旧版）"}
+              label={input.background.source === "user_message" ? "배경 · 사용자 메시지" : "배경 · 워커 의도 요약(이전 버전)"}
               text={input.background.text}
               truncated={input.background.truncated}
             />
             <p className="text-muted-foreground text-xs">
               {input.background.source === "user_message"
-                ? "取自当前用户消息。"
-                : "这是旧版发送的 Worker 意图摘要；新版 Worker 审查不再发送此内容。"}
+                ? "현재 사용자 메시지에서 가져옵니다."
+                : "이것은 이전 버전이 보낸 워커 의도 요약입니다. 새 버전 워커 검토는 이 내용을 더 이상 보내지 않습니다."}
             </p>
           </div>
         ) : (
-          <p className="text-muted-foreground text-xs">本次审查未附带背景消息。</p>
+          <p className="text-muted-foreground text-xs">이번 검토에는 배경 메시지가 없습니다.</p>
         )
       ) : (
         <>
           {input.turn_input ? (
-            <CodeBlock label="当前轮输入（旧版）" text={input.turn_input} truncated={input.background_truncated} />
+            <CodeBlock label="현재 라운드 입력(이전 버전)" text={input.turn_input} truncated={input.background_truncated} />
           ) : null}
           {input.task ? (
             <>
-              <CodeBlock label="任务描述（旧版）" text={input.task.description} truncated={input.task.truncated} />
-              <CodeBlock label="任务目标（旧版）" text={input.task.goal} truncated={input.task.truncated} />
-              <CodeBlock label="任务操作约束（旧版）" text={JSON.stringify(input.task.constraints, null, 2)} />
+              <CodeBlock label="작업 설명(구버전)" text={input.task.description} truncated={input.task.truncated} />
+              <CodeBlock label="작업 목표(구버전)" text={input.task.goal} truncated={input.task.truncated} />
+              <CodeBlock label="작업 조작 제약(구버전)" text={JSON.stringify(input.task.constraints, null, 2)} />
             </>
           ) : null}
           {input.worker_intent ? (
-            <CodeBlock label="Worker 意图（旧版）" text={input.worker_intent} truncated={input.background_truncated} />
+            <CodeBlock label="워커 의도(구버전)" text={input.worker_intent} truncated={input.background_truncated} />
           ) : null}
         </>
       )}
-      {input.working_directory ? <CodeBlock label="工作目录" text={input.working_directory} /> : null}
+      {input.working_directory ? <CodeBlock label="작업 디렉터리" text={input.working_directory} /> : null}
       {input.version >= 3 ? (
-        <p className="text-muted-foreground text-xs">本次审查未发送历史调用或执行结果。</p>
+        <p className="text-muted-foreground text-xs">이번 검토는 이전 호출이나 실행 결과를 보내지 않았습니다.</p>
       ) : (
         <div className="flex min-w-0 flex-col gap-3">
-          <h4 className="font-medium text-muted-foreground text-xs">当时提供给模型的历史调用（旧版）</h4>
+          <h4 className="font-medium text-muted-foreground text-xs">당시 모델에 준 이전 호출(이전 버전)</h4>
           {input.history?.length ? (
             input.history.map((entry) => (
               <div key={entry.tool_use_id} className="flex min-w-0 flex-col gap-2 rounded-lg border p-3">
                 <p className="break-words font-medium text-xs">
-                  {entry.tool} · {entry.status === "succeeded" ? "成功" : "失败（可能有部分副作用）"}
+                  {entry.tool} · {entry.status === "succeeded" ? "성공" : "실패(일부 부작용이 있을 수 있음)"}
                 </p>
-                <CodeBlock label="历史调用参数" text={entry.arguments_preview} truncated={entry.truncated} />
-                <CodeBlock label="历史执行结果" text={entry.result} truncated={entry.truncated} />
+                <CodeBlock label="과거 호출 매개변수" text={entry.arguments_preview} truncated={entry.truncated} />
+                <CodeBlock label="과거 실행 결과" text={entry.result} truncated={entry.truncated} />
               </div>
             ))
           ) : (
-            <p className="text-muted-foreground text-xs">本次未提供可配对的历史工具执行记录。</p>
+            <p className="text-muted-foreground text-xs">이번에 짝을 맞출 이전 도구 실행 기록이 없습니다.</p>
           )}
           {input.history_truncated ? (
-            <p className="text-muted-foreground text-xs">历史为有限窗口，部分内容已截断。</p>
+            <p className="text-muted-foreground text-xs">기록은 제한된 창이며, 일부 내용은 잘렸습니다.</p>
           ) : null}
         </div>
       )}
@@ -251,11 +251,11 @@ function ModelReviewContext({ input }: { input: InterceptReviewInput }) {
         <CollapsibleTrigger asChild>
           <Button variant="outline" size="sm" className="self-start">
             <ChevronDownIcon data-icon="inline-start" />
-            查看完整模型审查输入 JSON
+            모델 검토 입력 JSON 전체 보기
           </Button>
         </CollapsibleTrigger>
         <CollapsibleContent className="pt-3">
-          <CodeBlock label="模型审查输入" text={JSON.stringify(input, null, 2)} />
+          <CodeBlock label="모델 검토 입력" text={JSON.stringify(input, null, 2)} />
         </CollapsibleContent>
       </Collapsible>
     </section>
@@ -270,11 +270,11 @@ function DecisionActions({ row, busy, decide }: { row: InterceptApprovalRow; bus
     <div className="flex flex-wrap gap-2">
       <Button size="sm" disabled={busy} onClick={() => void decide(row.id, "allowed")}>
         <CheckIcon data-icon="inline-start" />
-        允许
+        허용
       </Button>
       <Button size="sm" variant="destructive" disabled={busy} onClick={() => void decide(row.id, "denied")}>
         <XIcon data-icon="inline-start" />
-        拒绝
+        거부
       </Button>
     </div>
   );
@@ -316,7 +316,7 @@ export function ApprovalDetail({
         if (next.status === "pending" || next.audit?.execution_status === "awaiting_result")
           timer = setTimeout(() => void load(), 5000);
       } catch (e) {
-        if (!cancelled) setError((e as Error).message || "详情加载失败");
+        if (!cancelled) setError((e as Error).message || "상세를 불러오지 못했습니다");
       }
     }
     void load();
@@ -329,19 +329,19 @@ export function ApprovalDetail({
   // Row updates are authoritative until the lazy detail has caught up.
   const current = detail?.status === row.status ? detail : row;
   const audit = detail?.audit;
-  let execution = audit ? executionLabels[audit.execution_status] : "未记录";
-  if (row.status === "pending") execution = "尚未执行";
-  if (audit && audit.correlation !== "exact" && audit.effective_action === "allow") execution = "未关联执行结果";
+  let execution = audit ? executionLabels[audit.execution_status] : "기록되지 않음";
+  if (row.status === "pending") execution = "아직 실행하지 않음";
+  if (audit && audit.correlation !== "exact" && audit.effective_action === "allow") execution = "연결되지 않은 실행 결과";
   const command = typeof row.tool_input?.command === "string" ? row.tool_input.command : undefined;
-  let initialLabel = source(row) === "model" ? "模型初判" : "规则初判";
-  if (audit?.model_fallback) initialLabel = "模型异常回退";
+  let initialLabel = source(row) === "model" ? "모델 1차 판정" : "규칙 1차 판정";
+  if (audit?.model_fallback) initialLabel = "모델 이상 시 되돌림";
 
   return (
     <div className="flex min-w-0 flex-col gap-4 p-3 sm:p-5">
       <div className="grid min-w-0 gap-5 rounded-xl border bg-muted/20 p-4 lg:grid-cols-2">
         <div className="flex min-w-0 flex-col gap-3">
           <CodeBlock
-            label={`${current.agent_name || current.conv_agent_key || "Agent"} · 工具请求`}
+            label={`${current.agent_name || current.conv_agent_key || "Agent"} · 도구 요청`}
             text={JSON.stringify(row.tool_input ?? {}, null, 2)}
           />
           {command ? (
@@ -349,49 +349,49 @@ export function ApprovalDetail({
               <CollapsibleTrigger asChild>
                 <Button variant="ghost" size="sm">
                   <ChevronDownIcon data-icon="inline-start" />
-                  查看命令内容
+                  명령 내용 보기
                 </Button>
               </CollapsibleTrigger>
               <CollapsibleContent className="pt-2">
-                <CodeBlock label="命令内容" text={command} />
+                <CodeBlock label="명령 내용" text={command} />
               </CollapsibleContent>
             </Collapsible>
           ) : null}
           <p className="text-muted-foreground text-xs">
-            执行结果：<span className="text-foreground">{detail ? execution : "加载中…"}</span>
+            실행 결과:<span className="text-foreground">{detail ? execution : "불러오는 중…"}</span>
           </p>
         </div>
         <div className="flex min-w-0 flex-col gap-4 lg:border-l lg:pl-5">
           <h3 className="font-medium text-muted-foreground text-xs">
-            {current.status === "pending" ? "审查状态" : "审批裁决"}
+            {current.status === "pending" ? "검토 상태" : "승인 판정"}
           </h3>
           <div className="flex flex-wrap items-center gap-2">
             <StatusBadge status={current.status} />
             <MatchCell row={current} showReason={false} />
           </div>
           <p className="whitespace-pre-wrap break-words text-sm leading-7 [overflow-wrap:anywhere]">
-            {current.reason?.replace(/^\[模型\]\s*/, "") || "未记录审批理由"}
+            {current.reason?.replace(/^\[模型\]\s*/, "") || "승인 이유가 기록되지 않음" /* han-allow 프로토콜 접두사 */}
           </p>
           {audit?.decision_reason ? <p className="text-sm">{audit.decision_reason}</p> : null}
-          {audit?.effective_action ? <p className="text-sm">最终动作：{actionLabels[audit.effective_action]}</p> : null}
+          {audit?.effective_action ? <p className="text-sm">최종 동작:{actionLabels[audit.effective_action]}</p> : null}
           <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 text-xs">
-            <dt className="text-muted-foreground">来源</dt>
+            <dt className="text-muted-foreground">출처</dt>
             <dd className="break-words">
               <ApprovalOrigin row={current} detail />
             </dd>
-            <dt className="text-muted-foreground">申请时间</dt>
+            <dt className="text-muted-foreground">신청 시각</dt>
             <dd>{fmtTime(row.created_at)}</dd>
-            <dt className="text-muted-foreground">决定时间</dt>
+            <dt className="text-muted-foreground">결정 시각</dt>
             <dd>{fmtTime(current.decided_at)}</dd>
             {audit?.rule_name ? (
               <>
-                <dt className="text-muted-foreground">规则快照</dt>
+                <dt className="text-muted-foreground">규칙 스냅샷</dt>
                 <dd>{audit.rule_name}</dd>
               </>
             ) : null}
             {audit?.profile_id ? (
               <>
-                <dt className="text-muted-foreground">审批模型配置</dt>
+                <dt className="text-muted-foreground">승인 모델 설정</dt>
                 <dd>#{audit.profile_id}</dd>
               </>
             ) : null}
@@ -403,9 +403,9 @@ export function ApprovalDetail({
         <Alert variant="destructive">
           <AlertDescription>
             <div className="flex flex-wrap items-center gap-2">
-              <span>详情加载失败：{error}</span>
+              <span>상세 불러오기 실패:{error}</span>
               <Button variant="outline" size="sm" onClick={() => setRetry((v) => v + 1)}>
-                重试详情
+                다시 시도 상세
               </Button>
             </div>
           </AlertDescription>
@@ -414,7 +414,7 @@ export function ApprovalDetail({
       {!detail && !error ? <Skeleton className="h-8 w-60" /> : null}
       {detail && !audit ? (
         <Alert>
-          <AlertDescription>此记录未保存审批详情快照，无法还原当时的上下文、模型初判和执行输出。</AlertDescription>
+          <AlertDescription>이 기록에는 승인 상세 스냅샷이 없어, 당시 컨텍스트, 모델의 첫 판정, 실행 출력을 복원할 수 없습니다.</AlertDescription>
         </Alert>
       ) : null}
       {audit ? (
@@ -422,7 +422,7 @@ export function ApprovalDetail({
           <CollapsibleTrigger asChild>
             <Button variant="ghost" size="sm">
               <ChevronDownIcon data-icon="inline-start" className={cn(more && "rotate-180")} />
-              {more ? "收起上下文" : "查看上下文与执行结果"}
+              {more ? "컨텍스트 접기" : "컨텍스트와 실행 결과 보기"}
             </Button>
           </CollapsibleTrigger>
           <CollapsibleContent className="pt-4">
@@ -433,8 +433,8 @@ export function ApprovalDetail({
                 <Alert>
                   <AlertDescription>
                     {audit.model_input_digest
-                      ? "此历史记录仅保存审查输入指纹，未保存输入原文，无法还原当时发给模型的上下文。这不代表审查时没有上下文；新产生的模型裁决会保留输入快照。"
-                      : "此记录没有保存模型审查输入，可能由规则直接裁决、模型调用前发生异常或产生于旧版本。"}
+                      ? "이 기록은 검토 입력의 핑거프린트만 저장했고 입력 원문은 저장하지 않아, 당시 모델에 보낸 컨텍스트를 복원할 수 없습니다. 검토 때 컨텍스트가 없었다는 뜻은 아닙니다. 새로 생긴 모델 판정은 입력 스냅샷을 남깁니다."
+                      : "이 기록에는 모델 검토 입력이 없습니다. 규칙이 바로 판정했거나, 모델 호출 전에 이상이 났거나, 이전 버전에서 생겼을 수 있습니다."}
                   </AlertDescription>
                 </Alert>
               )}
@@ -444,38 +444,38 @@ export function ApprovalDetail({
                     <Button variant="ghost" size="sm">
                       <ChevronDownIcon data-icon="inline-start" />
                       {audit.model_input && audit.model_input.version >= 3
-                        ? "查看会话审计片段（未发送模型）"
-                        : "查看会话审计片段"}
+                        ? "세션 감사 조각 보기(모델에 보내지 않음)"
+                        : "세션 감사 조각 보기"}
                     </Button>
                   </CollapsibleTrigger>
                   <CollapsibleContent className="pt-3">
                     <div className="flex min-w-0 flex-col gap-3">
                       {audit.user_message ? (
                         <CodeBlock
-                          label="会话当前轮输入（审计片段）"
+                          label="세션의 현재 턴 입력(감사 조각)"
                           text={audit.user_message}
                           truncated={audit.user_truncated}
                         />
                       ) : null}
                       <section className="flex min-w-0 flex-col gap-3">
-                        <h3 className="font-medium text-muted-foreground text-xs">可见会话上下文</h3>
+                        <h3 className="font-medium text-muted-foreground text-xs">볼 수 있는 세션 컨텍스트</h3>
                         <p className="text-muted-foreground text-xs">
-                          保存于 {fmtTime(audit.captured_at)} 的会话记录片段。模型实际使用的内容以“模型审查输入”为准。
+                          저장 시각 {fmtTime(audit.captured_at)} 의 세션 기록 일부입니다. 모델이 실제로 쓴 내용은 "모델 검토 입력"을 기준으로 합니다.
                         </p>
                         {audit.context_truncated ? (
-                          <p className="text-muted-foreground text-xs">仅保存最近的上下文，部分内容已截断。</p>
+                          <p className="text-muted-foreground text-xs">최근 컨텍스트만 저장하며, 일부 내용은 잘렸습니다.</p>
                         ) : null}
                         {audit.context?.length ? (
                           audit.context.map((entry, index) => (
                             <CodeBlock
                               key={`${entry.kind}-${entry.tool_use_id || index}`}
-                              label={`${contextLabels[entry.kind] ?? entry.kind}${entry.tool ? ` · ${entry.tool}` : ""}${entry.is_error ? " · 异常" : ""}`}
+                              label={`${contextLabels[entry.kind] ?? entry.kind}${entry.tool ? ` · ${entry.tool}` : ""}${entry.is_error ? " · 이상" : ""}`}
                               text={entry.text}
                               truncated={entry.truncated}
                             />
                           ))
                         ) : (
-                          <p className="text-muted-foreground text-sm">未记录可关联的上下文</p>
+                          <p className="text-muted-foreground text-sm">연결할 수 있는 컨텍스트가 기록되지 않음</p>
                         )}
                       </section>
                     </div>
@@ -484,28 +484,28 @@ export function ApprovalDetail({
               ) : null}
               <CodeBlock
                 label={`${initialLabel}：${actionLabels[audit.initial_action] ?? audit.initial_action}`}
-                text={audit.initial_reason.replace(/^\[模型\]\s*/, "")}
+                text={audit.initial_reason.replace(/^\[模型\]\s*/, "") /* han-allow 프로토콜 접두사 */}
               />
               <CodeBlock
-                label="执行输出"
-                text={audit.output ?? (audit.execution_status === "not_executed" ? "工具未执行。" : "尚无执行输出")}
+                label="실행 출력"
+                text={audit.output ?? (audit.execution_status === "not_executed" ? "도구가 실행되지 않았습니다." : "아직 실행 출력이 없음")}
                 truncated={audit.output_truncated}
               />
               {audit.correlation !== "exact" ? (
                 <Alert>
                   <AlertDescription>
                     {audit.correlation === "ambiguous"
-                      ? "存在相同参数的并发调用，无法唯一关联工具调用；本记录不展示推测的执行结果。"
-                      : "未记录可唯一关联的工具调用 ID。"}
+                      ? "같은 매개변수의 동시 호출이 있어, 도구 호출을 하나로 연결할 수 없습니다. 이 기록은 추정한 실행 결과를 보여 주지 않습니다."
+                      : "유일하게 연결할 수 있는 도구 호출 ID가 기록되지 않았습니다."}
                   </AlertDescription>
                 </Alert>
               ) : null}
               <dl className="grid gap-2 text-muted-foreground text-xs [overflow-wrap:anywhere]">
-                <div>工具调用 ID：{audit.tool_use_id || "未记录"}</div>
-                <div>参数摘要 SHA-256：{audit.input_digest}</div>
-                <div>审查配置指纹 SHA-256：{audit.config_digest || "未记录"}</div>
-                {audit.model_input_digest ? <div>模型审查输入 SHA-256：{audit.model_input_digest}</div> : null}
-                {audit.execution_ended_at ? <div>结果记录时间：{fmtTime(audit.execution_ended_at)}</div> : null}
+                <div>도구 호출 ID:{audit.tool_use_id || "기록되지 않음"}</div>
+                <div>매개변수 요약 SHA-256:{audit.input_digest}</div>
+                <div>검토 설정 지문 SHA-256:{audit.config_digest || "기록되지 않음"}</div>
+                {audit.model_input_digest ? <div>모델 검토 입력 SHA-256:{audit.model_input_digest}</div> : null}
+                {audit.execution_ended_at ? <div>결과 기록 시각:{fmtTime(audit.execution_ended_at)}</div> : null}
               </dl>
             </div>
           </CollapsibleContent>
@@ -562,16 +562,16 @@ function ApprovalTable({
       <TableHeader>
         <TableRow>
           <TableHead className="w-10">
-            <span className="sr-only">展开详情</span>
+            <span className="sr-only">상세 펼치기</span>
           </TableHead>
           <TableHead className="hidden w-14 sm:table-cell">#</TableHead>
-          <TableHead className="w-28">工具</TableHead>
-          <TableHead className="hidden md:table-cell">来源</TableHead>
-          <TableHead className="hidden lg:table-cell">匹配规则</TableHead>
-          <TableHead className="hidden xl:table-cell">参数</TableHead>
-          <TableHead className="w-24">状态</TableHead>
-          <TableHead className="hidden w-36 lg:table-cell">申请时间</TableHead>
-          <TableHead className="hidden w-36 xl:table-cell">决定时间</TableHead>
+          <TableHead className="w-28">도구</TableHead>
+          <TableHead className="hidden md:table-cell">출처</TableHead>
+          <TableHead className="hidden lg:table-cell">일치 규칙</TableHead>
+          <TableHead className="hidden xl:table-cell">매개변수</TableHead>
+          <TableHead className="w-24">상태</TableHead>
+          <TableHead className="hidden w-36 lg:table-cell">신청 시각</TableHead>
+          <TableHead className="hidden w-36 xl:table-cell">결정 시각</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -589,7 +589,7 @@ function ApprovalTable({
                   <Button
                     variant="ghost"
                     size="icon-sm"
-                    aria-label={`${open ? "收起" : "展开"}审批 #${row.id}`}
+                    aria-label={`${open ? "접기" : "펼치기"}승인 #${row.id}`}
                     aria-expanded={open}
                     aria-controls={open ? panelID : undefined}
                     onClick={(e) => {
@@ -633,7 +633,7 @@ function ApprovalTable({
               {open ? (
                 <TableRow className="hover:bg-transparent has-aria-expanded:bg-transparent">
                   <TableCell colSpan={columns} className="whitespace-normal p-0">
-                    <section id={panelID} aria-label={`审批详情 #${row.id}`}>
+                    <section id={panelID} aria-label={`승인 상세 #${row.id}`}>
                       <ApprovalDetail row={row} busy={busy} decide={decide} revision={revision} />
                     </section>
                   </TableCell>
@@ -690,17 +690,17 @@ export function ApprovalRecords({ taskId }: { taskId?: string }) {
           setTotal(history.value.total);
           setError("");
         } else {
-          setError((history.reason as Error).message || "加载失败");
+          setError((history.reason as Error).message || "불러오기 실패");
         }
         if (pending.status === "fulfilled") {
           setPendingRows(pending.value);
           setPendingError("");
         } else {
-          setPendingError((pending.reason as Error).message || "加载失败");
+          setPendingError((pending.reason as Error).message || "불러오기 실패");
         }
         if (manual) setRevision((v) => v + 1);
       } catch (e) {
-        if (id === request.current) setError((e as Error).message || "加载失败");
+        if (id === request.current) setError((e as Error).message || "불러오기 실패");
       } finally {
         if (id === request.current) {
           setLoading(false);
@@ -753,7 +753,7 @@ export function ApprovalRecords({ taskId }: { taskId?: string }) {
       );
       setPendingRows((prev) => prev.filter((row) => row.id !== id));
       setRevision((v) => v + 1);
-      toast.success(decision === "allowed" ? "已允许执行" : "已拒绝执行");
+      toast.success(decision === "allowed" ? "실행을 허용함" : "실행을 거부함");
       // Re-fetch counts and rows: a decided item may no longer match the filter.
       await latestLoad.current(true);
     } catch (e) {
@@ -771,28 +771,28 @@ export function ApprovalRecords({ taskId }: { taskId?: string }) {
     .map((row) => ({
       conv_title: "",
       conv_agent_key: "",
-      rule_name: row.rule_id ? `规则 #${row.rule_id}` : "",
+      rule_name: row.rule_id ? `규칙 #${row.rule_id}` : "",
       ...historyById.get(row.id),
       ...row,
     }));
-  const title = taskId ? "拦截审批" : "审批记录";
+  const title = taskId ? "가로채기 승인" : "승인 기록";
   return (
     <div className="flex min-w-0 flex-col gap-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <ClipboardListIcon className="size-5 text-muted-foreground" />
           <h1 className="font-semibold text-xl">{title}</h1>
-          {pending.length ? <Badge variant="secondary">{pending.length} 待审批</Badge> : null}
+          {pending.length ? <Badge variant="secondary">{pending.length} 승인 대기</Badge> : null}
         </div>
         <Button variant="outline" size="sm" onClick={() => void load(true)} disabled={loading || refreshing}>
           <RefreshCwIcon data-icon="inline-start" className={cn(refreshing && "animate-spin")} />
-          刷新
+          새로고침
         </Button>
       </div>
-      <p className="text-muted-foreground text-sm">展开记录查看工具请求和审批裁决，以及当时的上下文与执行结果。</p>
-      <FieldGroup className="flex-row flex-wrap items-end gap-3" aria-label="审批记录筛选">
+      <p className="text-muted-foreground text-sm">기록을 펼쳐 도구 요청, 승인 판단, 당시 컨텍스트와 실행 결과를 보세요.</p>
+      <FieldGroup className="flex-row flex-wrap items-end gap-3" aria-label="승인 기록 필터">
         <Field className="w-full sm:w-40">
-          <FieldLabel htmlFor={`${filterID}-status`}>审批状态</FieldLabel>
+          <FieldLabel htmlFor={`${filterID}-status`}>승인 상태</FieldLabel>
           <Select
             value={filter.status ?? "all"}
             onValueChange={(value) =>
@@ -807,17 +807,17 @@ export function ApprovalRecords({ taskId }: { taskId?: string }) {
             </SelectTrigger>
             <SelectContent>
               <SelectGroup>
-                <SelectItem value="all">全部状态</SelectItem>
-                <SelectItem value="denied">已拒绝</SelectItem>
-                <SelectItem value="pending">待审批</SelectItem>
-                <SelectItem value="allowed">已允许</SelectItem>
-                <SelectItem value="timeout">已超时</SelectItem>
+                <SelectItem value="all">모든 상태</SelectItem>
+                <SelectItem value="denied">거부됨</SelectItem>
+                <SelectItem value="pending">승인 대기</SelectItem>
+                <SelectItem value="allowed">허용됨</SelectItem>
+                <SelectItem value="timeout">시간 초과됨</SelectItem>
               </SelectGroup>
             </SelectContent>
           </Select>
         </Field>
         <Field className="w-full sm:w-40">
-          <FieldLabel htmlFor={`${filterID}-source`}>判定来源</FieldLabel>
+          <FieldLabel htmlFor={`${filterID}-source`}>판정 출처</FieldLabel>
           <Select
             value={filter.decision_source ?? "all"}
             onValueChange={(value) =>
@@ -832,42 +832,42 @@ export function ApprovalRecords({ taskId }: { taskId?: string }) {
             </SelectTrigger>
             <SelectContent>
               <SelectGroup>
-                <SelectItem value="all">全部来源</SelectItem>
-                <SelectItem value="model">模型判定</SelectItem>
-                <SelectItem value="rule">规则判定</SelectItem>
-                <SelectItem value="unknown">来源未知</SelectItem>
+                <SelectItem value="all">모든 출처</SelectItem>
+                <SelectItem value="model">모델 판정</SelectItem>
+                <SelectItem value="rule">규칙 판정</SelectItem>
+                <SelectItem value="unknown">출처를 알 수 없음</SelectItem>
               </SelectGroup>
             </SelectContent>
           </Select>
         </Field>
         {filtered ? (
           <Button variant="ghost" size="sm" onClick={() => changeFilter({})}>
-            清除筛选
+            필터 지우기
           </Button>
         ) : null}
       </FieldGroup>
       {error ? (
         <Alert variant="destructive">
-          <AlertDescription>记录加载失败：{error}。请点击刷新重试。</AlertDescription>
+          <AlertDescription>기록 불러오기 실패:{error}. 새로고침을 눌러 다시 시도하세요.</AlertDescription>
         </Alert>
       ) : null}
       {pendingError ? (
         <Alert variant="destructive">
-          <AlertDescription>待审批加载失败：{pendingError}。请点击刷新重试。</AlertDescription>
+          <AlertDescription>승인 대기를 불러오지 못했습니다:{pendingError}. 새로고침을 눌러 다시 시도하세요.</AlertDescription>
         </Alert>
       ) : null}
       {pending.length ? (
         <section className="overflow-hidden rounded-xl border">
           <div className="flex items-center gap-2 border-b bg-muted/40 px-4 py-3 font-medium text-sm">
             <ShieldAlertIcon className="size-4" />
-            待处理（{pending.length}）<span className="text-muted-foreground text-xs">展开后允许或拒绝</span>
+            처리 대기({pending.length}）<span className="text-muted-foreground text-xs">펼친 뒤 허용 또는 거부</span>
           </div>
-          <ApprovalTable rows={pending} busy={deciding} decide={decide} revision={revision} label="待处理审批" />
+          <ApprovalTable rows={pending} busy={deciding} decide={decide} revision={revision} label="처리 대기 승인" />
         </section>
       ) : null}
       <section className="overflow-hidden rounded-xl border">
         <div className="border-b px-4 py-3 font-medium text-sm">
-          {filtered ? "筛选结果" : "全部记录"}（{total}）
+          {filtered ? "필터 결과" : "모든 기록"}（{total}）
         </div>
         {loading ? (
           <div className="flex flex-col gap-3 p-4">
@@ -882,17 +882,17 @@ export function ApprovalRecords({ taskId }: { taskId?: string }) {
               <EmptyMedia variant="icon">
                 <ClipboardListIcon />
               </EmptyMedia>
-              <EmptyTitle>{filtered ? "没有符合筛选条件的审批记录" : "暂无审批记录"}</EmptyTitle>
+              <EmptyTitle>{filtered ? "필터 조건에 맞는 승인 기록이 없습니다" : "승인 기록이 아직 없습니다"}</EmptyTitle>
               <EmptyDescription>
                 {filtered
-                  ? "请调整审批状态或判定来源，或清除筛选查看全部记录。"
-                  : "规则或模型作出审批决定后，记录将显示在这里。"}
+                  ? "승인 상태나 판정 출처를 바꾸거나, 필터를 지워 모든 기록을 보세요."
+                  : "규칙 또는 모델이 승인 결정을 하면, 기록이 여기에 표시됩니다."}
               </EmptyDescription>
             </EmptyHeader>
           </Empty>
         ) : null}
         {rows.length ? (
-          <ApprovalTable rows={rows} busy={deciding} decide={decide} revision={revision} label="审批记录列表" />
+          <ApprovalTable rows={rows} busy={deciding} decide={decide} revision={revision} label="승인 기록 목록" />
         ) : null}
         {!loading && !error ? (
           <TablePagination

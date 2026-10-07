@@ -9,11 +9,11 @@ import type { ParsedCompanyScopeText } from "@/lib/company-scope";
 import type { CompanyScopeKind } from "@/lib/types";
 
 const SCOPE_KIND_LABELS: Record<CompanyScopeKind, string> = {
-  domain: "域名",
+  domain: "도메인",
   ip: "IP",
   cidr: "CIDR",
   icp: "ICP",
-  keyword: "关键词",
+  keyword: "키워드",
 };
 
 export function ScopeTextEditor({
@@ -21,8 +21,8 @@ export function ScopeTextEditor({
   value,
   onValueChange,
   parsed,
-  label = "资产范围",
-  description = "每行一条，自动识别域名、IP、CIDR、ICP 备案和企业关键词。",
+  label = "자산 범위",
+  description = "한 줄에 하나. 도메인, IP, CIDR, ICP 등록, 기업 키워드를 자동으로 알아봅니다.",
 }: {
   id: string;
   value: string;
@@ -46,13 +46,13 @@ export function ScopeTextEditor({
         rows={8}
         value={value}
         aria-invalid={parsed.errors.length > 0}
-        placeholder={"example.com\n203.0.113.10\n198.51.100.0/24\n京ICP备12345678号-1\n企业名称关键词"}
+        placeholder={"example.com\n203.0.113.10\n198.51.100.0/24\n베이징 ICP 등록 12345678호-1\n기업 이름 키워드"}
         className="min-h-36 resize-y font-mono text-sm"
         onChange={(event) => onValueChange(event.target.value)}
       />
       {parsed.rules.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5 text-muted-foreground text-xs">
-          <span>已识别 {parsed.rules.length} 条</span>
+          <span>식별함 {parsed.rules.length} 건</span>
           {Object.entries(SCOPE_KIND_LABELS).map(([kind, kindLabel]) => {
             const count = counts.get(kind as CompanyScopeKind) ?? 0;
             return count > 0 ? (
@@ -67,10 +67,10 @@ export function ScopeTextEditor({
         <FieldError>
           {parsed.errors.slice(0, 5).map((item) => (
             <span key={`${item.line}-${item.error}`} className="block">
-              第 {item.line} 行：{item.error}
+              제 {item.line} 줄:{item.error}
             </span>
           ))}
-          {parsed.errors.length > 5 && <span className="block">另有 {parsed.errors.length - 5} 行错误</span>}
+          {parsed.errors.length > 5 && <span className="block">그 밖에 {parsed.errors.length - 5} 줄 오류</span>}
         </FieldError>
       )}
     </Field>

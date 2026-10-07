@@ -61,14 +61,14 @@ import type {
   Tool,
 } from "@/lib/types";
 
-// fmtTokens 把 token 数压成紧凑写法(1.2k / 3.4M),用于审批用量统计。
+// fmtTokens는 token 수를 짧은 표기로 줄입니다(1.2k / 3.4M). 승인 사용량 통계에 씁니다.
 function fmtTokens(n: number): string {
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
   if (n >= 1000) return (n / 1000).toFixed(1) + "k";
   return String(n);
 }
 
-// JudgeStat 是一块统计数字(标签 + 数值)。
+// JudgeStat은 통계 숫자 한 덩이입니다(라벨 + 값).
 function JudgeStat({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-lg border bg-muted/20 px-3 py-2">
@@ -78,7 +78,7 @@ function JudgeStat({ label, value }: { label: string; value: string }) {
   );
 }
 
-// JudgeSparkbars 用纯 div 画近 N 天每日消耗(输入+输出)的迷你柱图,免图表库依赖。
+// JudgeSparkbars는 순수 div로 최근 N일 하루 소모(입력+출력) 미니 막대를 그립니다. 차트 라이브러리가 필요 없습니다.
 function JudgeSparkbars({ daily }: { daily: JudgeDayUsage[] }) {
   const max = Math.max(1, ...daily.map((d) => d.input_tokens + d.output_tokens));
   return (
@@ -89,7 +89,7 @@ function JudgeSparkbars({ daily }: { daily: JudgeDayUsage[] }) {
         return (
           <div
             key={d.date}
-            title={`${d.date} · ${d.calls} 次 · ${fmtTokens(total)} tokens`}
+            title={`${d.date} · ${d.calls} 회 · ${fmtTokens(total)} tokens`}
             className="min-w-[2px] flex-1 rounded-sm bg-violet-500/60 hover:bg-violet-500"
             style={{ height: `${h}%` }}
           />
@@ -109,20 +109,20 @@ function sdkTool(key: string, description: string): Tool {
 }
 
 const SDK_EXEC: Tool[] = [
-  sdkTool("Bash",        "在 shell 中执行命令"),
-  sdkTool("WebFetch",    "发起 HTTP/HTTPS 请求（含代理支持）"),
-  sdkTool("web_search",  "网络搜索"),
-  sdkTool("shell_open",  "开启持久 PTY 交互会话"),
-  sdkTool("shell_send",  "向交互会话发送输入"),
-  sdkTool("shell_read",  "读取交互会话输出"),
-  sdkTool("shell_close", "关闭交互会话"),
-  sdkTool("shell_list",  "列出所有交互会话"),
+  sdkTool("Bash",        "shell에서 명령 실행"),
+  sdkTool("WebFetch",    "HTTP/HTTPS 요청 보내기(프록시 지원 포함)"),
+  sdkTool("web_search",  "네트워크 검색"),
+  sdkTool("shell_open",  "지속 PTY 대화 세션 켜기"),
+  sdkTool("shell_send",  "대화형 세션에 입력 보내기"),
+  sdkTool("shell_read",  "대화형 세션 출력 읽기"),
+  sdkTool("shell_close", "대화형 세션 닫기"),
+  sdkTool("shell_list",  "모든 대화형 세션을 나열"),
 ];
 
 const SDK_WRITE: Tool[] = [
-  sdkTool("Write",     "写入文件"),
-  sdkTool("Edit",      "编辑文件（精确替换）"),
-  sdkTool("MultiEdit", "批量编辑文件"),
+  sdkTool("Write",     "파일 쓰기"),
+  sdkTool("Edit",      "파일 편집(정확히 바꾸기)"),
+  sdkTool("MultiEdit", "파일 일괄 편집"),
 ];
 
 const SDK_KEYS = new Set([...SDK_EXEC, ...SDK_WRITE].map((t) => t.key));
@@ -135,10 +135,10 @@ function groupTools(dbTools: Tool[]) {
     else          custom.push(t);
   }
   return [
-    { label: "执行类",      tools: SDK_EXEC },
-    { label: "写入/编辑类", tools: SDK_WRITE },
-    { label: "系统工具",    tools: sys },
-    { label: "自定义工具",  tools: custom },
+    { label: "실행 유형",      tools: SDK_EXEC },
+    { label: "쓰기/편집류", tools: SDK_WRITE },
+    { label: "시스템 도구",    tools: sys },
+    { label: "사용자 정의 도구",  tools: custom },
   ].filter((g) => g.tools.length > 0);
 }
 
@@ -175,9 +175,9 @@ const defaultForm = (): RuleForm => ({
 // ---- small components ----
 
 function ActionBadge({ action }: { action: InterceptAction }) {
-  if (action === "allow") return <Badge variant="secondary">允许</Badge>;
-  if (action === "deny")  return <Badge variant="destructive">禁止</Badge>;
-  return <Badge variant="outline" className="border-amber-400 text-amber-600">申请</Badge>;
+  if (action === "allow") return <Badge variant="secondary">허용</Badge>;
+  if (action === "deny")  return <Badge variant="destructive">금지</Badge>;
+  return <Badge variant="outline" className="border-amber-400 text-amber-600">신청</Badge>;
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -193,7 +193,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 // ---- LLM fallback judge card ----
 
-const FOLLOW_ACTIVE = "0"; // profile_id 0 = 跟随激活/默认配置
+const FOLLOW_ACTIVE = "0"; // profile_id 0 = 활성/기본 설정을 따라감
 
 const defaultJudge = (): JudgeConfig => ({
   enabled: false,
@@ -212,12 +212,12 @@ function JudgeCard() {
   const [saving, setSaving] = React.useState(false);
   const [usage, setUsage] = React.useState<JudgeUsage | null>(null);
 
-  // 审批用量统计:失败不打断配置页,仅在开启时拉取。
+  // 승인 사용량 통계: 실패해도 설정 페이지를 끊지 않습니다. 켜져 있을 때만 가져옵니다.
   const loadUsage = React.useCallback(async () => {
     try {
       setUsage(await api.interceptJudgeUsage(30));
     } catch {
-      // 忽略:统计不可用不应影响配置编辑
+      // 무시: 통계를 쓸 수 없어도 설정 편집에 영향을 주면 안 됨
     }
   }, []);
 
@@ -228,7 +228,7 @@ function JudgeCard() {
       setCfg(j);
       setProfiles(ps);
     } catch (e) {
-      toast.error("加载模型兜底配置失败: " + (e as Error).message);
+      toast.error("모델 예비 설정 불러오기 실패: " + (e as Error).message);
     } finally {
       setLoading(false);
     }
@@ -238,7 +238,7 @@ function JudgeCard() {
     load();
   }, [load]);
 
-  // 开启后(含初次加载把开关读为 true 时)拉取审批用量统计。
+  // 켠 뒤(처음 불러올 때 스위치를 true로 읽는 경우 포함) 승인 사용량 통계를 가져옵니다.
   React.useEffect(() => {
     if (cfg.enabled) loadUsage();
   }, [cfg.enabled, loadUsage]);
@@ -251,25 +251,25 @@ function JudgeCard() {
     setSaving(true);
     try {
       await api.interceptSetJudgeConfig(cfg);
-      toast.success("模型兜底配置已保存");
-      await load(); // 回读:提示词若清空则回填内置模板
+      toast.success("모델 폴백 설정이 저장되었습니다");
+      await load(); // 다시 읽기: 프롬프트가 비면 내장 템플릿을 채움
     } catch (e) {
-      toast.error("保存失败: " + (e as Error).message);
+      toast.error("저장 실패: " + (e as Error).message);
     } finally {
       setSaving(false);
     }
   }
 
   async function restorePrompt() {
-    // 清空提示词并保存 → 服务端下次返回内置模板全文,回填到输入框。
+    // 프롬프트를 비우고 저장 → 서버가 다음에 내장 템플릿 전문을 돌려주고, 입력 칸에 채웁니다.
     setSaving(true);
     try {
       await api.interceptSetJudgeConfig({ ...cfg, prompt: "" });
       const j = await api.interceptGetJudgeConfig();
       setCfg(j);
-      toast.success("已恢复内置默认模板");
+      toast.success("내장 기본 템플릿으로 되돌렸습니다");
     } catch (e) {
-      toast.error("恢复失败: " + (e as Error).message);
+      toast.error("복구 실패: " + (e as Error).message);
     } finally {
       setSaving(false);
     }
@@ -277,7 +277,7 @@ function JudgeCard() {
 
   return (
     <div className="space-y-4">
-      {/* 启用开关 —— 独立高亮条 */}
+      {/* 사용 스위치 —— 따로 강조된 막대 */}
       <div
         className={`flex items-center justify-between gap-3 rounded-lg border px-4 py-3 ${
           cfg.enabled ? "border-violet-400/50 bg-violet-50/40 dark:bg-violet-950/20" : "bg-muted/40"
@@ -286,44 +286,44 @@ function JudgeCard() {
         <div className="flex items-center gap-2.5">
           <BotIcon className={`h-5 w-5 shrink-0 ${cfg.enabled ? "text-violet-600" : "text-muted-foreground"}`} />
           <div>
-            <p className="text-sm font-semibold leading-tight">模型兜底审批</p>
+            <p className="text-sm font-semibold leading-tight">모델 폴백 승인</p>
             <p className="text-xs text-muted-foreground mt-0.5">
-              在<span className="font-medium text-foreground">拦截范围</span>内、且<span className="font-medium text-foreground">没有任何拦截规则命中</span>的命令，才由模型做语义判断（放行 / 转人工 / 拦截）
+              에서<span className="font-medium text-foreground">가로채기 범위</span>안이며, 그리고<span className="font-medium text-foreground">어떤 가로채기 규칙에도 맞지 않음</span>인 명령만 모델이 의미로 판단합니다(통과 / 사람 검토 / 가로채기)
             </p>
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <span className="text-xs text-muted-foreground">{cfg.enabled ? "已启用" : "未启用"}</span>
+          <span className="text-xs text-muted-foreground">{cfg.enabled ? "사용함" : "사용 안 함"}</span>
           <Switch checked={cfg.enabled} disabled={loading} onCheckedChange={(v) => patch({ enabled: v })} />
         </div>
       </div>
 
-      {/* 审批 Token 用量统计(全局累计,独立于各模型配置) */}
+      {/* 승인 Token 사용량 통계(전체 누적, 각 모델 설정과 별개) */}
       {cfg.enabled && usage && (
         <Card>
           <CardContent className="p-4">
             <div className="mb-3 flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium">审批 Token 消耗</p>
+                <p className="text-sm font-medium">승인 Token 사용량</p>
                 <p className="text-xs text-muted-foreground">
-                  模型兜底审批累计用量,单独计量(worker=judge),不与各模型配置的统计混在一起
+                  모델 폴백 승인의 누적 사용량, 따로 집계(worker=judge). 각 모델 설정의 통계와 섞지 않습니다
                 </p>
               </div>
               <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={loadUsage}>
-                刷新
+                새로고침
               </Button>
             </div>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-              <JudgeStat label="审批调用" value={usage.calls.toLocaleString()} />
-              <JudgeStat label="输入 Token" value={fmtTokens(usage.input_tokens)} />
-              <JudgeStat label="输出 Token" value={fmtTokens(usage.output_tokens)} />
-              <JudgeStat label="缓存读" value={fmtTokens(usage.cache_read_tokens)} />
-              <JudgeStat label="缓存写" value={fmtTokens(usage.cache_write_tokens)} />
+              <JudgeStat label="승인 호출" value={usage.calls.toLocaleString()} />
+              <JudgeStat label="Token 입력" value={fmtTokens(usage.input_tokens)} />
+              <JudgeStat label="출력 Token" value={fmtTokens(usage.output_tokens)} />
+              <JudgeStat label="캐시 읽기" value={fmtTokens(usage.cache_read_tokens)} />
+              <JudgeStat label="캐시 쓰기" value={fmtTokens(usage.cache_write_tokens)} />
             </div>
             {usage.daily.length > 0 && (
               <div className="mt-4">
                 <p className="mb-2 text-[10px] uppercase tracking-wider text-muted-foreground">
-                  近 30 天每日消耗(输入 + 输出)
+                  최근 30일 하루 사용량(입력 + 출력)
                 </p>
                 <JudgeSparkbars daily={usage.daily} />
               </div>
@@ -334,39 +334,39 @@ function JudgeCard() {
 
       {cfg.enabled && (
         <div className="grid gap-4 lg:grid-cols-5">
-          {/* 左:提示词编辑器(直接展开,主区域) */}
+          {/* 왼쪽: 프롬프트 편집기(바로 펼침, 주요 영역) */}
           <Card className="lg:col-span-3">
             <CardContent className="flex h-full flex-col gap-2 p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium">审批提示词</p>
-                  <p className="text-xs text-muted-foreground">模型据此判定 ALLOW / ASK / DENY，可直接编辑</p>
+                  <p className="text-sm font-medium">승인 프롬프트</p>
+                  <p className="text-xs text-muted-foreground">모델은 이를 바탕으로 ALLOW / ASK / DENY를 판정합니다. 직접 편집할 수 있습니다</p>
                 </div>
                 <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={restorePrompt} disabled={saving}>
-                  恢复默认模板
+                  기본 템플릿 복원
                 </Button>
               </div>
               <Textarea
                 className="min-h-[22rem] flex-1 resize-none font-mono text-xs leading-relaxed"
                 value={cfg.prompt}
                 onChange={(e) => patch({ prompt: e.target.value })}
-                placeholder="留空使用内置模板"
+                placeholder="비워 두면 내장 템플릿을 사용"
                 spellCheck={false}
               />
-              <p className="text-right text-[11px] text-muted-foreground">{cfg.prompt.length} 字</p>
+              <p className="text-right text-[11px] text-muted-foreground">{cfg.prompt.length} 자</p>
             </CardContent>
           </Card>
 
-          {/* 右:判定参数(设置栏) */}
+          {/* 오른쪽: 판정 매개변수(설정 칸) */}
           <Card className="lg:col-span-2">
             <CardContent className="space-y-5 p-4">
               <div className="space-y-4">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">判定模型与策略</p>
-                <Field label="审批模型">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">판정 모델과 정책</p>
+                <Field label="승인 모델">
                   <Select value={String(cfg.profile_id || 0)} onValueChange={(v) => patch({ profile_id: Number(v) })}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value={FOLLOW_ACTIVE}>跟随激活配置</SelectItem>
+                      <SelectItem value={FOLLOW_ACTIVE}>활성 설정 따르기</SelectItem>
                       {profiles.map((p) => (
                         <SelectItem key={p.id} value={p.id}>
                           {p.name}（{p.model}）
@@ -375,7 +375,7 @@ function JudgeCard() {
                     </SelectContent>
                   </Select>
                 </Field>
-                <Field label="模型判定超时（秒）">
+                <Field label="모델 판정 제한 시간(초)">
                   <Input
                     type="number"
                     min={1}
@@ -386,13 +386,13 @@ function JudgeCard() {
                     }}
                   />
                 </Field>
-                <Field label="模型失败时（出错 / 超时 / 无法解析）">
+                <Field label="모델이 실패할 때(오류 / 시간 초과 / 해석 불가)">
                   <Select value={cfg.fail_action} onValueChange={(v) => patch({ fail_action: v as JudgeConfig["fail_action"] })}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="allow">放行</SelectItem>
-                      <SelectItem value="ask">转人工审批</SelectItem>
-                      <SelectItem value="deny">拦截</SelectItem>
+                      <SelectItem value="allow">통과</SelectItem>
+                      <SelectItem value="ask">사람 승인으로 전환</SelectItem>
+                      <SelectItem value="deny">가로채기</SelectItem>
                     </SelectContent>
                   </Select>
                 </Field>
@@ -401,8 +401,8 @@ function JudgeCard() {
               <Separator />
 
               <div className="space-y-4">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">人工审批（模型判为「转人工」时）</p>
-                <Field label="审批等待超时（秒）">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">사람 승인(모델이 "사람 확인"으로 판정할 때)</p>
+                <Field label="승인 대기 시간 초과(초)">
                   <Input
                     type="number"
                     min={5}
@@ -413,12 +413,12 @@ function JudgeCard() {
                     }}
                   />
                 </Field>
-                <Field label="超时后默认动作">
+                <Field label="시간 초과 후 기본 동작">
                   <Select value={cfg.ask_timeout_action} onValueChange={(v) => patch({ ask_timeout_action: v as JudgeConfig["ask_timeout_action"] })}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="deny">拦截</SelectItem>
-                      <SelectItem value="allow">放行</SelectItem>
+                      <SelectItem value="deny">가로채기</SelectItem>
+                      <SelectItem value="allow">통과</SelectItem>
                     </SelectContent>
                   </Select>
                 </Field>
@@ -430,7 +430,7 @@ function JudgeCard() {
 
       <div className="flex justify-end">
         <Button size="sm" onClick={save} disabled={saving || loading}>
-          {saving ? "保存中…" : "保存配置"}
+          {saving ? "저장 중…" : "설정 저장"}
         </Button>
       </div>
     </div>
@@ -447,7 +447,7 @@ export default function InterceptPage() {
   const [form, setForm]       = React.useState<RuleForm>(defaultForm());
   const [saving, setSaving]   = React.useState(false);
   const [regexErr, setRegexErr] = React.useState("");
-  const [regexWarn, setRegexWarn] = React.useState(false); // true = JS 无法解析但可能是合法 Go 语法
+  const [regexWarn, setRegexWarn] = React.useState(false); // true = JS는 해석할 수 없지만 합법적인 Go 문법일 수 있음
 
   // ---- tool scope dialog ----
   const [scopeOpen, setScopeOpen]       = React.useState(false);
@@ -455,7 +455,7 @@ export default function InterceptPage() {
   const [enabledTools, setEnabledTools] = React.useState<Set<string>>(new Set());
   const [scopeLoading, setScopeLoading] = React.useState(false);
   const [scopeSaving, setScopeSaving]   = React.useState(false);
-  const [scopeTools, setScopeTools]     = React.useState<string[]>([]); // 页头信息条:当前进入拦截的工具
+  const [scopeTools, setScopeTools]     = React.useState<string[]>([]); // 페이지 머리 안내 막대: 지금 가로채기에 들어온 도구
 
   // ---- data ----
 
@@ -464,7 +464,7 @@ export default function InterceptPage() {
       const cfg = await api.interceptGetToolConfig();
       setScopeTools(cfg.enabled_tools);
     } catch {
-      // 信息条非关键,失败静默
+      // 안내 막대는 중요하지 않음. 실패는 조용히
     }
   }, []);
 
@@ -473,7 +473,7 @@ export default function InterceptPage() {
       const r = await api.interceptRules();
       setRules(r);
     } catch {
-      toast.error("加载拦截规则失败");
+      toast.error("가로채기 규칙 불러오기 실패");
     } finally {
       setLoading(false);
     }
@@ -488,8 +488,8 @@ export default function InterceptPage() {
       setRegexErr("");
       setRegexWarn(false);
     } catch {
-      // JS RegExp 不支持 Go RE2 扩展语法（如 (?i) 内联 flag）。
-      // 这里只是预览校验失败，不代表 Go 端无效；交给服务端最终验证。
+      // JS RegExp는 Go RE2 확장 문법을 지원하지 않습니다(예: (?i) 인라인 flag).
+      // 여기는 미리보기 검사 실패일 뿐입니다. Go 쪽이 무효라는 뜻은 아닙니다. 서버의 최종 검증에 맡깁니다.
       setRegexErr("");
       setRegexWarn(true);
     }
@@ -520,17 +520,17 @@ export default function InterceptPage() {
   }
 
   async function handleSave() {
-    if (!form.name.trim())    { toast.error("名称不能为空"); return; }
-    if (!form.pattern.trim()) { toast.error("模式不能为空"); return; }
-    if (regexErr)             { toast.error("正则表达式语法无效"); return; }
+    if (!form.name.trim())    { toast.error("이름은 비울 수 없습니다"); return; }
+    if (!form.pattern.trim()) { toast.error("모드는 비울 수 없습니다"); return; }
+    if (regexErr)             { toast.error("정규식 문법이 유효하지 않습니다"); return; }
     setSaving(true);
     try {
       if (editing) {
         await api.updateInterceptRule(editing.id, form);
-        toast.success("规则已更新");
+        toast.success("규칙을 업데이트했습니다");
       } else {
         await api.createInterceptRule(form);
-        toast.success("规则已创建");
+        toast.success("규칙을 만들었습니다");
       }
       setOpen(false);
       load();
@@ -544,7 +544,7 @@ export default function InterceptPage() {
   async function handleDelete(id: number) {
     try {
       await api.deleteInterceptRule(id);
-      toast.success("规则已删除");
+      toast.success("규칙을 삭제했습니다");
       load();
     } catch (e) {
       toast.error((e as Error).message);
@@ -570,7 +570,7 @@ export default function InterceptPage() {
       setAllTools(tools);
       setEnabledTools(new Set(cfg.enabled_tools));
     } catch (e) {
-      toast.error("加载失败: " + (e as Error).message);
+      toast.error("불러오기 실패: " + (e as Error).message);
     } finally {
       setScopeLoading(false);
     }
@@ -588,11 +588,11 @@ export default function InterceptPage() {
     setScopeSaving(true);
     try {
       await api.interceptSetToolConfig([...enabledTools]);
-      toast.success("拦截范围已保存");
+      toast.success("가로채기 범위가 저장되었습니다");
       setScopeTools([...enabledTools]);
       setScopeOpen(false);
     } catch (e) {
-      toast.error("保存失败: " + (e as Error).message);
+      toast.error("저장 실패: " + (e as Error).message);
     } finally {
       setScopeSaving(false);
     }
@@ -609,14 +609,14 @@ export default function InterceptPage() {
       <div className="flex items-center gap-2.5">
         <ShieldAlertIcon className="h-5 w-5 shrink-0" />
         <div>
-          <h1 className="text-lg font-semibold leading-tight">命令拦截</h1>
+          <h1 className="text-lg font-semibold leading-tight">명령 가로채기</h1>
           <p className="text-sm text-muted-foreground mt-0.5">
-            工具执行前先按拦截规则匹配；未命中的命令可交由模型兜底判定
+            도구를 실행하기 전에 가로채기 규칙과 먼저 맞춥니다. 맞지 않은 명령은 모델 폴백 판정에 맡길 수 있습니다
           </p>
         </div>
       </div>
 
-      {/* ---- 拦截范围信息条（规则匹配与模型兜底共用：不在范围内的工具两者都不介入）---- */}
+      {/* ---- 가로채기 범위 안내 막대(규칙 일치와 모델 최후 판단이 함께 씀: 범위 밖 도구에는 둘 다 끼어들지 않음) ---- */}
       <div
         className={`flex items-center justify-between gap-3 rounded-lg border px-4 py-2.5 ${
           scopeTools.length === 0
@@ -626,14 +626,14 @@ export default function InterceptPage() {
       >
         <div className="flex min-w-0 items-center gap-2 text-sm">
           <ListFilterIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
-          <span className="shrink-0 font-medium">拦截范围</span>
+          <span className="shrink-0 font-medium">가로채기 범위</span>
           {scopeTools.length === 0 ? (
             <span className="text-amber-700 dark:text-amber-500">
-              未启用任何工具 — 拦截规则与模型兜底均不会生效
+              사용 중인 도구가 없습니다. 가로채기 규칙과 모델 폴백이 모두 적용되지 않습니다
             </span>
           ) : (
             <>
-              <Badge variant="secondary" className="shrink-0">{scopeTools.length} 个工具</Badge>
+              <Badge variant="secondary" className="shrink-0">{scopeTools.length} 개 도구</Badge>
               <span className="truncate text-muted-foreground" title={scopeTools.join("、")}>
                 {scopeTools.join("、")}
               </span>
@@ -647,52 +647,52 @@ export default function InterceptPage() {
           onClick={openScope}
         >
           <ListFilterIcon className="h-4 w-4" />
-          调整范围
+          범위 조정
         </Button>
       </div>
 
       <Tabs defaultValue="rules" className="flex-1">
         <TabsList>
-          <TabsTrigger value="rules">拦截规则</TabsTrigger>
-          <TabsTrigger value="judge">模型配置</TabsTrigger>
+          <TabsTrigger value="rules">가로채기 규칙</TabsTrigger>
+          <TabsTrigger value="judge">모델 설정</TabsTrigger>
         </TabsList>
 
-        {/* ---- tab: 拦截规则 ---- */}
+        {/* ---- tab: 가로채기 규칙 ---- */}
         <TabsContent value="rules" className="mt-4 flex flex-col gap-4">
           <div className="flex items-center justify-between gap-3">
             <p className="text-xs text-muted-foreground">
-              按优先级（数字越大越先）逐条匹配，首条命中的规则生效
+              우선순위(숫자가 클수록 먼저)대로 하나씩 맞춥니다. 처음 맞는 규칙이 적용됩니다
             </p>
             <Button onClick={openNew} size="sm" className="shrink-0">
               <PlusIcon className="h-4 w-4" />
-              新建规则
+              규칙 만들기
             </Button>
           </div>
 
           <Card>
             <CardContent className="p-0">
           {loading ? (
-            <p className="p-6 text-sm text-muted-foreground">加载中…</p>
+            <p className="p-6 text-sm text-muted-foreground">불러오는 중…</p>
           ) : rules.length === 0 ? (
             <div className="flex flex-col items-center justify-center gap-2 py-16 text-center">
               <ShieldAlertIcon className="h-8 w-8 text-muted-foreground/40" />
-              <p className="text-sm text-muted-foreground">暂无规则</p>
+              <p className="text-sm text-muted-foreground">규칙 없음</p>
               <Button size="sm" variant="outline" onClick={openNew}>
                 <PlusIcon className="h-4 w-4" />
-                新建第一条规则
+                첫 규칙 만들기
               </Button>
             </div>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
-                  <TableHead className="w-[72px]">优先级</TableHead>
-                  <TableHead>名称</TableHead>
-                  <TableHead className="w-[90px]">目标</TableHead>
-                  <TableHead className="w-[80px]">类型</TableHead>
-                  <TableHead>模式</TableHead>
-                  <TableHead className="w-[72px]">策略</TableHead>
-                  <TableHead className="w-[64px] text-center">启用</TableHead>
+                  <TableHead className="w-[72px]">우선순위</TableHead>
+                  <TableHead>이름</TableHead>
+                  <TableHead className="w-[90px]">목표</TableHead>
+                  <TableHead className="w-[80px]">유형</TableHead>
+                  <TableHead>모드</TableHead>
+                  <TableHead className="w-[72px]">전략</TableHead>
+                  <TableHead className="w-[64px] text-center">사용</TableHead>
                   <TableHead className="w-[80px]" />
                 </TableRow>
               </TableHeader>
@@ -705,12 +705,12 @@ export default function InterceptPage() {
                     <TableCell className="font-medium text-sm">{rule.name}</TableCell>
                     <TableCell>
                       <span className="text-xs text-muted-foreground">
-                        {rule.match_target === "tool_name" ? "工具名" : "输入内容"}
+                        {rule.match_target === "tool_name" ? "도구 이름" : "입력 내용"}
                       </span>
                     </TableCell>
                     <TableCell>
                       <span className="text-xs text-muted-foreground">
-                        {rule.match_type === "regex" ? "正则" : "字符串"}
+                        {rule.match_type === "regex" ? "정규식" : "문자열"}
                       </span>
                     </TableCell>
                     <TableCell className="max-w-[220px]">
@@ -753,7 +753,7 @@ export default function InterceptPage() {
           </Card>
         </TabsContent>
 
-        {/* ---- tab: 模型配置 ---- */}
+        {/* ---- tab: 모델 설정 ---- */}
         <TabsContent value="judge" className="mt-4">
           <JudgeCard />
         </TabsContent>
@@ -763,22 +763,22 @@ export default function InterceptPage() {
       <Sheet open={open} onOpenChange={setOpen}>
         <SheetContent side="right" className="flex flex-col gap-0 p-0 sm:max-w-md">
           <SheetHeader className="border-b px-6 py-4">
-            <SheetTitle>{editing ? "编辑规则" : "新建规则"}</SheetTitle>
+            <SheetTitle>{editing ? "규칙 편집" : "새 규칙"}</SheetTitle>
             <SheetDescription className="text-xs">
-              优先级越大越先匹配；首条命中规则生效，后续跳过
+              우선순위가 클수록 먼저 맞춥니다. 처음 맞는 규칙이 적용되고 나머지는 건너뜁니다
             </SheetDescription>
           </SheetHeader>
 
           <div className="flex-1 min-h-0 overflow-y-auto px-6 py-5 space-y-5">
-            <Field label="名称">
+            <Field label="이름">
               <Input
-                placeholder="给规则起个名字"
+                placeholder="규칙 이름을 지으세요"
                 value={form.name}
                 onChange={(e) => set({ name: e.target.value })}
               />
             </Field>
 
-            <Field label="优先级（数字越大越先匹配）">
+            <Field label="우선순위(숫자가 클수록 먼저 맞음)">
               <Input
                 type="number"
                 value={form.priority}
@@ -788,33 +788,33 @@ export default function InterceptPage() {
 
             <Separator />
 
-            <Field label="匹配目标">
+            <Field label="일치 대상">
               <Select
                 value={form.match_target}
                 onValueChange={(v) => set({ match_target: v as RuleForm["match_target"] })}
               >
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="tool_name">工具名（tool_name）</SelectItem>
-                  <SelectItem value="tool_input">输入内容（tool_input JSON）</SelectItem>
+                  <SelectItem value="tool_name">도구 이름(tool_name)</SelectItem>
+                  <SelectItem value="tool_input">입력 내용(tool_input JSON)</SelectItem>
                 </SelectContent>
               </Select>
             </Field>
 
-            <Field label="匹配类型">
+            <Field label="일치 유형">
               <Select
                 value={form.match_type}
                 onValueChange={(v) => set({ match_type: v as RuleForm["match_type"] })}
               >
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="string">字符串包含</SelectItem>
-                  <SelectItem value="regex">正则表达式</SelectItem>
+                  <SelectItem value="string">문자열 포함</SelectItem>
+                  <SelectItem value="regex">정규식</SelectItem>
                 </SelectContent>
               </Select>
             </Field>
 
-            <Field label="模式">
+            <Field label="모드">
               <Input
                 placeholder={form.match_type === "regex" ? "^Bash$" : "rm -rf"}
                 value={form.pattern}
@@ -825,30 +825,30 @@ export default function InterceptPage() {
                 <p className="text-xs text-destructive mt-1">{regexErr}</p>
               )}
               {regexWarn && (
-                <p className="text-xs text-amber-600 mt-1">包含 Go RE2 扩展语法（如 <code className="font-mono">(?i)</code>），浏览器无法预览，提交后由服务端验证</p>
+                <p className="text-xs text-amber-600 mt-1">Go RE2 확장 문법을 포함합니다(예 <code className="font-mono">(?i)</code>), 브라우저는 미리 볼 수 없고, 제출 후 서버가 검증합니다</p>
               )}
             </Field>
 
             <Separator />
 
-            <Field label="拦截策略">
+            <Field label="가로채기 정책">
               <Select
                 value={form.action}
                 onValueChange={(v) => set({ action: v as InterceptAction })}
               >
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="allow">允许 — 直接放行，跳过后续规则</SelectItem>
-                  <SelectItem value="deny">禁止 — 阻断，返回拒绝消息给模型</SelectItem>
-                  <SelectItem value="ask">向用户申请 — 等待审批</SelectItem>
+                  <SelectItem value="allow">허용 — 바로 통과하고 이후 규칙은 건너뜀</SelectItem>
+                  <SelectItem value="deny">금지 — 막고, 모델에 거부 메시지를 돌려줍니다</SelectItem>
+                  <SelectItem value="ask">사용자에게 요청 — 승인 대기</SelectItem>
                 </SelectContent>
               </Select>
             </Field>
 
             {form.action !== "allow" && (
-              <Field label={form.action === "deny" ? "拒绝消息（返回给模型）" : "审批说明（可选）"}>
+              <Field label={form.action === "deny" ? "거부 메시지(모델에 반환)" : "승인 설명(선택)"}>
                 <Textarea
-                  placeholder={form.action === "deny" ? "操作被安全策略阻止" : ""}
+                  placeholder={form.action === "deny" ? "동작이 보안 정책에 의해 차단되었습니다" : ""}
                   value={form.message}
                   onChange={(e) => set({ message: e.target.value })}
                   rows={2}
@@ -862,8 +862,8 @@ export default function InterceptPage() {
                 <Separator />
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium">启用审批超时</p>
-                    <p className="text-xs text-muted-foreground">超时后自动处置，不再等待</p>
+                    <p className="text-sm font-medium">승인 시간 제한 사용</p>
+                    <p className="text-xs text-muted-foreground">시간 초과 후 자동으로 처리하고 더 기다리지 않습니다</p>
                   </div>
                   <Switch
                     checked={form.timeout_enabled}
@@ -872,7 +872,7 @@ export default function InterceptPage() {
                 </div>
                 {form.timeout_enabled && (
                   <div className="flex items-end gap-3">
-                    <Field label="超时时间（秒）">
+                    <Field label="제한 시간(초)">
                       <Input
                         type="number"
                         min={5}
@@ -884,15 +884,15 @@ export default function InterceptPage() {
                         }}
                       />
                     </Field>
-                    <Field label="超时动作">
+                    <Field label="시간 초과 동작">
                       <Select
                         value={form.timeout_action}
                         onValueChange={(v) => set({ timeout_action: v as "deny" | "allow" })}
                       >
                         <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="deny">自动拒绝</SelectItem>
-                          <SelectItem value="allow">自动允许</SelectItem>
+                          <SelectItem value="deny">자동 거부</SelectItem>
+                          <SelectItem value="allow">자동 허용</SelectItem>
                         </SelectContent>
                       </Select>
                     </Field>
@@ -909,14 +909,14 @@ export default function InterceptPage() {
                 checked={form.enabled}
                 onCheckedChange={(v) => set({ enabled: v })}
               />
-              <Label htmlFor="rule-enabled" className="cursor-pointer">启用此规则</Label>
+              <Label htmlFor="rule-enabled" className="cursor-pointer">이 규칙 사용</Label>
             </div>
           </div>
 
           <SheetFooter className="border-t px-6 py-4 flex-row justify-end gap-2">
-            <Button variant="outline" onClick={() => setOpen(false)}>取消</Button>
+            <Button variant="outline" onClick={() => setOpen(false)}>취소</Button>
             <Button onClick={handleSave} disabled={saving || !!regexErr}>
-              {saving ? "保存中…" : "保存"}
+              {saving ? "저장 중…" : "저장"}
             </Button>
           </SheetFooter>
         </SheetContent>
@@ -928,16 +928,16 @@ export default function InterceptPage() {
           <DialogHeader className="shrink-0 border-b px-6 py-4">
             <DialogTitle className="flex items-center gap-2">
               <ListFilterIcon className="h-4 w-4" />
-              拦截范围
+              가로채기 범위
             </DialogTitle>
             <DialogDescription className="text-xs">
-              只有启用拦截的工具才会进入规则匹配；其余工具直接放行
+              가로채기를 켠 도구만 규칙 일치에 들어갑니다. 나머지 도구는 바로 통과합니다
             </DialogDescription>
           </DialogHeader>
 
           <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-5">
             {scopeLoading ? (
-              <p className="text-sm text-muted-foreground py-4">加载中…</p>
+              <p className="text-sm text-muted-foreground py-4">불러오는 중…</p>
             ) : (
               toolGroups.map((group, gi) => (
                 <div key={group.label}>
@@ -973,9 +973,9 @@ export default function InterceptPage() {
           </div>
 
           <div className="shrink-0 border-t px-6 py-3 flex justify-end gap-2">
-            <Button variant="outline" size="sm" onClick={() => setScopeOpen(false)}>取消</Button>
+            <Button variant="outline" size="sm" onClick={() => setScopeOpen(false)}>취소</Button>
             <Button size="sm" onClick={saveScope} disabled={scopeSaving || scopeLoading}>
-              {scopeSaving ? "保存中…" : "保存"}
+              {scopeSaving ? "저장 중…" : "저장"}
             </Button>
           </div>
         </DialogContent>

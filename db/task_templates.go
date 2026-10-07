@@ -18,9 +18,9 @@ const (
 )
 
 var (
-	ErrTaskTemplateInvalid      = errors.New("invalid task template")
-	ErrTaskTemplateNameConflict = errors.New("task template name already exists")
-	ErrTaskTemplateNotFound     = errors.New("task template not found")
+	ErrTaskTemplateInvalid      = errors.New("작업 템플릿이 올바르지 않습니다")
+	ErrTaskTemplateNameConflict = errors.New("같은 작업 템플릿 이름이 이미 있습니다")
+	ErrTaskTemplateNotFound     = errors.New("작업 템플릿을 찾을 수 없습니다")
 )
 
 // TaskTemplate is a reusable task preset (description/goal + optional category

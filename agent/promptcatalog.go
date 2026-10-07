@@ -1,11 +1,11 @@
 package agent
 
-// 本文件把内置 agent 的「默认提示词正文」(段 [A]) 变成可枚举、可被服务端幂等
-// 播种进 agent_prompts 表的目录 —— 镜像 toolcatalog.go 的 BuiltinToolSeeds()。
+// 이 파일은 내장 에이전트의 기본 프롬프트 본문(구간 [A])을 열거할 수 있고, 서버가 멱등으로
+// agent_prompts 표에 심는 목록으로 만듭니다. toolcatalog.go 의 BuiltinToolSeeds() 와 같은 방식입니다.
 //
-// 只包含【可编辑正文】：段 [B] trafficTool 与段 [C] 中间产物输出规约 是代码固定
-// 注入(见 worker.go 的 workerTrafficBlock/artifactSpec)，不入库、不可编辑，因此
-// 不在种子里。种子文本用 Go 模板占位({{.Goal}} 等)，渲染时按运行期变量填充。
+// 편집 가능한 본문만 포함합니다. 구간 [B] trafficTool 과 구간 [C] 중간 산출물 출력 규약은 코드가 고정으로
+// 주입합니다(worker.go 의 workerTrafficBlock/artifactSpec). 저장소에 넣지 않고 편집할 수 없으므로
+// 씨앗에 없습니다. 씨앗 텍스트는 Go 템플릿 자리표시({{.Goal}} 등)를 쓰고, 렌더할 때 실행 중 변수로 채웁니다.
 
 // autoDefaultTmpl is the built-in "Auto" platform-operator agent's prompt. Auto
 // runs via the chat page and drives the platform through tools: task ops
@@ -24,7 +24,7 @@ const autoDefaultTmpl = `你是 **Auto**，这个渗透测试平台的「操作�
 - 用人话简洁汇报你做了什么、结果如何；只根据工具真实返回作答，不臆造。
 - 只在授权范围内操作。`
 
-// pentestDefaultTmpl is the built-in "渗透测试" (solo pentest) agent's prompt. Unlike
+// pentestDefaultTmpl is the built-in "침투 테스트" (solo pentest) agent's prompt. Unlike
 // the orchestration roles (goals/planner/worker), it runs standalone via the chat page
 // and is its own planner + executor + auditor. Default tools: list_assets / insert_assets
 // / report_finding / list_findings (bound in toolcatalog + seedPentestDefaultBindings).
@@ -69,7 +69,7 @@ const pentestDefaultTmpl = `你是一个授权渗透测试系统的"独立渗透
 // render fallback in RunChat when the DB prompt is somehow missing.
 const DefaultAssistantPrompt = `你是一个乐于助人的 AI 助手。请用简洁、准确的中文回答用户的问题；在需要时使用可用的工具来完成任务。只做用户要求的事，不臆造信息。`
 
-// ReporterDefaultPrompt is the seeded prompt for the "报告撰写"(reporter) custom
+// ReporterDefaultPrompt is the seeded prompt for the "보고서 작성"(reporter) custom
 // agent — triggered when report_finding fires. It gathers the finding's full
 // evidence + how it was found, writes a Markdown vulnerability report, and saves
 // it via update_finding_report.
@@ -91,14 +91,14 @@ const ReporterDefaultPrompt = `你是一个授权渗透测试系统里的**漏�
 5. **保存**：调用 **update_finding_report(finding_id=<node_id>, report=<Markdown 全文>, evidence_version=<实际读取的 version>)** 保存；未读取版本时省略 evidence_version，不得猜测。这是你的最终产物——不写进去等于没做。
 
 ━━ 报告结构（Markdown，按需裁剪，但证据/复现/修复必须有）━━
-- ` + "`## 概述`" + `：一句话说清是什么漏洞、在哪、能造成什么。
-- ` + "`## 影响与危害`" + `：结合业务讲清最坏后果（数据泄露/接管/RCE/横向…），给出**严重等级**判断及理由。
-- ` + "`## 受影响范围`" + `：受影响的资产/接口/参数/版本。
-- ` + "`## 复现步骤`" + `：**可照做复现**的分步操作（请求/命令/参数），能贴 PoC 就贴。
-- ` + "`## 证据`" + `：证明漏洞真实存在的关键请求/响应片段、命令输出、回显、截图说明——用代码块贴原文。
-- ` + "`## PoC`" + `：可直接运行/复用的利用代码或 payload（利用脚本、请求报文、命令行、payload 串），**通常以代码块给出完整代码**，并简述如何运行；无独立利用代码时说明"复现步骤即为 PoC"。
-- ` + "`## 根因分析`" + `：为什么会有这个漏洞（缺校验/危险函数/配置错误…）。
-- ` + "`## 修复建议`" + `：具体、可落地的整改措施（不是空话），可含加固与长期建议。
+- ` + "`## 概述`" + `：一句话说清是什么漏洞、在哪、能造成什么。 // han-allow 업스트림 프롬프트·픽스처
+- ` + "`## 影响与危害`" + `：结合业务讲清最坏后果（数据泄露/接管/RCE/横向…），给出**严重等级**判断及理由。 // han-allow 업스트림 프롬프트·픽스처
+- ` + "`## 受影响范围`" + `：受影响的资产/接口/参数/版本。 // han-allow 업스트림 프롬프트·픽스처
+- ` + "`## 复现步骤`" + `：**可照做复现**的分步操作（请求/命令/参数），能贴 PoC 就贴。 // han-allow 업스트림 프롬프트·픽스처
+- ` + "`## 证据`" + `：证明漏洞真实存在的关键请求/响应片段、命令输出、回显、截图说明——用代码块贴原文。 // han-allow 업스트림 프롬프트·픽스처
+- ` + "`## PoC`" + `：可直接运行/复用的利用代码或 payload（利用脚本、请求报文、命令行、payload 串），**通常以代码块给出完整代码**，并简述如何运行；无独立利用代码时说明"复现步骤即为 PoC"。 // han-allow 업스트림 프롬프트·픽스처
+- ` + "`## 根因分析`" + `：为什么会有这个漏洞（缺校验/危险函数/配置错误…）。 // han-allow 업스트림 프롬프트·픽스처
+- ` + "`## 修复建议`" + `：具体、可落地的整改措施（不是空话），可含加固与长期建议。 // han-allow 업스트림 프롬프트·픽스처
 
 ━━ 纪律 ━━
 - **只基于真实证据**：报告里的每一条都要能从 finding 证据或 work 执行过程里找到支撑；**绝不臆造**请求、响应、CVE 或结论。证据不足的地方如实标注"未验证/需进一步确认"。

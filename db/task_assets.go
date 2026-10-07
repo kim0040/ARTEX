@@ -13,13 +13,13 @@ const (
 	MaxTaskAssetMutationCount = 100
 	MaxTaskAssetSummaryRunes  = 500
 	defaultTaskAssetSource    = "system"
-	manualTaskScopeSummary    = "用户在测试资产页手工新增"
+	manualTaskScopeSummary    = "사용자가 테스트 자산 페이지에서 수동으로 추가"
 )
 
 var (
 	ErrTaskAssetInvalid       = errors.New("invalid task asset association")
-	ErrTaskAssetTaskNotFound  = errors.New("task not found")
-	ErrTaskAssetAssetNotFound = errors.New("asset not found")
+	ErrTaskAssetTaskNotFound  = errors.New("작업을 찾을 수 없습니다")
+	ErrTaskAssetAssetNotFound = errors.New("자산을 찾을 수 없습니다")
 )
 
 // TaskAssetMutation summarizes one attach request. Attached counts newly added
@@ -145,7 +145,7 @@ func (s *AssetStore) RegisterTaskAssetScopes(taskID int64, inputs []ScopeInput) 
 	for index, input := range inputs {
 		rule, err := ParseScopeInput(input)
 		if err != nil {
-			return mutation, fmt.Errorf("%w: 第 %d 条范围无效: %v", ErrTaskAssetInvalid, index+1, err)
+			return mutation, fmt.Errorf("%w: %d번째 범위가 유효하지 않음: %v", ErrTaskAssetInvalid, index+1, err)
 		}
 		parsed = append(parsed, rule)
 	}
@@ -201,7 +201,7 @@ func (s *AssetStore) RegisterTaskAssetScopes(taskID int64, inputs []ScopeInput) 
 			taskScope.Net = rule.Net
 			ip, _, parseErr := net.ParseCIDR(rule.Net)
 			if parseErr != nil {
-				return mutation, fmt.Errorf("%w: 无效 IP: %s", ErrTaskAssetInvalid, rule.Raw)
+				return mutation, fmt.Errorf("%w: 유효하지 않은 IP: %s", ErrTaskAssetInvalid, rule.Raw)
 			}
 			ipValue := ip.String()
 			var alreadyLinked bool
@@ -394,7 +394,7 @@ SELECT intent.id, asset.id, asset.type,
          ELSE '#' || asset.id::text
        END,
        COALESCE(link.source,'anchor'),
-       COALESCE(NULLIF(link.source_summary,''), '意图在黑板中锚定该资产'),
+       COALESCE(NULLIF(link.source_summary,''), '의도가 탐색 그래프에서 이 자산을 앵커로 연결했습니다'),
        link.source_node_id, context.task_id, context.inherited
 FROM context
 JOIN exploration_nodes intent ON intent.exploration_id=context.exploration_id AND intent.kind='intent'

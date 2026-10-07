@@ -59,7 +59,7 @@ func (s *Server) assetInterceptUpdateRule(w http.ResponseWriter, r *http.Request
 	}
 	id, ok := pathInt(r, "id")
 	if !ok {
-		writeErr(w, 400, "bad rule id")
+		writeErr(w, 400, "규칙 id가 올바르지 않습니다")
 		return
 	}
 	var req assetInterceptRuleReq
@@ -86,7 +86,7 @@ func (s *Server) assetInterceptDeleteRule(w http.ResponseWriter, r *http.Request
 	}
 	id, ok := pathInt(r, "id")
 	if !ok {
-		writeErr(w, 400, "bad rule id")
+		writeErr(w, 400, "규칙 id가 올바르지 않습니다")
 		return
 	}
 	if err := pg.DeleteAssetInterceptRule(id); err != nil {
@@ -103,7 +103,7 @@ func (s *Server) assetInterceptToggleRule(w http.ResponseWriter, r *http.Request
 	}
 	id, ok := pathInt(r, "id")
 	if !ok {
-		writeErr(w, 400, "bad rule id")
+		writeErr(w, 400, "규칙 id가 올바르지 않습니다")
 		return
 	}
 	var req struct {
@@ -136,21 +136,21 @@ type assetInterceptRuleReq struct {
 func validateAssetInterceptRuleReq(req *assetInterceptRuleReq) error {
 	req.Pattern = strings.TrimSpace(req.Pattern)
 	if req.Pattern == "" {
-		return fmt.Errorf("pattern 不能为空")
+		return fmt.Errorf("pattern은 비울 수 없습니다")
 	}
 	switch req.Kind {
 	case "exact_domain", "exact_url", "fuzzy_domain", "fuzzy_ip", "fuzzy_url":
 		// free-form, no format check
 	case "exact_ip":
 		if net.ParseIP(req.Pattern) == nil {
-			return fmt.Errorf("exact_ip 不是有效 IP 地址：%s", req.Pattern)
+			return fmt.Errorf("exact_ip가 올바른 IP 주소가 아닙니다: %s", req.Pattern)
 		}
 	case "cidr":
 		if _, _, err := net.ParseCIDR(req.Pattern); err != nil {
-			return fmt.Errorf("cidr 不是有效网段（形如 192.168.0.0/16）：%s", req.Pattern)
+			return fmt.Errorf("cidr가 올바른 대역이 아닙니다(예: 192.168.0.0/16): %s", req.Pattern)
 		}
 	default:
-		return fmt.Errorf("kind 无效：%s", req.Kind)
+		return fmt.Errorf("kind가 올바르지 않습니다: %s", req.Kind)
 	}
 	return nil
 }

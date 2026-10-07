@@ -76,7 +76,7 @@ type Node struct {
 	Origin        string          `json:"origin,omitempty"`
 	Owner         string          `json:"owner,omitempty"`
 	BlockedReason string          `json:"blocked_reason,omitempty"`
-	DeleteReason  string          `json:"delete_reason,omitempty"` // 仅意图假删除(state='deleted')时非空
+	DeleteReason  string          `json:"delete_reason,omitempty"` // 의도 가짜 삭제(state='deleted')일 때만 비어 있지 않다
 	Anchors       []int64         `json:"anchors,omitempty"`
 	CreatedAt     time.Time       `json:"created_at"`
 	SourceTaskID  int64           `json:"source_task_id,omitempty"`
@@ -284,7 +284,7 @@ func (s *ExplorationStore) UpdateGoalPayload(id int64, text, vulnclass string) e
 		return err
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		return fmt.Errorf("目标不存在")
+		return fmt.Errorf("대상이 없습니다")
 	}
 	return nil
 }
@@ -299,7 +299,7 @@ func (s *ExplorationStore) DeleteGoal(id int64) error {
 		return err
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		return fmt.Errorf("目标不存在")
+		return fmt.Errorf("대상이 없습니다")
 	}
 	return nil
 }
@@ -319,10 +319,10 @@ WHERE exploration_id=$1 AND kind='intent' AND state='running'`, s.expID)
 	return n, nil
 }
 
-// ReopenIntent flips ONE not-successfully-finished intent (blocked/exhausted/stopped)
-// back to 'open' so a worker re-claims it (graph writes it already produced stay).
-// The worker resumes from its prior LLM transcript instead of restarting from scratch.
-// done/open/running are left untouched. Returns whether a row changed. Used by "重跑".
+// ReopenIntent 는 성공으로 끝나지 않은 의도 하나(blocked/exhausted/stopped)를
+// 다시 'open' 으로 되돌려 워커가 다시 가져가게 한다(이미 만든 그래프 쓰기는 그대로 둔다).
+// 워커는 처음부터 다시 시작하지 않고, 이전 LLM 기록에서 이어 간다.
+// done/open/running 은 건드리지 않는다. 행이 바뀌었는지 반환한다. 「다시 실행」에서 쓴다.
 func (s *ExplorationStore) ReopenIntent(id int64) (bool, error) {
 	res, err := s.db.Exec(`UPDATE exploration_nodes
 SET state='open', completed_at=NULL, blocked_reason=NULL
@@ -382,10 +382,10 @@ type IntentCleanup struct {
 	Activities int64 `json:"activities"`
 }
 
-// SoftDeleteIntent 假删除一个待领/运行中/已暂停的意图:置 state='deleted' 并把用户填写的
-// 删除原因记入 delete_reason 字段,保留意图节点及其全部产出/血缘(不再像旧实现那样在图上
-// 另挂一条 fact)。返回删除前意图的 summary,供 planner 通知使用。副会话随删除态一并清理。
-// 调用方须先停掉运行中的 worker,避免其后续写入。
+// SoftDeleteIntent 는 대기 중/실행 중/일시 중지된 의도 하나를 가짜 삭제한다. state='deleted' 로 두고, 사용자가 적은
+// 삭제 이유를 delete_reason 필드에 남긴다. 의도 노드와 그 산출물/혈통은 모두 보존한다(예전 구현처럼 그래프에
+// fact 를 하나 더 달지 않는다). 삭제 전 의도의 summary 를 반환해 플래너 알림에 쓴다. 보조 세션은 삭제 상태와 함께 정리한다.
+// 호출자는 먼저 실행 중인 워커를 멈춰, 이후 쓰기를 막아야 한다.
 func (s *ExplorationStore) SoftDeleteIntent(id int64, reason string) (string, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -398,7 +398,7 @@ func (s *ExplorationStore) SoftDeleteIntent(id int64, reason string) (string, er
 	if err := tx.QueryRow(`SELECT state, payload FROM exploration_nodes
 		WHERE id=$1 AND exploration_id=$2 AND kind='intent' FOR UPDATE`, id, s.expID).Scan(&state, &rawPayload); err != nil {
 		if err == sql.ErrNoRows {
-			return "", fmt.Errorf("intent not found")
+			return "", fmt.Errorf("의도를 찾을 수 없습니다")
 		}
 		return "", err
 	}
@@ -411,7 +411,7 @@ func (s *ExplorationStore) SoftDeleteIntent(id int64, reason string) (string, er
 		WHERE id=$1 AND exploration_id=$2`, id, s.expID, reason); err != nil {
 		return "", err
 	}
-	// 主意图审计轨迹保留,但副问答会话随删除态原子清理(延迟快照会拒绝它)。
+	// 주 의도 감사 궤적은 남기되, 보조 질의응답 세션은 삭제 상태와 함께 원자적으로 정리한다(지연 스냅샷은 이를 거부한다).
 	if _, err := tx.Exec(`DELETE FROM side_question_sessions WHERE intent_id=$1`, id); err != nil {
 		return "", err
 	}
@@ -425,12 +425,12 @@ func (s *ExplorationStore) SoftDeleteIntent(id int64, reason string) (string, er
 	return summary, tx.Commit()
 }
 
-// CancelIntent 物理删除一个意图,以及"仅由该意图支撑"的全部独占子孙节点——从该意图沿
-// yields/derived_from 向下可达、且所有父节点(所有指向它的边的源)都落在删除集内的节点。
-// goal 与 origin fact 永不删除;还被删除集之外的意图/digest 引用的共享节点也保留,以免破坏
-// 其它分支、产生断链。被删的每个 intent 先做 token rollup(保留不可逆计量)并清理其 activity
-// 与副会话;被删的 finding 先删 findings 表行(node_id FK 为 ON DELETE SET NULL,否则留孤儿)。
-// 边随节点 CASCADE 清理,整个清理保持在一个事务内。调用方须先停掉运行中的 worker 防止其后续写入。
+// CancelIntent 는 의도 하나를 물리 삭제하고, "그 의도만 받치고 있는" 독점 자손 노드를 모두 지운다. 해당 의도에서
+// yields/derived_from 을 따라 아래로 닿고, 모든 부모 노드(그 노드를 가리키는 모든 간선의 출발)가 삭제 집합 안에 있는 노드다.
+// goal 과 origin fact 는 절대 지우지 않는다. 삭제 집합 밖의 의도/digest 가 아직 참조하는 공유 노드도 남겨, 다른
+// 분기가 깨지거나 끊긴 링크가 생기지 않게 한다. 지우는 intent 마다 먼저 token rollup 을 하고(되돌릴 수 없는 계량을 남긴다) activity
+// 와 보조 세션을 정리한다. 지우는 finding 은 먼저 findings 테이블 행을 지운다(node_id FK 가 ON DELETE SET NULL 이라, 그렇지 않으면 고아가 남는다).
+// 간선은 노드와 함께 CASCADE 로 정리되고, 정리 전체는 한 트랜잭션 안에 있다. 호출자는 먼저 실행 중인 워커를 멈춰 이후 쓰기를 막아야 한다.
 func (s *ExplorationStore) CancelIntent(id int64) (IntentCleanup, error) {
 	var out IntentCleanup
 	tx, err := s.db.Begin()
@@ -439,17 +439,17 @@ func (s *ExplorationStore) CancelIntent(id int64) (IntentCleanup, error) {
 	}
 	defer tx.Rollback()
 
-	// 锁定意图行确认存在(幂等:已删则 not found)。状态不校验——真删除对任何状态成立,
-	// running 的 worker 由调用方先停。
+	// 의도 행을 잠그고 존재를 확인한다(멱등: 이미 지웠으면 not found). 상태는 검사하지 않는다. 진짜 삭제는 어떤 상태에서든 성립하며,
+	// running 인 워커는 호출자가 먼저 멈춘다.
 	if err := tx.QueryRow(`SELECT 1 FROM exploration_nodes
 		WHERE id=$1 AND exploration_id=$2 AND kind='intent' FOR UPDATE`, id, s.expID).Scan(new(int)); err != nil {
 		if err == sql.ErrNoRows {
-			return out, fmt.Errorf("intent not found")
+			return out, fmt.Errorf("의도를 찾을 수 없습니다")
 		}
 		return out, err
 	}
 
-	// 载入全图节点(判 protected)与边(算向下可达 + 父集)。图规模对真实任务很小。
+	// 그래프 전체의 노드(protected 판정)와 간선(아래로 도달 가능 여부 + 부모 집합 계산)을 불러온다. 그래프 규모는 실제 작업에서 작다.
 	kind := map[int64]string{}
 	protected := map[int64]bool{}
 	nrows, err := tx.Query(`SELECT id, kind, state FROM exploration_nodes WHERE exploration_id=$1`, s.expID)
@@ -465,7 +465,7 @@ func (s *ExplorationStore) CancelIntent(id int64) (IntentCleanup, error) {
 		}
 		kind[nid] = k
 		if k == KindGoal || (k == KindFact && st == StateOrigin) {
-			protected[nid] = true // 目标与任务根事实永不随意图删除
+			protected[nid] = true // 목표와 작업 루트 사실은 의도 삭제와 함께 지워지지 않는다
 		}
 	}
 	nrows.Close()
@@ -473,8 +473,8 @@ func (s *ExplorationStore) CancelIntent(id int64) (IntentCleanup, error) {
 		return out, err
 	}
 
-	parentsOf := map[int64][]int64{} // dst -> 所有指向它的边的 src(任意 rel,含 covers:被 digest 覆盖的成员因此有 digest 父而被保留)
-	downOf := map[int64][]int64{}    // src -> 沿 yields/derived_from 的向下邻居
+	parentsOf := map[int64][]int64{} // dst -> 자신을 가리키는 모든 간선의 src(아무 rel, covers 포함: digest 에 덮인 구성원은 digest 부모가 있어 남는다)
+	downOf := map[int64][]int64{}    // src -> yields/derived_from 을 따른 아래 이웃
 	erows, err := tx.Query(`SELECT src_id, rel, dst_id FROM exploration_edges WHERE exploration_id=$1`, s.expID)
 	if err != nil {
 		return out, err
@@ -496,8 +496,8 @@ func (s *ExplorationStore) CancelIntent(id int64) (IntentCleanup, error) {
 		return out, err
 	}
 
-	// 独占级联:从意图向下扩展,一个节点入删除集当且仅当它未被保护、且它的每个父都已在集内
-	// (即除了经过被删节点外再无来路)。迭代到不动点。
+	// 독점 연쇄: 의도에서 아래로 넓힌다. 노드가 삭제 집합에 들어가는 조건은 보호되지 않았고, 그 부모 전부가 이미 집합 안에 있을 때뿐이다
+	// (즉 지워지는 노드를 거치는 길 외에 들어오는 길이 없다). 고정점에 이를 때까지 반복한다.
 	del := map[int64]bool{id: true}
 	for changed := true; changed; {
 		changed = false
@@ -521,7 +521,7 @@ func (s *ExplorationStore) CancelIntent(id int64) (IntentCleanup, error) {
 		}
 	}
 
-	// 按类型分桶。
+	// 유형별로 나눈다.
 	var ids, intentIDs, findingIDs []int64
 	for nid := range del {
 		ids = append(ids, nid)
@@ -537,8 +537,8 @@ func (s *ExplorationStore) CancelIntent(id int64) (IntentCleanup, error) {
 		}
 	}
 
-	// 每个被删意图:token rollup(保留不可逆计量)后清 activity。rollup 行 node_id 为 NULL,
-	// 不会被下面按 node_id 的删除命中。
+	// 지워지는 의도마다: token rollup(되돌릴 수 없는 계량을 남긴다) 뒤에 activity 를 지운다. rollup 행의 node_id 는 NULL 이라,
+	// 아래에서 node_id 로 하는 삭제에 걸리지 않는다.
 	for _, iid := range intentIDs {
 		tokenBuckets, err := intentTokenRollup(tx, s.expID, iid)
 		if err != nil {
@@ -561,7 +561,7 @@ func (s *ExplorationStore) CancelIntent(id int64) (IntentCleanup, error) {
 				exploration_id, worker, kind, summary, metadata,
 				input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, created_at)
 				VALUES ($1,'token-ledger','result',$2,$3,$4,$5,$6,$7,$8)`,
-				s.expID, fmt.Sprintf("已取消意图 #%d 的 Token 计量", iid), metadata,
+				s.expID, fmt.Sprintf("취소된 의도 #%d 의 Token 계량", iid), metadata,
 				bucket.Usage.InputTokens, bucket.Usage.OutputTokens,
 				bucket.Usage.CacheReadTokens, bucket.Usage.CacheWriteTokens, bucket.Day); err != nil {
 				return out, err
@@ -572,14 +572,14 @@ func (s *ExplorationStore) CancelIntent(id int64) (IntentCleanup, error) {
 		}
 	}
 
-	// finding 节点删除前先删 findings 表行(否则留 node_id=NULL 的孤儿)。
+	// finding 노드를 지우기 전에 findings 테이블 행을 먼저 지운다(그렇지 않으면 node_id=NULL 인 고아가 남는다).
 	for _, fid := range findingIDs {
 		if _, err := tx.Exec(`DELETE FROM findings WHERE node_id=$1`, fid); err != nil {
 			return out, err
 		}
 	}
 
-	// 删节点(边随 CASCADE 清理)。逐个删并核对行数,防并发改动。
+	// 노드를 지운다(간선은 CASCADE 로 정리된다). 하나씩 지우고 행 수를 맞춰, 동시 변경을 막는다.
 	var removed int64
 	for _, nid := range ids {
 		res, err := tx.Exec(`DELETE FROM exploration_nodes WHERE id=$1 AND exploration_id=$2`, nid, s.expID)
@@ -848,11 +848,9 @@ type NodeFilter struct {
 	Asc    bool     // true = oldest first (replay); default newest first (broadcast)
 }
 
-// NodesPage returns one 1-based page of this exploration's nodes plus the total
-// matching count. The 播报板 reads the graph as a time series, so it pages in SQL
-// rather than pulling the whole graph like Nodes does. Ordering is by id, which
-// is BIGSERIAL and therefore creation order — stable when several nodes share a
-// created_at second.
+// NodesPage 는 이 탐색의 노드를 1부터 세는 한 페이지와 일치하는 전체
+// 개수를 반환한다. 방송판은 그래프를 시계열로 읽으므로, Nodes 처럼 그래프 전체를 당기지 않고 SQL 에서 페이지를 나눈다.
+// 정렬은 id 기준이다. id 는 BIGSERIAL 이라 생성 순서다. created_at 초가 같은 노드가 여러 개여도 순서가 안정적이다.
 func (s *ExplorationStore) NodesPage(f NodeFilter, page, size int) ([]*Node, int, error) {
 	if page < 1 {
 		page = 1
@@ -884,7 +882,7 @@ func (s *ExplorationStore) NodesPage(f NodeFilter, page, size int) ([]*Node, int
 		args = append(args, "%"+q+"%")
 		mark := "$" + fmt.Sprint(len(args))
 		ors := []string{"payload::text ILIKE " + mark, "COALESCE(origin,'') ILIKE " + mark}
-		// 纯数字(或 UI 里带 # 前缀的形式,如「#41」)当作节点 id 精确匹配,方便直接定位某个节点。
+		// 순수 숫자(또는 UI 에서 # 접두가 붙은 형태, 예: 「#41」)는 노드 id 정확 일치로 보아, 어떤 노드든 바로 찾을 수 있게 한다.
 		if idStr := strings.TrimPrefix(q, "#"); idStr != "" {
 			if id, err := strconv.ParseInt(idStr, 10, 64); err == nil {
 				args = append(args, id)
@@ -918,8 +916,8 @@ func (s *ExplorationStore) NodesPage(f NodeFilter, page, size int) ([]*Node, int
 	return nodes, total, nil
 }
 
-// NodesByIDs loads the given nodes of this exploration in id order. Used to
-// resolve the neighbours of a 播报板 page without fetching the whole graph.
+// NodesByIDs는 이 탐색의 주어진 노드를 id 순서로 불러온다. 그래프 전체를
+// 가져오지 않고 중계 보드 페이지의 이웃을 푸는 데 쓴다.
 func (s *ExplorationStore) NodesByIDs(ids []int64) ([]*Node, error) {
 	if len(ids) == 0 {
 		return nil, nil
@@ -940,8 +938,8 @@ WHERE exploration_id=$1 AND id IN (`+strings.Join(marks, ",")+`) ORDER BY id`, a
 	return scanNodes(rows)
 }
 
-// EdgesTouching returns every edge with one end among ids — the 播报板 uses it to
-// spell out where a node came from and what it produced.
+// EdgesTouching은 한쪽 끝이 ids에 있는 모든 간선을 반환한다. 중계 보드는 이것으로
+// 노드가 어디에서 왔는지, 무엇을 만들어 냈는지를 풀어 적는다.
 func (s *ExplorationStore) EdgesTouching(ids []int64) ([]Edge, error) {
 	if len(ids) == 0 {
 		return nil, nil
@@ -1159,9 +1157,9 @@ WHERE exploration_id=$1 AND kind='intent' AND state IN ('open','running'))`, s.e
 	return exists, err
 }
 
-// HasOpenGoal reports whether this exploration still has any goal in state 'open'.
-// false ⇒ 所有目标已 met/abandoned（或本任务无目标）⇒ 进入 goalless（人工直投）分支：
-// planner 停跑，任务是否结束改由 frontier 是否抽干决定。met 与 abandoned 都算"已了结"。
+// HasOpenGoal은 이 탐색에 state가 open인 goal이 아직 있는지 보고한다.
+// false ⇒ 모든 목표가 이미 met/abandoned이거나(또는 이 작업에 목표가 없음) ⇒ goalless(사람이 직접 전달) 분기로 들어간다.
+// 플래너는 실행을 멈추고, 작업이 끝났는지는 frontier가 비었는지로 결정한다. met와 abandoned는 모두 "이미 매듭지음"으로 친다.
 func (s *ExplorationStore) HasOpenGoal() (bool, error) {
 	var exists bool
 	err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM exploration_nodes
@@ -1269,10 +1267,10 @@ func (d *DB) TokenTotalsAll() (map[int64]TokenUsage, error) {
 	return out, rows.Err()
 }
 
-// LastActivityAll returns the unix time of the most recent activity per
-// exploration (exploration_id → max created_at epoch), one query for all tasks.
-// Persisted (unlike Engine.LastActivity's in-memory map), so it survives restarts
-// and gives终态任务 a stable "ran until" time for computing run duration.
+// LastActivityAll은 탐색마다 가장 최근 활동의 unix 시각을 반환한다
+// (exploration_id → max created_at epoch). 모든 작업을 쿼리 한 번으로 다룬다.
+// 저장된다(Engine.LastActivity의 메모리 맵과 다름). 그래서 재시작 뒤에도 남고,
+// 종료 상태 작업에 실행 시간을 계산할 안정적인 "ran until" 시각을 준다.
 func (d *DB) LastActivityAll() (map[int64]int64, error) {
 	rows, err := d.Query(`SELECT exploration_id, EXTRACT(EPOCH FROM MAX(created_at))::bigint FROM activity GROUP BY exploration_id`)
 	if err != nil {
@@ -1293,8 +1291,9 @@ func (d *DB) LastActivityAll() (map[int64]int64, error) {
 // GoalCounts is the goal summary for one exploration.
 type GoalCounts struct{ Total, Met int }
 
-// FindingSeverityCounts breaks a task's findings down by severity for the task
-// list (severity 白名单外/为空的记录不计入任一档)。
+// FindingSeverityCounts는 작업 목록을 위해 한 작업의 발견을 심각도별로 나눈다
+// (severity가 허용 목록 밖이거나 비어 있는 기록은 어느 등급에도 세지 않는다).
+// 이 집계는 탐색 그래프의 발견을 작업 목록 UI에 심각도별로 보여 준다.
 type FindingSeverityCounts struct{ Critical, High, Medium, Low int }
 
 // TaskListMetrics contains the aggregates rendered in task lists.
@@ -1302,8 +1301,8 @@ type TaskListMetrics struct {
 	Tokens         TokenUsage
 	LastActivity   int64
 	Goals          GoalCounts
-	RunningIntents int                   // kind='intent' 且 state='running' 的条数，即运行中 Worker 数
-	Findings       FindingSeverityCounts // findings 表里该任务的漏洞数（按严重度分档）
+	RunningIntents int                   // kind=intent 이고 state=running 인 행의 수, 즉 실행 중인 워커 수
+	Findings       FindingSeverityCounts // findings 테이블에서 해당 작업의 발견 수(심각도별 구간)
 }
 
 // TaskListMetricsAll returns list aggregates for every live task in one query.
@@ -1547,15 +1546,16 @@ func (s *ExplorationStore) ActivityListForTerminalIntent(nodeID, sinceID int64, 
 	return out, cursor, rows.Err()
 }
 
-// ActivitySessionFilter selects one UI "session" within a task's activity stream.
-// Exactly one field is meaningful:
-//   - Main == true  → the main-agent session (worker="mainagent") for one segment
-//     (MainSeg; nil/0 = the original segment, which also matches legacy NULL rows).
-//   - Worker != ""  → filter by worker name (Plan = "planner").
-//     Goal Agent 的第 0 轮拆解也以 worker="planner" 落库，故 Plan 会话完整覆盖 Goal+Planner。
-//   - NodeID != nil → a Worker session, filtered by node_id (= intent id).
+// ActivitySessionFilter는 한 작업의 활동 스트림 안에서 UI 세션 하나를 고른다.
+// 의미 있는 필드는 정확히 하나다.
+//   - Main == true  → 한 구간의 메인 에이전트 세션(worker="mainagent")
+//     (MainSeg. nil/0은 원래 구간이며, 예전 NULL 행과도 맞는다).
+//   - Worker != ""  → 워커 이름으로 거른다(Plan = "planner").
+//     Goal Agent의 0라운드 분해도 worker="planner"로 저장되므로, Plan 세션은 Goal과 플래너를 빠짐없이 덮는다.
+//   - NodeID != nil → node_id(= 의도 id)로 거른 워커 세션.
 //
-// A zero value (all empty) matches the whole task (no session filter).
+// 영 값(모두 비어 있음)은 세션 필터 없이 작업 전체와 맞는다.
+// 이 필터는 UI가 활동 스트림을 세션으로 나눌 때 탐색 그래프의 의도 노드와 플래너 기록을 고르게 한다.
 type ActivitySessionFilter struct {
 	Worker  string
 	NodeID  *int64
@@ -1689,10 +1689,11 @@ func (s *ExplorationStore) ActivityMaxID() (int64, error) {
 	return max.Int64, nil
 }
 
-// MainSession is one resettable main-agent conversation segment of a task. Segment 0
-// is the original session (implicit, never stored); further segments are created by
-// "新建会话" to start the main agent on a clean transcript while the task's graph,
-// assets and goal stay shared.
+// MainSession은 한 작업에서 다시 시작할 수 있는 메인 에이전트 대화 구간이다. Segment 0은
+// 원래 세션이다(암묵적이며 저장하지 않는다). 그다음 구간은
+// "새 세션"으로 만들어지며, 메인 에이전트를 깨끗한 기록에서 다시 시작하는 동안 작업의 그래프,
+// 자산, 목표는 그대로 공유된다.
+// 새 세션은 대화만 새로 열고, 자산 그래프와 탐색 그래프는 같은 작업에 남긴다.
 type MainSession struct {
 	Seq       int       `json:"seq"`
 	CreatedAt time.Time `json:"created_at"`

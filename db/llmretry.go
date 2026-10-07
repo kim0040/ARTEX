@@ -5,18 +5,19 @@ import (
 	"time"
 )
 
-// LLM 重试策略：五层重试的「次数 + 间隔」全局配置，见 docs/LLM重试设计.md。
-// 存在 settings 表的一个 JSON 值里 —— 它是整机一份的运行参数，不值得为它开一张表；
-// 读取走内置默认兜底，所以键不存在(全新库/从未配置过)时行为与写死常量时代完全一致。
+// LLM 재시도 전략: 다섯 계층 재시도의 「횟수 + 간격」 전역 설정. docs/LLM재시도설계.md 를 참고한다.
+// settings 테이블의 JSON 값 하나에 둔다 —— 장비 전체에서 한 벌인 실행 매개변수라 이를 위해 테이블을 따로 만들 가치가 없다.
+// 읽기는 내장 기본값으로 폴백하므로, 키가 없을 때(새 데이터베이스이거나 한 번도 설정하지 않았을 때) 동작은 상수를 코드에 고정해 두던 때와 완전히 같다.
 
 const settingLLMRetryPolicy = "llm_retry_policy"
 
-// RetryRule is one layer's knob pair. The zero value means "unset":
+// RetryRule 은 한 층의 조절 값 쌍이다. 제로 값은 "unset" 을 뜻한다:
 //
-//	Attempts   0 = 用内置默认次数; -1 = 关闭该层重试; >0 = 用该值
-//	IntervalMS 0 = 用该层原本的间隔策略(通常是指数退避); >0 = 改用固定毫秒间隔
+//	Attempts   0 = 내장 기본 횟수를 쓴다; -1 = 그 층 재시도를 끈다; >0 = 그 값을 쓴다
+//	IntervalMS 0 = 그 층 원래의 간격 전략을 쓴다(보통 지수 백오프); >0 = 고정 밀리초 간격으로 바꾼다
 //
-// -1 是「显式关掉」而不是「0 次」，因为 0 已经被「未配置」占用了。
+// -1 은 「명시적으로 끔」이고 「0 회」가 아니다. 0 은 이미 「미설정」이 차지하기 때문이다.
+// 이 값은 워커가 탐색 그래프의 의도를 실행할 때 LLM 호출을 몇 번, 어느 간격으로 다시 시도할지 정한다.
 type RetryRule struct {
 	Attempts   int `json:"attempts"`
 	IntervalMS int `json:"interval_ms"`
@@ -76,20 +77,21 @@ func (o RetryOverride) Clamped() RetryOverride {
 	return o
 }
 
-// LLMRetryPolicy holds the五层 retry configuration. Connect/Empty/Stream are the
-// per-request layers (a profile may override them, see LLMProfile.Retry);
-// Breaker and Intent are process-wide by nature and live only here.
+// LLMRetryPolicy 는 다섯 층 재시도 설정을 담는다. Connect/Empty/Stream 은
+// 요청 단위 층이다(프로파일이 덮어쓸 수 있다. LLMProfile.Retry 를 본다).
+// Breaker 와 Intent 는 본질적으로 프로세스 전역이라 여기에만 있다.
+// 이 정책은 워커가 탐색 그래프에서 모델 호출과 의도 재실행을 어디까지 다시 시도할지 한곳에 모은다.
 type LLMRetryPolicy struct {
-	// Connect：SDK 建连重试(连接重置/超时/429/5xx，流开始前)。默认 3 次、指数退避。
+	// Connect: SDK 연결 수립 재시도(연결 리셋/시간 초과/429/5xx, 스트림이 시작되기 전). 기본 3회, 지수 백오프.
 	Connect RetryRule `json:"connect"`
-	// Empty：SDK 空响应重试(完成但无 content block，仅 openai 格式)。默认 2 次、指数退避。
+	// Empty: SDK 빈 응답 재시도(완료됐지만 content block 이 없음, openai 형식만). 기본 2회, 지수 백오프.
 	Empty RetryRule `json:"empty"`
-	// Stream：同 provider 安全窗口重试(未交付输出前的断流重放)。默认 2 次、0.5s 起指数(封顶 4s)。
+	// Stream: 같은 provider 의 안전 구간 재시도(출력을 넘기기 전에 끊긴 스트림을 다시 재생). 기본 2회, 0.5s 부터 지수(상한 4s).
 	Stream RetryRule `json:"stream"`
-	// Breaker：轮询熔断。Attempts=连续几次瞬时失败触发熔断(默认 3，-1=瞬时失败不熔断，
-	// 硬失败如余额不足/密钥失效仍立即熔断)；IntervalMS=固定冷却时长(0=默认 1/5/30min 梯度)。
+	// Breaker: 폴링 차단. Attempts=연속된 순간 실패가 몇 번이면 차단을 켜는지(기본 3, -1=순간 실패로는 차단하지 않음,
+	// 잔액 부족/키 무효 같은 하드 실패는 여전히 즉시 차단한다); IntervalMS=고정 냉각 시간(0=기본 1/5/30min 단계).
 	Breaker RetryRule `json:"breaker"`
-	// Intent：worker 以 model_error 收场后的整条意图重跑。默认 2 次、固定 3s。
+	// Intent: worker 가 model_error 로 끝난 뒤 의도 전체를 다시 실행한다. 기본 2회, 고정 3s.
 	Intent RetryRule `json:"intent"`
 }
 

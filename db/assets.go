@@ -12,7 +12,8 @@ import (
 )
 
 // =====================================================================
-// 统一资产表
+// 통합 자산 표
+// 자산 그래프는 이 표를 루트 도메인, 서브도메인, IP, 서비스의 공유 원장으로 쓴다.
 // =====================================================================
 
 // Asset is a row in the assets table.
@@ -255,7 +256,7 @@ type UpsertRootDomainReq struct {
 func (s *AssetStore) UpsertRootDomain(req UpsertRootDomainReq) (int64, error) {
 	domain := DomainKey(req.Domain)
 	if domain == "" {
-		return 0, fmt.Errorf("domain is required")
+		return 0, fmt.Errorf("도메인은 필수입니다")
 	}
 	if s.tx == nil {
 		return s.withCompanyScopeMutation(func(scoped *AssetStore) (int64, error) {
@@ -317,8 +318,8 @@ func ValidateAssetIP(value string) error {
 		return nil
 	}
 	return fmt.Errorf(
-		"%w: ip 必须是 IPv4/IPv6 地址，收到 %q。若这是主机名，请改用 type=subdomain 并填 domain 字段；"+
-			"若确实要登记地址，请先解析出 A/AAAA 记录，再用解析出的地址填 ip",
+		"%w: ip는 IPv4/IPv6 주소여야 합니다. 받은 값은 %q입니다. 호스트 이름이면 type=subdomain으로 바꾸고 domain 필드를 채우세요;"+
+			"주소를 등록해야 한다면 먼저 A/AAAA 레코드를 조회하고, 조회된 주소로 ip를 채우세요",
 		ErrAssetIPInvalid, value)
 }
 
@@ -337,7 +338,7 @@ type UpsertIPReq struct {
 // UpsertIP idempotently inserts or merges an IP asset.
 func (s *AssetStore) UpsertIP(req UpsertIPReq) (int64, error) {
 	if req.IP == "" {
-		return 0, fmt.Errorf("ip is required")
+		return 0, fmt.Errorf("ip 는 필수입니다")
 	}
 	if err := ValidateAssetIP(req.IP); err != nil {
 		return 0, err
@@ -453,7 +454,7 @@ type UpsertSubdomainReq struct {
 func (s *AssetStore) UpsertSubdomain(req UpsertSubdomainReq) (id int64, err error) {
 	domain := DomainKey(req.Domain)
 	if domain == "" {
-		return 0, fmt.Errorf("domain is required")
+		return 0, fmt.Errorf("도메인은 필수입니다")
 	}
 	if s.tx == nil {
 		return s.withCompanyScopeMutation(func(scoped *AssetStore) (int64, error) {
@@ -567,7 +568,7 @@ type UpsertAppReq struct {
 // UpsertApp idempotently inserts or merges an app asset.
 func (s *AssetStore) UpsertApp(req UpsertAppReq) (int64, error) {
 	if req.Name == "" {
-		return 0, fmt.Errorf("app name is required")
+		return 0, fmt.Errorf("앱 이름은 필수입니다")
 	}
 	if s.tx == nil {
 		return s.withCompanyScopeMutation(func(scoped *AssetStore) (int64, error) {
@@ -682,7 +683,7 @@ type UpsertHTTPServiceReq struct {
 // service_name, and root_domain are auto-extracted from URL.
 func (s *AssetStore) UpsertHTTPService(req UpsertHTTPServiceReq) (int64, error) {
 	if req.URL == "" {
-		return 0, fmt.Errorf("url is required")
+		return 0, fmt.Errorf("url 은 필수입니다")
 	}
 	if err := ValidateAssetIP(req.IP); err != nil {
 		return 0, err
@@ -819,16 +820,16 @@ type UpsertOtherServiceReq struct {
 // UpsertOtherService inserts or merges a non-HTTP service asset.
 func (s *AssetStore) UpsertOtherService(req UpsertOtherServiceReq) (int64, error) {
 	if req.Domain == "" && req.IP == "" {
-		return 0, fmt.Errorf("domain or ip is required")
+		return 0, fmt.Errorf("도메인 또는 ip 는 필수입니다")
 	}
 	if err := ValidateAssetIP(req.IP); err != nil {
 		return 0, err
 	}
 	if req.Port == 0 {
-		return 0, fmt.Errorf("port is required")
+		return 0, fmt.Errorf("port 는 필수입니다")
 	}
 	if req.ServiceName == "" {
-		return 0, fmt.Errorf("service_name is required")
+		return 0, fmt.Errorf("service_name 은 필수입니다")
 	}
 	if s.tx == nil {
 		return s.withCompanyScopeMutation(func(scoped *AssetStore) (int64, error) {
@@ -962,10 +963,10 @@ type UpsertEndpointReq struct {
 // are auto-extracted from the URL.
 func (s *AssetStore) UpsertEndpoint(req UpsertEndpointReq) (int64, error) {
 	if req.URL == "" {
-		return 0, fmt.Errorf("url is required")
+		return 0, fmt.Errorf("url 은 필수입니다")
 	}
 	if req.Method == "" {
-		return 0, fmt.Errorf("method is required")
+		return 0, fmt.Errorf("method 는 필수입니다")
 	}
 	if err := ValidateAssetIP(req.IP); err != nil {
 		return 0, err
@@ -1405,7 +1406,7 @@ func (s *AssetStore) DeleteByCompanyID(companyID int64) (int64, error) {
 func (s *AssetStore) DeleteByHost(host string) (map[string]int64, error) {
 	h := DomainKey(host)
 	if h == "" {
-		return nil, fmt.Errorf("host is required")
+		return nil, fmt.Errorf("host 는 필수입니다")
 	}
 	rows, err := s.db.Query(`
 DELETE FROM assets

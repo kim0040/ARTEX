@@ -198,7 +198,7 @@ export function MentionTextarea({ value, onValueChange, onKeyDown, className, in
               value={value}
               disabled={disabled}
               className={className}
-              aria-label={props["aria-label"] ?? "消息，输入 @ 引用记录"}
+              aria-label={props["aria-label"] ?? "메시지, @를 입력해 기록을 인용"}
               aria-autocomplete="list"
               aria-controls={open ? listId : undefined}
               aria-expanded={open}
@@ -230,20 +230,20 @@ export function MentionTextarea({ value, onValueChange, onKeyDown, className, in
           onInteractOutside={(event) => {
             if (event.target === textarea.current) event.preventDefault();
           }}
-          aria-label="选择引用记录"
+          aria-label="인용 기록 선택"
         >
           <div className="flex items-center justify-between px-2 py-1 text-muted-foreground text-xs">
             <span>
               {categories.length
-                ? "选择引用类型"
-                : `搜索${mentionKinds.find((kind) => kind.kind === search.kind)?.label ?? "全部记录"}`}
+                ? "인용 유형 선택"
+                : `검색${mentionKinds.find((kind) => kind.kind === search.kind)?.label ?? "모든 기록"}`}
             </span>
-            <span>↑↓ 选择 · Enter 确认 · Esc 关闭</span>
+            <span>↑↓ 선택 · Enter 확인 · Esc 닫기</span>
           </div>
           <div
             id={listId}
             role="listbox"
-            aria-label="引用候选"
+            aria-label="인용 후보"
             className="max-h-60 overflow-y-auto"
             onScroll={(event) => {
               const list = event.currentTarget;
@@ -272,17 +272,17 @@ export function MentionTextarea({ value, onValueChange, onKeyDown, className, in
             {!categories.length && loading && (
               <div role="status" className="flex items-center gap-2 p-3 text-muted-foreground text-sm">
                 <Loader2Icon className="size-4 animate-spin" />
-                搜索中…
+                검색 중…
               </div>
             )}
             {!categories.length && !loading && error && (
               <div role="alert" className="p-3 text-destructive text-sm">
-                搜索失败：{error}。请重新输入重试。
+                검색 실패:{error}. 다시 입력한 뒤 다시 시도하세요.
               </div>
             )}
             {!categories.length && !loading && !error && !items.length && (
               <div role="status" className="p-3 text-muted-foreground text-sm">
-                没有匹配记录，请更换名称、地址或 ID
+                일치하는 기록이 없습니다. 이름, 주소 또는 ID를 바꿔 보세요
               </div>
             )}
             {items.map((item, index) => (
@@ -310,17 +310,17 @@ export function MentionTextarea({ value, onValueChange, onKeyDown, className, in
           </div>
           {!categories.length && (
             <p className="px-2 py-1 text-muted-foreground text-xs">
-              {loadingMore && <span role="status">正在加载更多…</span>}
+              {loadingMore && <span role="status">더 불러오는 중…</span>}
               {!loadingMore && nextCursor && (
                 <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={loadMore}>
-                  {pageError ? "加载失败，点击重试" : `已显示 ${items.length} 条，向下滚动加载更多`}
+                  {pageError ? "불러오기 실패, 눌러서 재시도" : `표시됨 ${items.length} 건, 아래로 스크롤하면 더 불러옵니다`}
                 </button>
               )}
-              {!loadingMore && !nextCursor && !loading && !error && items.length > 0 && `已显示全部 ${items.length} 条`}
+              {!loadingMore && !nextCursor && !loading && !error && items.length > 0 && `전체 표시됨 ${items.length} 건`}
               {!loadingMore &&
                 !nextCursor &&
                 (loading || !!error || items.length === 0) &&
-                "输入名称、地址或 ID 搜索记录"}
+                "이름, 주소 또는 ID로 기록 검색"}
             </p>
           )}
         </PopoverContent>
@@ -335,7 +335,7 @@ export function MentionTextarea({ value, onValueChange, onKeyDown, className, in
               <button
                 type="button"
                 disabled={disabled}
-                aria-label={`移除引用 ${item.label}`}
+                aria-label={`인용 제거 ${item.label}`}
                 onClick={() => {
                   onValueChange(value.slice(0, item.start) + value.slice(item.start + item.token.length));
                   setCursor(null);
@@ -345,7 +345,7 @@ export function MentionTextarea({ value, onValueChange, onKeyDown, className, in
               </button>
             </Badge>
           ))}
-          <span className="text-muted-foreground text-xs">发送时读取最新详情 · 最多 10 条</span>
+          <span className="text-muted-foreground text-xs">보낼 때 최신 상세를 읽음 · 최대 10건</span>
         </div>
       )}
     </div>

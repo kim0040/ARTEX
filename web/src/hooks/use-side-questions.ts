@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { sseUrl } from "@/lib/api";
 import { isBtwCommand, type SideExchange, type SideHistory, sideAPI } from "@/lib/side-questions";
 
-// crypto.randomUUID 仅在安全上下文可用(https/localhost);经 IP+http 访问时降级。
+// crypto.randomUUID는 보안 맥락에서만 쓸 수 있습니다(https/localhost). IP+http로 접속하면 한 단계 내립니다.
 function newSideRequestID(): string {
   return (
     globalThis.crypto?.randomUUID?.() ?? `btw-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`
@@ -138,7 +138,7 @@ export function useSideQuestions(parent: string | null) {
         restoreFailedDraft([item]);
         if (item.status !== "running") stream.close();
       } catch {
-        setError("旁路数据解析失败，请重新打开面板");
+        setError("사이드 데이터 해석에 실패했습니다. 패널을 다시 여세요");
       }
     });
     stream.addEventListener("cleared", () => {

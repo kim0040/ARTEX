@@ -18,10 +18,10 @@ const MaxTaskCategoryNameRunes = 80
 const MaxTaskCategoryBatchSize = 100
 
 var (
-	ErrTaskCategoryInvalid      = errors.New("invalid task category")
-	ErrTaskCategoryNameConflict = errors.New("task category name already exists")
-	ErrTaskCategoryNotFound     = errors.New("task category not found")
-	ErrTaskCategoryTaskNotFound = errors.New("task not found")
+	ErrTaskCategoryInvalid      = errors.New("작업 분류가 올바르지 않습니다")
+	ErrTaskCategoryNameConflict = errors.New("같은 작업 분류 이름이 이미 있습니다")
+	ErrTaskCategoryNotFound     = errors.New("작업 분류를 찾을 수 없습니다")
+	ErrTaskCategoryTaskNotFound = errors.New("작업을 찾을 수 없습니다")
 )
 
 // TaskCategory is a globally reusable task grouping label.

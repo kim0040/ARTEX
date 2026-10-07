@@ -1,6 +1,7 @@
-// Package llmrec implements a recording decorator for llm.Provider. It intercepts
-// every Stream call, captures the full request and accumulated response, and
-// persists them to PostgreSQL for later inspection.
+// Package llmrec 는 LLM 호출을 기록하는 장식자입니다.
+//
+// 초보: 플래너·워커·메인 에이전트가 모델에 보낸 요청과 받은 응답을 PostgreSQL 에
+// 남겨, 화면의 LLM 기록에서 다시 볼 수 있게 합니다. 모델이 따르는 지시 본문은 바꾸지 않습니다.
 package llmrec
 
 import (
@@ -66,9 +67,10 @@ type Recorder struct {
 	pg    *db.DB
 	model string // model name (from config, not in CompletionRequest)
 	prof  string // LLM profile name (from llm_profiles)
-	// thinkingType / reasoningEffort 是配置级思考参数(思考开关 / 思考强度)。它们在
-	// norma 的 buildBody() 里从 provider 配置注入真正的 HTTP body,不出现在
-	// CompletionRequest 上,故 Recorder 需在此单独带一份,序列化时写进录制。
+	// thinkingType / reasoningEffort는 설정 수준의 생각 파라미터(생각 스위치 / 생각 강도)입니다.
+	// norma의 buildBody()가 provider 설정에서 실제 HTTP body로 넣고, CompletionRequest에는
+	// 없습니다. 그래서 Recorder가 따로 들고 있다가 기록에 직렬화합니다.
+	// 초보용: LLM 호출 기록(llmrec)은 플래너·워커·메인 에이전트가 쓴 토큰을 화면에 보여 줍니다.
 	thinkingType    string
 	reasoningEffort string
 	enabled         func() bool // reports whether recording is currently on; nil = always record
@@ -358,9 +360,10 @@ func (r *Recorder) serializeRequest(req llm.CompletionRequest) string {
 		"messages":   req.Messages,
 		"max_tokens": req.MaxTokens,
 	}
-	// 记录本次调用实际发出的思考参数。type 采用「有效值」：每请求覆盖 req.Thinking
-	// 优先于配置级 thinkingType(与 norma buildBody 的判定一致，如 compaction 摘要会
-	// 强制 disabled)；effort 无每请求覆盖，直接取配置值。两者皆空则不写 thinking 字段。
+	// 이번 호출이 실제로 보낸 생각 파라미터를 기록합니다. type은 「유효값」을 씁니다.
+	// 요청마다 덮는 req.Thinking이 설정 수준 thinkingType보다 우선합니다(norma buildBody와
+	// 같고, 예를 들어 compaction 요약은 disabled를 강제합니다). effort는 요청별 덮어쓰기가
+	// 없어 설정값을 그대로 씁니다. 둘 다 비면 thinking 필드를 쓰지 않습니다.
 	effType := r.thinkingType
 	if req.Thinking != "" {
 		effType = req.Thinking

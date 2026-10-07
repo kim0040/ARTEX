@@ -29,19 +29,19 @@ die() { printf '\033[31m[x]\033[0m %s\n' "$*" >&2; exit 1; }
 
 usage() {
   cat <<'EOF'
-用法：
-  ./build.sh                         编译当前系统当前架构
-  ./build.sh --target linux/amd64   编译一个指定目标
-  ./build.sh --release               编译并打包全部支持的目标
+사용법:
+  ./build.sh                         현재 시스템과 아키텍처를 컴파일
+  ./build.sh --target linux/amd64   지정한 대상 하나를 컴파일
+  ./build.sh --release               지원하는 대상을 모두 컴파일하고 묶음
 
-选项：
-  --release              构建 Linux、macOS、Windows 的 amd64/arm64 目标并生成 zip
-  --target OS/ARCH       设置单个目标，例如 windows/amd64
-  --upx                  强制使用 UPX 压缩二进制（可能影响部分 Linux 环境兼容性）
-  --no-compress          不使用 UPX，仅使用 Go linker 裁剪并压缩 zip
-  --help                 显示帮助
+옵션:
+  --release              Linux, macOS, Windows의 amd64/arm64 대상을 빌드하고 zip을 만듦
+  --target OS/ARCH       대상 하나를 지정. 예: windows/amd64
+  --upx                  UPX로 바이너리를 압축(일부 리눅스 환경과 안 맞을 수 있음)
+  --no-compress          UPX를 쓰지 않음. Go 링커로 줄이고 zip만 압축
+  --help                 도움말
 
-多目标列表可通过 ARTEX_TARGETS 覆盖，例如：
+여러 대상은 ARTEX_TARGETS로 덮어씁니다. 예:
   ARTEX_TARGETS=linux/amd64,windows/amd64 ./build.sh --release
 EOF
 }
@@ -59,7 +59,7 @@ while [ "$#" -gt 0 ]; do
       shift
       ;;
     --target)
-      [ "$#" -ge 2 ] || die "--target 需要 OS/ARCH 参数"
+      [ "$#" -ge 2 ] || die "--target 에는 OS/ARCH 인자가 필요합니다"
       target_arg="$2"
       case "$target_arg" in
         */*)
@@ -67,7 +67,7 @@ while [ "$#" -gt 0 ]; do
           ARTEX_TARGET_ARCH="${target_arg##*/}"
           ARTEX_TARGETS="$target_arg"
           ;;
-        *) die "目标必须是 OS/ARCH，例如 linux/amd64" ;;
+        *) die "대상은 OS/ARCH 여야 합니다. 예: linux/amd64" ;;
       esac
       shift 2
       ;;
@@ -83,11 +83,11 @@ while [ "$#" -gt 0 ]; do
       usage
       exit 0
       ;;
-    *) die "未知参数：$1（使用 --help 查看用法）" ;;
+    *) die "알 수 없는 인자: $1 (--help 로 사용법)" ;;
   esac
 done
 
-command -v go >/dev/null 2>&1 || die "未检测到 Go（项目需要 Go 1.26 或更高版本）"
+command -v go >/dev/null 2>&1 || die "Go가 없습니다(이 프로젝트는 Go 1.26 이상이 필요합니다)"
 
 ARTEX_GOSUMDB="${ARTEX_GOSUMDB:-sum.golang.org}"
 if [ -z "${ARTEX_BUILD_VERSION:-}" ]; then
@@ -112,16 +112,16 @@ else
 fi
 
 if [ "${ARTEX_SKIP_FRONTEND:-0}" = "1" ]; then
-  [ -d server/webui/dist ] || die "ARTEX_SKIP_FRONTEND=1 但 server/webui/dist 不存在"
+  [ -d server/webui/dist ] || die "ARTEX_SKIP_FRONTEND=1 인데 server/webui/dist 가 없습니다"
 else
-  command -v npm >/dev/null 2>&1 || die "未检测到 npm（前端静态构建需要 Node.js/npm）"
-  command -v rsync >/dev/null 2>&1 || die "未检测到 rsync"
-  info "构建前端静态资源"
+  command -v npm >/dev/null 2>&1 || die "npm이 없습니다(프론트 정적 빌드에 Node.js/npm이 필요합니다)"
+  command -v rsync >/dev/null 2>&1 || die "rsync가 없습니다"
+  info "프론트 정적 파일을 빌드합니다"
   if [ "${ARTEX_SKIP_NPM_CI:-0}" != "1" ]; then
     (cd web && npm ci)
   fi
   (cd web && npm run build:static)
-  info "同步前端资源到 server/webui/dist"
+  info "프론트 파일을 server/webui/dist 로 동기화합니다"
   mkdir -p server/webui/dist
   rsync -a --delete web/out/ server/webui/dist/
 fi
@@ -131,18 +131,18 @@ compress_binary() {
   goos="$2"
   case "$ARTEX_COMPRESS" in
     0|off|false|none)
-      info "跳过 UPX：$binary"
+      info "UPX를 건너뜁니다: $binary"
       return 0
       ;;
     auto|required|true|1) ;;
-    *) die "ARTEX_COMPRESS 必须是 off、auto 或 required" ;;
+    *) die "ARTEX_COMPRESS는 off, auto, required 중 하나여야 합니다" ;;
   esac
 
   if ! command -v upx >/dev/null 2>&1; then
     if [ "$ARTEX_COMPRESS" = "required" ]; then
-      die "ARTEX_COMPRESS=required 但未检测到 upx"
+      die "ARTEX_COMPRESS=required 인데 upx가 없습니다"
     fi
-    warn "未检测到 upx，保留 linker 压缩结果：$binary"
+    warn "upx가 없습니다. 링커로 줄인 결과를 유지합니다: $binary"
     return 0
   fi
 
@@ -152,13 +152,13 @@ compress_binary() {
   # shellcheck disable=SC2086
   if ! upx $upx_args -- "$binary"; then
     if [ "$ARTEX_COMPRESS" = "required" ]; then
-      die "UPX 压缩失败：$binary"
+      die "UPX 압축 실패: $binary"
     fi
-    warn "UPX 不支持该目标格式，保留未压缩二进制：$binary"
+    warn "UPX가 이 형식을 지원하지 않습니다. 압축하지 않은 바이너리를 유지합니다: $binary"
     return 0
   fi
   after=$(wc -c < "$binary" | tr -d ' ')
-  ok "UPX 压缩完成：$binary (${before} -> ${after} bytes)"
+  ok "UPX 압축 완료: $binary (${before} -> ${after} bytes)"
 }
 
 package_binary() {
@@ -169,12 +169,13 @@ package_binary() {
   package_root="${ARTEX_PACKAGE_DIR}/${package_name}"
   archive="${ARTEX_PACKAGE_DIR}/${package_name}.zip"
 
-  command -v zip >/dev/null 2>&1 || die "打包需要 zip"
+  command -v zip >/dev/null 2>&1 || die "묶으려면 zip이 필요합니다"
   rm -rf "$package_root" "$archive"
   mkdir -p "$package_root"
   cp "$binary" "$package_root/"
-  # 守护启动脚本是正式入口：页面上的一键更新要靠它在进程退出后重新拉起，
-  # 直接跑 artex 本体的话更新完就再也起不来了。按目标系统只带对应的那一份。
+  # 감시 시작 스크립트가 정식 입구입니다. 화면의 한 번에 업데이트는
+  # 프로세스가 끝난 뒤 이 스크립트가 다시 띄워야 파일 교체가 끝납니다.
+  # artex만 직접 실행하면 업데이트 뒤에 다시 뜨지 않습니다. 대상 OS에 맞는 스크립트만 넣습니다.
   if [ "$goos" = "windows" ]; then
     cp start.bat "$package_root/"
   else
@@ -186,20 +187,20 @@ package_binary() {
   if [ -f README.md ]; then cp README.md "$package_root/"; fi
   (cd "$ARTEX_PACKAGE_DIR" && zip -q -r -9 "$(basename "$archive")" "$(basename "$package_root")")
   rm -rf "$package_root"
-  ok "Release 压缩包：$archive"
+  ok "릴리스 압축 파일: $archive"
 }
 
 build_target() {
   target="$1"
   case "$target" in
     */*) ;;
-    *) die "无效目标：$target（必须是 OS/ARCH）" ;;
+    *) die "잘못된 대상: $target (OS/ARCH 여야 합니다)" ;;
   esac
   goos="${target%%/*}"
   goarch="${target##*/}"
   case "$goos" in
     linux|darwin|windows) ;;
-    *) die "不支持的系统：$goos（支持 linux、darwin、windows）" ;;
+    *) die "지원하지 않는 시스템: $goos (linux, darwin, windows)" ;;
   esac
 
   binary_name="artex"
@@ -211,7 +212,7 @@ build_target() {
   fi
   mkdir -p "$(dirname "$output")"
 
-  info "编译 ${goos}/${goarch}，版本 ${ARTEX_BUILD_VERSION}"
+  info "컴파일 ${goos}/${goarch}, 버전 ${ARTEX_BUILD_VERSION}"
   GOSUMDB="$ARTEX_GOSUMDB" \
   CGO_ENABLED=0 \
   GOOS="$goos" \
@@ -226,7 +227,7 @@ build_target() {
   compress_binary "$output" "$goos"
   if command -v file >/dev/null 2>&1; then file "$output"; fi
   if [ "$ARTEX_PACKAGE" = "1" ]; then package_binary "$output" "$goos" "$goarch"; fi
-  ok "编译完成：$output"
+  ok "컴파일 완료: $output"
 }
 
 write_checksums() {
@@ -237,10 +238,10 @@ write_checksums() {
   elif command -v shasum >/dev/null 2>&1; then
     (cd "$ARTEX_PACKAGE_DIR" && for archive in *.zip; do shasum -a 256 "$archive"; done > "$(basename "$checksum_file")")
   else
-    warn "未检测到 sha256sum 或 shasum，跳过 SHA256SUMS"
+    warn "sha256sum 또는 shasum이 없습니다. SHA256SUMS를 건너뜁니다"
     return 0
   fi
-  ok "校验文件：$checksum_file"
+  ok "검사 파일: $checksum_file"
 }
 
 mkdir -p "$ARTEX_OUTPUT_DIR"
@@ -250,7 +251,7 @@ old_ifs="$IFS"
 IFS=','
 read -r -a targets <<< "$ARTEX_TARGETS"
 IFS="$old_ifs"
-[ "${#targets[@]}" -gt 0 ] || die "ARTEX_TARGETS 不能为空"
+[ "${#targets[@]}" -gt 0 ] || die "ARTEX_TARGETS가 비어 있으면 안 됩니다"
 for target in "${targets[@]}"; do
   target="${target//[[:space:]]/}"
   [ -n "$target" ] || continue
@@ -259,5 +260,5 @@ done
 
 if [ "$ARTEX_PACKAGE" = "1" ]; then
   write_checksums
-  info "Release 包已生成于：$ARTEX_PACKAGE_DIR"
+  info "릴리스 묶음 위치: $ARTEX_PACKAGE_DIR"
 fi

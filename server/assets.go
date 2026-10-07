@@ -23,9 +23,9 @@ func decodeCompanyMutationRequest(w http.ResponseWriter, r *http.Request, value 
 	if err := json.NewDecoder(r.Body).Decode(value); err != nil {
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {
-			writeErr(w, http.StatusRequestEntityTooLarge, "请求正文过大")
+			writeErr(w, http.StatusRequestEntityTooLarge, "요청 본문이 너무 큽니다")
 		} else {
-			writeErr(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+			writeErr(w, http.StatusBadRequest, "JSON 형식이 올바르지 않습니다: "+err.Error())
 		}
 		return false
 	}
@@ -77,7 +77,7 @@ func (s *Server) companyStore() *db.CompanyStore {
 func (s *Server) listCompanies(w http.ResponseWriter, r *http.Request) {
 	cs := s.companyStore()
 	if cs == nil {
-		writeErr(w, 503, "database unavailable")
+		writeErr(w, 503, "데이터베이스를 쓸 수 없습니다")
 		return
 	}
 	companies, err := cs.ListCompanies()
@@ -95,7 +95,7 @@ func (s *Server) listCompanies(w http.ResponseWriter, r *http.Request) {
 func (s *Server) createCompany(w http.ResponseWriter, r *http.Request) {
 	cs := s.companyStore()
 	if cs == nil {
-		writeErr(w, 503, "database unavailable")
+		writeErr(w, 503, "데이터베이스를 쓸 수 없습니다")
 		return
 	}
 	var req struct {
@@ -108,7 +108,7 @@ func (s *Server) createCompany(w http.ResponseWriter, r *http.Request) {
 	}
 	req.Name = strings.TrimSpace(req.Name)
 	if req.Name == "" {
-		writeErr(w, 400, "name required")
+		writeErr(w, 400, "이름은 필수입니다")
 		return
 	}
 	if err := db.ValidateCompanyScopeInputBounds(req.Scope); err != nil {
@@ -118,7 +118,7 @@ func (s *Server) createCompany(w http.ResponseWriter, r *http.Request) {
 	id, added, skipped, invalid, scopeErrs, err := cs.CreateCompanyWithScope(req.Name, req.Logo, req.Scope, "api")
 	if err != nil {
 		if errors.Is(err, db.ErrCompanyNameConflict) {
-			writeErr(w, http.StatusConflict, "企业名称已存在")
+			writeErr(w, http.StatusConflict, "기업 이름이 이미 있습니다")
 			return
 		}
 		var validationErr *db.CompanyScopeValidationError
@@ -149,12 +149,12 @@ func (s *Server) createCompany(w http.ResponseWriter, r *http.Request) {
 func (s *Server) getCompany(w http.ResponseWriter, r *http.Request) {
 	cs := s.companyStore()
 	if cs == nil {
-		writeErr(w, 503, "database unavailable")
+		writeErr(w, 503, "데이터베이스를 쓸 수 없습니다")
 		return
 	}
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
-		writeErr(w, 400, "invalid id")
+		writeErr(w, 400, "id가 올바르지 않습니다")
 		return
 	}
 	c, err := cs.GetCompany(id)
@@ -163,7 +163,7 @@ func (s *Server) getCompany(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if c == nil {
-		writeErr(w, 404, "company not found")
+		writeErr(w, 404, "기업을 찾을 수 없습니다")
 		return
 	}
 	scope, err := cs.GetScope(id)
@@ -181,12 +181,12 @@ func (s *Server) getCompany(w http.ResponseWriter, r *http.Request) {
 func (s *Server) addCompanyScope(w http.ResponseWriter, r *http.Request) {
 	cs := s.companyStore()
 	if cs == nil {
-		writeErr(w, 503, "database unavailable")
+		writeErr(w, 503, "데이터베이스를 쓸 수 없습니다")
 		return
 	}
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
-		writeErr(w, 400, "invalid company id")
+		writeErr(w, 400, "기업 id가 올바르지 않습니다")
 		return
 	}
 	var req struct {
@@ -211,7 +211,7 @@ func (s *Server) addCompanyScope(w http.ResponseWriter, r *http.Request) {
 	}
 	if mutationErr != nil {
 		if errors.Is(mutationErr, db.ErrCompanyNotFound) {
-			writeErr(w, http.StatusNotFound, "company not found")
+			writeErr(w, http.StatusNotFound, "기업을 찾을 수 없습니다")
 			return
 		}
 		var validationErr *db.CompanyScopeValidationError
@@ -247,12 +247,12 @@ func (s *Server) addCompanyScope(w http.ResponseWriter, r *http.Request) {
 func (s *Server) deleteCompany(w http.ResponseWriter, r *http.Request) {
 	cs := s.companyStore()
 	if cs == nil {
-		writeErr(w, 503, "database unavailable")
+		writeErr(w, 503, "데이터베이스를 쓸 수 없습니다")
 		return
 	}
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
-		writeErr(w, 400, "invalid id")
+		writeErr(w, 400, "id가 올바르지 않습니다")
 		return
 	}
 	var req struct {
@@ -263,16 +263,16 @@ func (s *Server) deleteCompany(w http.ResponseWriter, r *http.Request) {
 	decoder := json.NewDecoder(r.Body)
 	if err := decoder.Decode(&req); err != nil {
 		if !errors.Is(err, io.EOF) {
-			writeErr(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+			writeErr(w, http.StatusBadRequest, "JSON 형식이 올바르지 않습니다: "+err.Error())
 			return
 		}
 	} else {
 		var trailing any
 		if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
 			if err == nil {
-				writeErr(w, http.StatusBadRequest, "invalid JSON: multiple values")
+				writeErr(w, http.StatusBadRequest, "JSON 값이 여러 개입니다")
 			} else {
-				writeErr(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+				writeErr(w, http.StatusBadRequest, "JSON 형식이 올바르지 않습니다: "+err.Error())
 			}
 			return
 		}
@@ -281,7 +281,7 @@ func (s *Server) deleteCompany(w http.ResponseWriter, r *http.Request) {
 	assetsDeleted, err := s.m.DeleteCompanyWithAssets(id, req.DeleteAssets)
 	if err != nil {
 		if errors.Is(err, db.ErrCompanyNotFound) {
-			writeErr(w, http.StatusNotFound, "company not found")
+			writeErr(w, http.StatusNotFound, "기업을 찾을 수 없습니다")
 			return
 		}
 		writeErr(w, 500, err.Error())
@@ -297,7 +297,7 @@ func (s *Server) deleteCompany(w http.ResponseWriter, r *http.Request) {
 func (s *Server) reattribute(w http.ResponseWriter, r *http.Request) {
 	cs := s.companyStore()
 	if cs == nil {
-		writeErr(w, 503, "database unavailable")
+		writeErr(w, 503, "데이터베이스를 쓸 수 없습니다")
 		return
 	}
 	if err := cs.RecomputeAttribution(); err != nil {
@@ -319,7 +319,7 @@ const (
 func (s *Server) listAssets(w http.ResponseWriter, r *http.Request) {
 	as := s.assetStore()
 	if as == nil {
-		writeErr(w, 503, "database unavailable")
+		writeErr(w, 503, "데이터베이스를 쓸 수 없습니다")
 		return
 	}
 	q := r.URL.Query()
@@ -347,7 +347,7 @@ func (s *Server) listAssets(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		// task_id scopes the DSL search to a task's assets (the task detail
-		// "测试资产" search); 0 means the global asset view.
+		// "테스트 자산" search); 0은 전역 자산 보기를 뜻한다.
 		taskID, _ := strconv.ParseInt(q.Get("task_id"), 10, 64)
 		total, err = as.CountDSL(dsl, typ, taskID)
 		if err == nil && offset < total {
@@ -396,7 +396,7 @@ func (s *Server) listAssets(w http.ResponseWriter, r *http.Request) {
 func (s *Server) assetCounts(w http.ResponseWriter, r *http.Request) {
 	as := s.assetStore()
 	if as == nil {
-		writeErr(w, 503, "database unavailable")
+		writeErr(w, 503, "데이터베이스를 쓸 수 없습니다")
 		return
 	}
 	var counts map[string]int
@@ -420,18 +420,18 @@ func (s *Server) assetCounts(w http.ResponseWriter, r *http.Request) {
 func (s *Server) deleteAssets(w http.ResponseWriter, r *http.Request) {
 	as := s.assetStore()
 	if as == nil {
-		writeErr(w, 503, "database unavailable")
+		writeErr(w, 503, "데이터베이스를 쓸 수 없습니다")
 		return
 	}
 	var req struct {
 		IDs []int64 `json:"ids"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeErr(w, 400, "invalid JSON: "+err.Error())
+		writeErr(w, 400, "JSON 형식이 올바르지 않습니다: "+err.Error())
 		return
 	}
 	if len(req.IDs) == 0 {
-		writeErr(w, 400, "ids required")
+		writeErr(w, 400, "id 목록은 필수입니다")
 		return
 	}
 	deleted, err := as.DeleteByIDs(req.IDs)
@@ -449,7 +449,7 @@ func (s *Server) deleteAssets(w http.ResponseWriter, r *http.Request) {
 func (s *Server) insertAssets(w http.ResponseWriter, r *http.Request) {
 	as := s.assetStore()
 	if as == nil {
-		writeErr(w, 503, "database unavailable")
+		writeErr(w, 503, "데이터베이스를 쓸 수 없습니다")
 		return
 	}
 	var req struct {
@@ -489,7 +489,7 @@ func (s *Server) insertAssets(w http.ResponseWriter, r *http.Request) {
 		} `json:"assets"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeErr(w, 400, "invalid JSON: "+err.Error())
+		writeErr(w, 400, "JSON 형식이 올바르지 않습니다: "+err.Error())
 		return
 	}
 
@@ -542,7 +542,7 @@ func (s *Server) insertAssets(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		if req.TaskID > 0 {
-			_ = as.SetTaskAssetSource(req.TaskID, id, "api", "通过资产 API 登记", nil)
+			_ = as.SetTaskAssetSource(req.TaskID, id, "api", "자산 API로 등록", nil)
 		}
 		results = append(results, result{Index: i, ID: id, Type: a.Type})
 	}

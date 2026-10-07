@@ -14,46 +14,49 @@ import (
 	"time"
 )
 
-// smokeEnv 让被冒烟测试拉起的子进程直接跳过 Bootstrap。
+// smokeEnv는 스모크 테스트로 띄운 자식 프로세스가 Bootstrap을 바로 건너뛰게 합니다.
 //
-// 严格来说不加也不会出事：子进程的 os.Executable() 是 artex.new，推导出来的
-// 全部路径都带 .new 前缀，碰不到真正的升级文件。但依赖这种巧合太脆弱，
-// 显式短路一目了然，也省掉子进程一次无谓的磁盘探测。
+// 없어도 보통은 괜찮습니다. 자식의 os.Executable()이 artex.new라, 거기서 나온
+// 경로는 모두 .new가 붙어 진짜 업그레이드 파일을 건드리지 않습니다. 다만 그 우연에
+// 기대면 약합니다. 명시적으로 끊는 편이 분명하고, 자식의 쓸데없는 디스크 탐색도 줄어듭니다.
 const smokeEnv = "ARTEX_SELFUPDATE_SMOKE"
 
-// Action 是 Bootstrap 给 main 的指令。
+// Action은 Bootstrap이 main에 주는 지시입니다.
 type Action int
 
 const (
-	// Continue：照常启动 server。
+	// Continue: 서버를 평소처럼 시작합니다.
 	Continue Action = iota
-	// Restart：立刻以 ExitRestart 退出，让守护脚本重新拉起。
+	// Restart: 곧바로 ExitRestart로 빠져, 데몬 스크립트가 다시 띄우게 합니다.
 	Restart
 )
 
-// State 描述本次启动时的升级状态，供 /api/update/check 如实告诉前端
-// "上一次升级是成功了还是被回滚了"。
+// State는 이번 기동의 업그레이드 상태입니다. /api/update/check가 프론트에
+// "지난 업그레이드가 성공했는지, 되돌려졌는지"를 그대로 알립니다.
 type State struct {
-	Pending     bool   // 换装后尚未确认稳定
-	RolledBack  bool   // 本次启动刚刚执行过自动回滚
-	FailedStage bool   // 暂存件校验/冒烟未通过，已丢弃
-	Detail      string // 面向用户的一句话说明
+	Pending     bool   // 갈아 끼운 뒤 아직 안정이 확인되지 않음
+	RolledBack  bool   // 이번 기동에서 방금 자동 되돌리기를 실행함
+	FailedStage bool   // 임시 파일 검증/스모크가 실패해 버렸음
+	Detail      string // 사용자에게 보여 주는 한 문장 설명
 }
 
-// Bootstrap 在 main 的最开头运行，必须在任何监听端口、打开数据库之前调用。
+// Bootstrap은 main의 맨 앞에서 돕니다. 포트를 열거나 데이터베이스를 열기 전에 호출해야 합니다.
 //
-// 三种局面：
+// 초보용: 화면의 한 번 업데이트가 받아 둔 새 바이너리를, 다음 기동 때 제자리로 바꿉니다.
+// 실패하면 이전 버전으로 돌아갑니다. 플래너·워커와는 별개로, 프로그램 자신을 바꾸는 문입니다.
 //
-//	① 存在暂存件 artex.new  → 校验 + 冒烟，通过则换装并要求重启；不通过则丢弃继续跑旧版
-//	② 只剩标记文件          → 说明刚换装完，累计一次尝试；连续失败够多次则回滚
-//	③ 什么都没有            → 正常启动
+// 세 가지 상황:
+//
+//	① 임시 파일 artex.new가 있음 → 검증 + 스모크. 통과하면 갈아 끼우고 재시작을 요구. 실패하면 버리고 옛 버전을 계속 실행
+//	② 표시 파일만 남음 → 방금 갈아 끼웠다는 뜻. 시도를 한 번 더함. 연속 실패가 충분하면 되돌림
+//	③ 아무것도 없음 → 정상 기동
 func Bootstrap() (Action, State) {
 	if os.Getenv(smokeEnv) != "" {
 		return Continue, State{}
 	}
 	p, err := ResolvePaths()
 	if err != nil {
-		log.Printf("[update] 跳过自举：%v", err)
+		log.Printf("[update] 자기 기동을 건너뜁니다: %v", err)
 		return Continue, State{}
 	}
 
@@ -68,72 +71,73 @@ func Bootstrap() (Action, State) {
 	return confirmOrRollback(p, m)
 }
 
-// applyStaged 处理"存在暂存件"的局面：校验通过就换装，失败就丢弃。
+// applyStaged는 "임시 파일이 있는" 상황을 처리합니다. 검증을 통과하면 갈아 끼우고, 실패하면 버립니다.
 //
-// 这里是整个升级链路唯一会覆盖可执行文件的地方，也是最后一道闸门——冒烟测试挡掉
-// 下载损坏、架构选错、动态链接缺失这类问题。一旦放行一个跑不起来的二进制，
-// 守护脚本会不知疲倦地反复拉起它，而 Go 代码根本没机会运行，自动回滚也就无从谈起。
+// 업그레이드 경로에서 실행 파일을 덮는 유일한 곳이고, 마지막 문입니다. 스모크 테스트가
+// 다운로드 손상, 아키텍처 착오, 동적 링크 누락 같은 문제를 막습니다. 실행되지 않는
+// 바이너리를 통과시키면 데몬 스크립트가 끝없이 다시 띄우고, Go 코드는 돌 기회가 없어
+// 자동 되돌리기도 시작할 수 없습니다.
 func applyStaged(p Paths) (Action, State) {
 	m, _ := readMarker(p.Marker)
 
 	if err := verifyStaged(p); err != nil {
-		log.Printf("[update] 暂存的新版本未通过校验，已丢弃，继续运行当前版本：%v", err)
+		log.Printf("[update] 임시로 둔 새 버전이 검증을 통과하지 못해 버렸습니다. 현재 버전을 계속 실행합니다: %v", err)
 		cleanStaged(p)
 		_ = os.Remove(p.Marker)
-		return Continue, State{FailedStage: true, Detail: "新版本校验失败，已丢弃：" + err.Error()}
+		return Continue, State{FailedStage: true, Detail: "새 버전 검증에 실패해 버렸습니다: " + err.Error()}
 	}
 
 	if err := swap(p); err != nil {
-		log.Printf("[update] 换装失败，继续运行当前版本：%v", err)
+		log.Printf("[update] 갈아 끼우기에 실패해 현재 버전을 계속 실행합니다: %v", err)
 		cleanStaged(p)
 		_ = os.Remove(p.Marker)
-		return Continue, State{FailedStage: true, Detail: "换装失败：" + err.Error()}
+		return Continue, State{FailedStage: true, Detail: "갈아 끼우기 실패: " + err.Error()}
 	}
 
-	// 换装成功。保留标记，交给下一次启动（跑的就是新版）确认是否稳定。
+	// 갈아 끼우기 성공. 표시는 남겨, 다음 기동(그때는 새 버전)이 안정인지 확인하게 합니다.
 	m.Attempts = 0
 	if m.StagedAt == 0 {
 		m.StagedAt = time.Now().Unix()
 	}
 	if err := writeMarker(p.Marker, m); err != nil {
-		log.Printf("[update] 写升级标记失败（失去自动回滚能力）：%v", err)
+		log.Printf("[update] 업그레이드 표시를 쓰지 못했습니다(자동 되돌리기 능력을 잃음): %v", err)
 	}
-	log.Printf("[update] 已换装到 %s，退出以重启（exit %d）", orUnknown(m.To), ExitRestart)
+	log.Printf("[update] %s(으)로 갈아 끼웠습니다. 재시작을 위해 종료합니다(exit %d)", orUnknown(m.To), ExitRestart)
 	return Restart, State{Pending: true}
 }
 
-// confirmOrRollback 处理"换装后的启动"：累计尝试次数，超限则把旧版换回来。
+// confirmOrRollback은 "갈아 끼운 뒤의 기동"을 처리합니다. 시도 횟수를 더하고, 한도를 넘으면 옛 버전으로 되돌립니다.
 //
-// 计数只在 Go 代码跑起来后才递增，所以它覆盖的是"能执行但初始化时崩溃"
-// （配置不兼容、端口被占、DB 迁移炸了）这类故障；"根本无法 exec" 由换装前的
-// 冒烟测试挡住，两者合起来才是完整的。
+// 횟수는 Go 코드가 뜬 뒤에만 늘어납니다. 그래서 "실행은 되지만 초기화에서 죽는"
+// 고장(설정이 안 맞음, 포트가 점유됨, DB 마이그레이션이 실패)을 다룹니다.
+// "아예 exec가 안 되는" 경우는 갈아 끼우기 전의 스모크 테스트가 막습니다. 둘을 합쳐야 완전합니다.
 func confirmOrRollback(p Paths, m marker) (Action, State) {
 	m.Attempts++
 	if m.Attempts > maxAttempts {
 		if err := rollback(p); err != nil {
-			// 回滚都失败了就别再重启了，否则会陷入无限重启。清掉标记，
-			// 让进程按当前状态起——起不来的话用户至少能在日志里看到原因。
-			log.Printf("[update] 新版本连续 %d 次启动失败，且回滚失败：%v", maxAttempts, err)
+			// 되돌리기까지 실패하면 다시 재시작하지 않습니다. 그렇지 않으면 무한 재시작에 빠집니다. 표시를 지우고
+			// 프로세스를 현재 상태 그대로 띄웁니다. 뜨지 못하면 사용자는 적어도 로그에서 이유를 볼 수 있습니다.
+			log.Printf("[update] 새 버전이 %d번 연속 기동에 실패했고, 되돌리기도 실패했습니다: %v", maxAttempts, err)
 			_ = os.Remove(p.Marker)
-			return Continue, State{Detail: "新版本启动失败且回滚失败：" + err.Error()}
+			return Continue, State{Detail: "새 버전 기동에 실패했고 되돌리기도 실패했습니다: " + err.Error()}
 		}
-		log.Printf("[update] 新版本连续 %d 次启动失败，已回滚到 %s，退出以重启（exit %d）",
+		log.Printf("[update] 새 버전이 %d번 연속 기동에 실패해 %s(으)로 되돌렸습니다. 재시작을 위해 종료합니다(exit %d)",
 			maxAttempts, orUnknown(m.From), ExitRestart)
 		_ = os.Remove(p.Marker)
-		return Restart, State{RolledBack: true, Detail: fmt.Sprintf("新版本启动失败，已回滚到 %s", orUnknown(m.From))}
+		return Restart, State{RolledBack: true, Detail: fmt.Sprintf("새 버전 기동에 실패해 %s(으)로 되돌렸습니다", orUnknown(m.From))}
 	}
 	if err := writeMarker(p.Marker, m); err != nil {
-		log.Printf("[update] 更新升级标记失败：%v", err)
+		log.Printf("[update] 업그레이드 표시 갱신 실패: %v", err)
 	}
-	log.Printf("[update] 新版本启动中（第 %d/%d 次尝试），稳定运行后将确认升级",
+	log.Printf("[update] 새 버전 기동 중(%d/%d번째 시도). 안정적으로 돌면 업그레이드를 확정합니다",
 		m.Attempts, maxAttempts)
 	return Continue, State{Pending: true}
 }
 
-// Settle 确认新版本已稳定运行，清除升级标记。
+// Settle은 새 버전이 안정적으로 돈 것을 확인하고 업그레이드 표시를 지웁니다.
 //
-// 由 main 在 HTTP 监听起来之后延迟调用：活过这段时间才算数，否则标记留在原地，
-// 下次启动继续累计尝试次数，直到触发回滚。
+// main이 HTTP 수신을 연 뒤에 지연 호출합니다. 이 시간을 넘겨야 인정됩니다. 그렇지 않으면
+// 표시가 그대로 남고, 다음 기동이 시도 횟수를 더해 되돌리기가 켜질 때까지 갑니다.
 func Settle() {
 	p, err := ResolvePaths()
 	if err != nil {
@@ -144,39 +148,39 @@ func Settle() {
 
 func settle(p Paths) {
 	if _, ok := readMarker(p.Marker); !ok {
-		return // 不是升级后的启动，无事可做
+		return // 업그레이드 뒤의 기동이 아니므로 할 일이 없음
 	}
 	if err := os.Remove(p.Marker); err != nil && !errors.Is(err, os.ErrNotExist) {
-		log.Printf("[update] 清除升级标记失败：%v", err)
+		log.Printf("[update] 업그레이드 표시를 지우지 못했습니다: %v", err)
 		return
 	}
-	log.Printf("[update] 新版本运行稳定，升级完成（上一版本保留为 %s）", p.Old)
+	log.Printf("[update] 새 버전이 안정적으로 돕니다. 업그레이드 완료(이전 버전은 %s로 남김)", p.Old)
 }
 
-// SettleDelay 是判定"新版本活下来了"所需的运行时长。
+// SettleDelay는 "새 버전이 살아남았다"고 볼 실행 시간입니다.
 const SettleDelay = 30 * time.Second
 
-// verifyStaged 校验暂存件：先比对 SHA256，再真正把它拉起来跑一次。
+// verifyStaged는 임시 파일을 검증합니다. SHA256을 먼저 맞춘 뒤, 실제로 한 번 띄웁니다.
 func verifyStaged(p Paths) error {
 	want, err := os.ReadFile(p.Sum)
 	if err != nil {
-		return fmt.Errorf("读取校验和: %w", err)
+		return fmt.Errorf("체크섬 읽기: %w", err)
 	}
 	got, err := fileSHA256(p.New)
 	if err != nil {
-		return fmt.Errorf("计算校验和: %w", err)
+		return fmt.Errorf("체크섬 계산: %w", err)
 	}
 	if !strings.EqualFold(strings.TrimSpace(string(want)), got) {
-		return errors.New("SHA256 不匹配（下载损坏或被篡改）")
+		return errors.New("SHA256이 일치하지 않습니다(다운로드가 손상되었거나 바뀌었습니다)")
 	}
 	return smokeTest(p.New)
 }
 
-// smokeTest 用 -h 拉起新二进制，确认它在当前系统上真的能执行。
-// 这能挡掉下载截断、架构选错（exec format error）、缺依赖等一大类问题。
+// smokeTest는 -h로 새 바이너리를 띄워, 이 시스템에서 정말 실행되는지 확인합니다.
+// 다운로드가 잘림, 아키텍처가 틀림(exec format error), 의존성이 없음 같은 문제를 막습니다.
 func smokeTest(bin string) error {
 	if err := os.Chmod(bin, 0o755); err != nil {
-		return fmt.Errorf("赋予执行权限: %w", err)
+		return fmt.Errorf("실행 권한 부여: %w", err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -185,90 +189,90 @@ func smokeTest(bin string) error {
 	cmd.Env = append(os.Environ(), smokeEnv+"=1")
 	out, err := cmd.CombinedOutput()
 	if ctx.Err() != nil {
-		return errors.New("冒烟测试超时（新二进制无响应）")
+		return errors.New("스모크 테스트 시간 초과(새 바이너리가 응답하지 않음)")
 	}
 	if err != nil {
 		snippet := strings.TrimSpace(string(out))
 		if len(snippet) > 300 {
 			snippet = snippet[:300] + "…"
 		}
-		return fmt.Errorf("冒烟测试失败: %v: %s", err, snippet)
+		return fmt.Errorf("스모크 테스트 실패: %v: %s", err, snippet)
 	}
 	return nil
 }
 
-// swap 把当前二进制换成暂存的新版本。
+// swap은 현재 바이너리를 임시로 둔 새 버전으로 바꿉니다.
 //
-// Unix 和 Windows 都允许 rename 一个正在运行的可执行文件（Windows 禁止的是删除和
-// 覆盖，rename 不在其列），所以这里不需要分平台，也不需要先停掉自己。
+// Unix와 Windows 모두 실행 중인 실행 파일의 rename을 허용합니다(Windows가 막는 것은
+// 삭제와 덮어쓰기이고, rename은 아닙니다). 그래서 플랫폼을 나누거나 먼저 자신을 멈출 필요가 없습니다.
 func swap(p Paths) error {
-	// Windows 的 rename 不会覆盖已存在的目标，上一轮升级留下的 .old 必须先清掉。
+	// Windows의 rename은 이미 있는 대상을 덮지 않습니다. 지난 업그레이드가 남긴 .old를 먼저 지워야 합니다.
 	if err := os.Remove(p.Old); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("清理旧备份 %s: %w", p.Old, err)
+		return fmt.Errorf("옛 백업 정리 %s: %w", p.Old, err)
 	}
 	if err := os.Rename(p.Current, p.Old); err != nil {
-		return fmt.Errorf("备份当前版本: %w", err)
+		return fmt.Errorf("현재 버전 백업: %w", err)
 	}
 	if err := os.Rename(p.New, p.Current); err != nil {
-		// 换装失败但当前版本已经被挪走了，必须原样放回去，否则下次启动没有可执行文件。
+		// 갈아 끼우기는 실패했는데 현재 버전은 이미 옮겨졌습니다. 그대로 되돌려야 합니다. 그렇지 않으면 다음 기동에 실행 파일이 없습니다.
 		if rerr := os.Rename(p.Old, p.Current); rerr != nil {
-			return fmt.Errorf("装入新版本失败(%v)，且恢复当前版本失败: %w", err, rerr)
+			return fmt.Errorf("새 버전을 넣지 못했고(%v) 현재 버전 복구도 실패: %w", err, rerr)
 		}
-		return fmt.Errorf("装入新版本: %w", err)
+		return fmt.Errorf("새 버전 넣기: %w", err)
 	}
 	_ = os.Remove(p.Sum)
 	return nil
 }
 
-// rollback 把 swap 备份的旧版本换回来。
+// rollback은 swap이 백업한 옛 버전으로 되돌립니다.
 func rollback(p Paths) error {
 	if _, err := os.Stat(p.Old); err != nil {
-		return fmt.Errorf("没有可回滚的备份 %s: %w", p.Old, err)
+		return fmt.Errorf("되돌릴 백업이 없습니다 %s: %w", p.Old, err)
 	}
-	// 把起不来的新版挪到 .failed 留作排查，而不是直接删掉。
+	// 뜨지 못하는 새 버전은 바로 지우지 않고 .failed로 옮겨 조사할 수 있게 남깁니다.
 	failed := p.Current + ".failed"
 	_ = os.Remove(failed)
 	if err := os.Rename(p.Current, failed); err != nil {
-		return fmt.Errorf("移走失败的版本: %w", err)
+		return fmt.Errorf("실패한 버전 옮기기: %w", err)
 	}
 	if err := os.Rename(p.Old, p.Current); err != nil {
-		return fmt.Errorf("恢复旧版本: %w", err)
+		return fmt.Errorf("옛 버전 복구: %w", err)
 	}
 	return nil
 }
 
-// Rollback 是 /api/update/rollback 的实现：主动退回上一版本。
-// 只做换装，重启同样交给守护脚本（调用方随后以 ExitRestart 退出）。
+// Rollback은 /api/update/rollback의 구현입니다. 사용자가 이전 버전으로 되돌립니다.
+// 갈아 끼우기만 하고, 재시작은 데몬 스크립트에 맡깁니다(호출자가 이어서 ExitRestart로 종료).
 func Rollback() error {
 	p, err := ResolvePaths()
 	if err != nil {
 		return err
 	}
 	if _, err := os.Stat(p.Old); err != nil {
-		return errors.New("没有可回滚的上一版本（" + p.Old + " 不存在）")
+		return errors.New("되돌릴 이전 버전이 없습니다(" + p.Old + " 이 없습니다)")
 	}
 	cleanStaged(p)
 	if err := smokeTest(p.Old); err != nil {
-		return fmt.Errorf("上一版本无法执行，拒绝回滚: %w", err)
+		return fmt.Errorf("이전 버전을 실행할 수 없어 되돌리기를 거부합니다: %w", err)
 	}
-	// 交换当前与备份：回滚之后还能再滚回来。
+	// 현재와 백업을 바꿉니다. 되돌린 뒤에도 다시 되돌릴 수 있습니다.
 	tmp := p.Current + ".swap"
 	_ = os.Remove(tmp)
 	if err := os.Rename(p.Current, tmp); err != nil {
-		return fmt.Errorf("移走当前版本: %w", err)
+		return fmt.Errorf("현재 버전 옮기기: %w", err)
 	}
 	if err := os.Rename(p.Old, p.Current); err != nil {
 		_ = os.Rename(tmp, p.Current)
-		return fmt.Errorf("装入上一版本: %w", err)
+		return fmt.Errorf("이전 버전 넣기: %w", err)
 	}
 	if err := os.Rename(tmp, p.Old); err != nil {
-		log.Printf("[update] 回滚后整理备份失败（不影响运行）：%v", err)
+		log.Printf("[update] 되돌린 뒤 백업 정리 실패(실행에는 영향 없음): %v", err)
 	}
 	_ = os.Remove(p.Marker)
 	return nil
 }
 
-// HasBackup 报告是否存在可回滚的上一版本，供前端决定要不要显示回滚按钮。
+// HasBackup은 되돌릴 이전 버전이 있는지 알립니다. 프론트가 되돌리기 버튼을 보일지 정합니다.
 func HasBackup() bool {
 	p, err := ResolvePaths()
 	if err != nil {
@@ -293,7 +297,7 @@ func fileSHA256(path string) (string, error) {
 
 func orUnknown(s string) string {
 	if strings.TrimSpace(s) == "" {
-		return "未知版本"
+		return "알 수 없는 버전"
 	}
 	return s
 }

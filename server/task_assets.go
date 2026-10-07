@@ -24,7 +24,7 @@ func writeTaskAssetError(w http.ResponseWriter, err error) {
 func (s *Server) attachTaskAssets(w http.ResponseWriter, r *http.Request) {
 	task, ok := s.m.Task(r.PathValue("id"))
 	if !ok {
-		writeErr(w, http.StatusNotFound, "task not found")
+		writeErr(w, http.StatusNotFound, "작업을 찾을 수 없습니다")
 		return
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxTaskAssetRequestBytes)
@@ -36,7 +36,7 @@ func (s *Server) attachTaskAssets(w http.ResponseWriter, r *http.Request) {
 	if err := decode(r, &request); err != nil {
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {
-			writeErr(w, http.StatusRequestEntityTooLarge, "请求正文过大")
+			writeErr(w, http.StatusRequestEntityTooLarge, "요청 본문이 너무 큽니다")
 		} else {
 			writeErr(w, http.StatusBadRequest, err.Error())
 		}
@@ -45,7 +45,7 @@ func (s *Server) attachTaskAssets(w http.ResponseWriter, r *http.Request) {
 	request.SourceSummary = strings.TrimSpace(request.SourceSummary)
 	taskID, _ := parseTaskID(task.ID)
 	if request.Scope != nil && len(request.AssetIDs) > 0 {
-		writeErr(w, http.StatusBadRequest, "scope 与 asset_ids 不能同时提交")
+		writeErr(w, http.StatusBadRequest, "scope와 asset_ids는 함께 보낼 수 없습니다")
 		return
 	}
 	if request.Scope != nil {
@@ -70,12 +70,12 @@ func (s *Server) attachTaskAssets(w http.ResponseWriter, r *http.Request) {
 func (s *Server) detachTaskAsset(w http.ResponseWriter, r *http.Request) {
 	task, ok := s.m.Task(r.PathValue("id"))
 	if !ok {
-		writeErr(w, http.StatusNotFound, "task not found")
+		writeErr(w, http.StatusNotFound, "작업을 찾을 수 없습니다")
 		return
 	}
 	assetID, ok := pathInt(r, "assetID")
 	if !ok {
-		writeErr(w, http.StatusBadRequest, "bad asset id")
+		writeErr(w, http.StatusBadRequest, "자산 id가 올바르지 않습니다")
 		return
 	}
 	taskID, _ := parseTaskID(task.ID)
@@ -85,7 +85,7 @@ func (s *Server) detachTaskAsset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !detached {
-		writeErr(w, http.StatusNotFound, "asset is not associated with this task")
+		writeErr(w, http.StatusNotFound, "이 자산은 이 작업에 연결되어 있지 않습니다")
 		return
 	}
 	task.Notify()
@@ -95,7 +95,7 @@ func (s *Server) detachTaskAsset(w http.ResponseWriter, r *http.Request) {
 func (s *Server) taskIntentAssets(w http.ResponseWriter, r *http.Request) {
 	task, ok := s.m.Task(r.PathValue("id"))
 	if !ok {
-		writeErr(w, http.StatusNotFound, "task not found")
+		writeErr(w, http.StatusNotFound, "작업을 찾을 수 없습니다")
 		return
 	}
 	taskID, _ := parseTaskID(task.ID)

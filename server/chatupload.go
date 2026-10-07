@@ -26,8 +26,8 @@ type chatAttachment struct {
 	Name string `json:"name"`
 	Path string `json:"path"`
 	Size int64  `json:"size"`
-	// Abs 是落盘的绝对路径(m.dir 已是绝对)。建任务前暂存(scope=staging)时前端要用它把
-	// 提示词写进描述;task/session 走 composeAgentMessage 在后端拼路径,不依赖此字段。
+	// Abs는 디스크에 쓴 절대 경로다(m.dir은 이미 절대 경로). 작업을 만들기 전 임시 저장(scope=staging)일 때 프론트엔드는 이 값으로
+	// 프롬프트를 설명에 적는다. task/session은 composeAgentMessage로 백엔드에서 경로를 붙이며, 이 필드에 의존하지 않는다.
 	Abs string `json:"abs,omitempty"`
 }
 
@@ -41,8 +41,8 @@ type chatAttachment struct {
 //
 //	scope=task    → <workDir>/tasks/<id>/uploads/
 //	scope=session → <workDir>/sessions/<id>/uploads/
-//	scope=staging → <workDir>/drafts/<id>/uploads/   (建任务前暂存:任务尚无 ID,
-//	                文件先落这里,前端按返回的 abs 绝对路径写进任务描述)
+//	scope=staging → <workDir>/drafts/<id>/uploads/   (작업을 만들기 전 임시 저장: 작업에 아직 ID가 없고,
+//	                파일은 먼저 여기에 두고, 프론트엔드는 반환된 abs 절대 경로를 작업 설명에 적는다)
 func (s *Server) chatUpload(w http.ResponseWriter, r *http.Request) {
 	var sub string
 	taskScoped := false
@@ -55,38 +55,38 @@ func (s *Server) chatUpload(w http.ResponseWriter, r *http.Request) {
 	case "staging":
 		sub = "drafts"
 	default:
-		writeErr(w, 400, "scope 必须是 task / session / staging")
+		writeErr(w, 400, "scope는 task / session / staging이어야 합니다")
 		return
 	}
 	id := r.URL.Query().Get("id")
 	if !safeChatID.MatchString(id) {
-		writeErr(w, 400, "非法 id")
+		writeErr(w, 400, "잘못된 id")
 		return
 	}
 	if taskScoped {
 		if s.m.ResolveTask(id) == nil {
-			writeErr(w, 404, "task not found")
+			writeErr(w, 404, "작업을 찾을 수 없습니다")
 			return
 		}
 		if !s.engine.beginTaskOperation(id) {
-			writeErr(w, http.StatusConflict, "任务正在删除，无法上传附件")
+			writeErr(w, http.StatusConflict, "작업을 삭제하는 중이라 첨부 파일을 올릴 수 없습니다")
 			return
 		}
 		defer s.engine.decInflight(id)
 	}
 	dir := filepath.Join(s.m.dir, sub, id, "uploads")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		writeErr(w, 500, "建目录失败: "+err.Error())
+		writeErr(w, 500, "디렉터리 생성 실패: "+err.Error())
 		return
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxChatUpload)
 	if err := r.ParseMultipartForm(32 << 20); err != nil {
-		writeErr(w, 400, "解析上传失败或超出大小限制: "+err.Error())
+		writeErr(w, 400, "업로드 해석에 실패했거나 크기 제한을 초과했습니다: "+err.Error())
 		return
 	}
 	files := r.MultipartForm.File["file"]
 	if len(files) == 0 {
-		writeErr(w, 400, "缺少上传文件(表单字段 file)")
+		writeErr(w, 400, "업로드 파일이 없습니다(폼 필드 file)")
 		return
 	}
 	out := make([]chatAttachment, 0, len(files))
@@ -97,7 +97,7 @@ func (s *Server) chatUpload(w http.ResponseWriter, r *http.Request) {
 		}
 		dest := uniqueUploadPath(dir, name)
 		if err := saveUpload(hdr, dest); err != nil {
-			writeErr(w, 500, "保存失败: "+err.Error())
+			writeErr(w, 500, "저장 실패: "+err.Error())
 			return
 		}
 		base := filepath.Base(dest)
@@ -133,7 +133,7 @@ func composeAgentMessage(msg string, atts []chatAttachment, baseDir string) stri
 	}
 	var b strings.Builder
 	b.WriteString(msg)
-	b.WriteString("\n\n【用户上传的附件】(绝对路径，需要时用 Read/Bash 查看)：")
+	b.WriteString("\n\n【사용자가 업로드한 첨부】(절대 경로, 필요할 때 Read/Bash로 확인):")
 	for _, a := range atts {
 		fmt.Fprintf(&b, "\n- %s（%s）", filepath.Join(baseDir, a.Path), humanBytes(a.Size))
 	}

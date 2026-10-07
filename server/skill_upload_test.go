@@ -18,11 +18,11 @@ import (
 )
 
 func TestValidSkillName(t *testing.T) {
-	ok := []string{"web-recon", "a", "nuclei2", "中文技能", "端口扫描-x", "日本語スキル"}
+	ok := []string{"web-recon", "a", "nuclei2", "중국어스킬", "포트스캔-x", "일본어스킬"}
 	bad := []string{
-		"", "Web-Recon", "-lead", "trail-", "dou--ble", "has space", "中文 技能",
-		"dot.name", "a/b", `a\b`, "..", ".", "中文/技能", "sk\x00ill", "中‮文",
-		strings.Repeat("a", 65), "1abc", "中文技能!",
+		"", "Web-Recon", "-lead", "trail-", "dou--ble", "has space", "중국어 스킬",
+		"dot.name", "a/b", `a\b`, "..", ".", "중국어/스킬", "sk\x00ill", "중‮어",
+		strings.Repeat("a", 65), "1abc", "중국어스킬!",
 	}
 	for _, n := range ok {
 		if !validSkillName(n) {
@@ -40,10 +40,10 @@ func TestSkillRelPath(t *testing.T) {
 	ok := map[string]string{
 		"SKILL.md":           "SKILL.md",
 		"scripts/run.py":     "scripts/run.py",
-		"参考/中文说明.md":         "参考/中文说明.md",
+		"참고/중국어 설명.md":       "참고/중국어 설명.md",
 		"references/a b.txt": "references/a b.txt",
 		"./SKILL.md":         "SKILL.md",
-		"assets/图片-1_v2.png": "assets/图片-1_v2.png",
+		"assets/그림-1_v2.png": "assets/그림-1_v2.png",
 	}
 	for in, want := range ok {
 		got, msg := skillRelPath(in)
@@ -53,8 +53,8 @@ func TestSkillRelPath(t *testing.T) {
 	}
 	bad := []string{
 		"", "../etc/passwd", "a/../../b", "/abs/path", "a//b", `..\..\x`,
-		"%2e%2e/x", "a\x00b", "中文 名.md", "中‮文.md", "a#b.md", "a?b.md",
-		"a:b.md", string([]byte{0xd6, 0xd0}) + ".md", // 裸 GBK 字节：非法 UTF-8
+		"%2e%2e/x", "a\x00b", "중국어\u00a0이름.md", "중\u202e어.md", "a#b.md", "a?b.md",
+		"a:b.md", string([]byte{0xd6, 0xd0}) + ".md", // 날것의 GBK 바이트: 잘못된 UTF-8
 		strings.Repeat("a", maxSkillPathLen+1),
 	}
 	for _, in := range bad {
@@ -73,7 +73,7 @@ type zipFile struct {
 	name    string
 	body    string
 	method  uint16
-	nonUTF8 bool // write the name bytes as-is (GBK 包)
+	nonUTF8 bool // write the name bytes as-is (GBK 패키지)
 }
 
 func buildZip(t *testing.T, files ...zipFile) []byte {
@@ -81,8 +81,8 @@ func buildZip(t *testing.T, files ...zipFile) []byte {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
 	zw.RegisterCompressor(zipMethodZstd, zstd.ZipCompressor())
-	// Deflate64 没有纯 Go 编码器；这里原样写入，只是为了给条目打上 method 9 的标记 ——
-	// 断言的是「方法不支持时给什么提示」，不会真去解压它。
+	// Deflate64에는 순수 Go 인코더가 없다. 여기서는 그대로 기록하며, 항목에 method 9 표시만 붙이려는 것이다 ——
+	// 단언하는 것은 「메서드를 지원하지 않을 때 어떤 안내를 주는지」이며, 실제로 압축을 풀지는 않는다.
 	zw.RegisterCompressor(zipMethodDeflate64, func(w io.Writer) (io.WriteCloser, error) {
 		return nopWriteCloser{w}, nil
 	})
@@ -126,34 +126,35 @@ func uploadZip(t *testing.T, skillDir string, filename string, data []byte) (*ht
 	return rr, out
 }
 
-const zhSkillMD = "---\nname: 中文技能\ndescription: 测试\n---\n正文\n"
+const zhSkillMD = "---\nname: 중국어스킬\ndescription: 테스트\n---\n본문\n"
 
-// A zstd-compressed archive (WinZip 的可选压缩方式) used to blow up with
+// A zstd-compressed archive (WinZip의 선택적 압축 방식) used to blow up with
 // "zip: unsupported compression"; it now installs like any Deflate archive.
 func TestUploadSkillZstdAndChineseNames(t *testing.T) {
 	dir := t.TempDir()
 	data := buildZip(t,
-		zipFile{name: "中文技能/SKILL.md", body: zhSkillMD, method: zipMethodZstd},
-		zipFile{name: "中文技能/参考/说明 文档.md", body: "参考", method: zipMethodZstd},
-		zipFile{name: "中文技能/scripts/run.py", body: "print(1)", method: zip.Deflate},
+		zipFile{name: "중국어스킬/SKILL.md", body: zhSkillMD, method: zipMethodZstd},
+		zipFile{name: "중국어스킬/참고/설명 문서.md", body: "참고", method: zipMethodZstd},
+		zipFile{name: "중국어스킬/scripts/run.py", body: "print(1)", method: zip.Deflate},
 	)
-	rr, out := uploadZip(t, dir, "中文技能.zip", data)
+	rr, out := uploadZip(t, dir, "중국어스킬.zip", data)
 	if rr.Code != 201 {
 		t.Fatalf("status = %d, body = %s", rr.Code, rr.Body)
 	}
-	if out["name"] != "中文技能" {
-		t.Fatalf("name = %v, want 中文技能", out["name"])
+	if out["name"] != "중국어스킬" {
+		t.Fatalf("name = %v, want 중국어스킬", out["name"])
 	}
-	for _, rel := range []string{"SKILL.md", "参考/说明 文档.md", "scripts/run.py"} {
-		if _, err := os.Stat(filepath.Join(dir, "中文技能", rel)); err != nil {
+	for _, rel := range []string{"SKILL.md", "참고/설명 문서.md", "scripts/run.py"} {
+		if _, err := os.Stat(filepath.Join(dir, "중국어스킬", rel)); err != nil {
 			t.Errorf("missing extracted file %q: %v", rel, err)
 		}
 	}
 }
 
-// GBK-named entries (7-Zip / 资源管理器 on Chinese Windows) must be decoded rather
-// than rejected as invalid UTF-8 paths.
+// GBK 파일 이름(7-Zip / 중국어 Windows 탐색기)은 UTF-8이 아니라고 거절하지 말고 디코딩해야 한다.
+// 이 샘플 바이트는 GBK로만 표현되는 중국어 파일 이름이라 한글으로 바꾸지 않는다.
 func TestUploadSkillGBKNames(t *testing.T) {
+	const gbkSkillMD = "---\nname: 中文技能\ndescription: 测试\n---\n正文\n" // han-allow 프로토콜 원문
 	gbk := func(s string) string {
 		b, err := simplifiedchinese.GBK.NewEncoder().String(s)
 		if err != nil {
@@ -163,17 +164,17 @@ func TestUploadSkillGBKNames(t *testing.T) {
 	}
 	dir := t.TempDir()
 	data := buildZip(t,
-		zipFile{name: gbk("中文技能/SKILL.md"), body: zhSkillMD, method: zip.Deflate, nonUTF8: true},
-		zipFile{name: gbk("中文技能/参考资料.md"), body: "内容", method: zip.Deflate, nonUTF8: true},
+		zipFile{name: gbk("中文技能/SKILL.md"), body: gbkSkillMD, method: zip.Deflate, nonUTF8: true}, // han-allow 프로토콜 원문
+		zipFile{name: gbk("中文技能/参考资料.md"), body: "内容", method: zip.Deflate, nonUTF8: true},        // han-allow 프로토콜 원문
 	)
 	rr, out := uploadZip(t, dir, "skill.zip", data)
 	if rr.Code != 201 {
 		t.Fatalf("status = %d, body = %s", rr.Code, rr.Body)
 	}
-	if out["name"] != "中文技能" {
-		t.Fatalf("name = %v, want 中文技能", out["name"])
+	if out["name"] != "中文技能" { // han-allow 프로토콜 원문
+		t.Fatalf("name = %v, want 中文技能", out["name"]) // han-allow 프로토콜 원문
 	}
-	if _, err := os.Stat(filepath.Join(dir, "中文技能", "参考资料.md")); err != nil {
+	if _, err := os.Stat(filepath.Join(dir, "中文技能", "参考资料.md")); err != nil { // han-allow 프로토콜 원문
 		t.Errorf("GBK-named entry not extracted: %v", err)
 	}
 }
@@ -189,7 +190,7 @@ func TestUploadSkillUnsupportedMethod(t *testing.T) {
 		t.Fatalf("status = %d, want 400 (body %s)", rr.Code, rr.Body)
 	}
 	msg, _ := out["error"].(string)
-	if !strings.Contains(msg, "Deflate64") || !strings.Contains(msg, "不支持的压缩方式") {
+	if !strings.Contains(msg, "Deflate64") || !strings.Contains(msg, "지원하지 않는 압축 방식") {
 		t.Fatalf("error = %q, want a Chinese message naming Deflate64", msg)
 	}
 }
@@ -210,8 +211,8 @@ func TestUploadSkillEncrypted(t *testing.T) {
 	if rr.Code != 400 {
 		t.Fatalf("status = %d, want 400 (body %s)", rr.Code, rr.Body)
 	}
-	if msg, _ := out["error"].(string); !strings.Contains(msg, "已加密") {
-		t.Fatalf("error = %q, want 加密 hint", msg)
+	if msg, _ := out["error"].(string); !strings.Contains(msg, "암호화") {
+		t.Fatalf("error = %q, want 암호화 hint", msg)
 	}
 }
 
@@ -226,8 +227,8 @@ func TestUploadSkillRejectsTraversal(t *testing.T) {
 	if rr.Code != 400 {
 		t.Fatalf("status = %d, want 400 (body %s)", rr.Code, rr.Body)
 	}
-	if msg, _ := out["error"].(string); !strings.Contains(msg, "非法路径") {
-		t.Fatalf("error = %q, want 非法路径", msg)
+	if msg, _ := out["error"].(string); !strings.Contains(msg, "잘못된 경로") {
+		t.Fatalf("error = %q, want 잘못된 경로", msg)
 	}
 	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
 		t.Fatalf("upload left files behind: %v", entries)
@@ -235,8 +236,8 @@ func TestUploadSkillRejectsTraversal(t *testing.T) {
 }
 
 func TestSkillNameFromFrontmatterQuoted(t *testing.T) {
-	got := skillNameFromFrontmatter([]byte("---\nname: \"中文技能\"\ndescription: x\n---\n"))
-	if got != "中文技能" {
-		t.Fatalf("name = %q, want 中文技能", got)
+	got := skillNameFromFrontmatter([]byte("---\nname: \"중국어스킬\"\ndescription: x\n---\n"))
+	if got != "중국어스킬" {
+		t.Fatalf("name = %q, want 중국어스킬", got)
 	}
 }

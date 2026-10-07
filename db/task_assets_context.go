@@ -52,15 +52,13 @@ tested AS (
   JOIN context_tasks ctx ON ctx.exploration_id=en.exploration_id
 )`
 
-// scopeTargetCTE selects every asset that BELONGS to the current task's (and its
-// direct source tasks') declared scope — membership, not literal value: a
-// root_domain scope pulls in every subdomain / service / endpoint whose own
-// root_domain column equals it; an ip/cidr scope pulls in assets whose ip OR
-// IP-literal host falls inside the net. $1 is the task id. Unlike contextCoverageCTE
-// it carries neither the fact-anchor union nor the tested set — it is pure "in
-// declared scope", independent of what has already been touched. Used by the
-// agent's list_assets so a query returns the task's relevant assets, not the
-// whole shared库.
+// scopeTargetCTE는 현재 작업과 그 직접 원본 작업이 선언한 범위에 속하는(BELONGS) 모든 자산을 고른다.
+// 소속이지 리터럴 값이 아니다. root_domain 범위는 자신의
+// root_domain 열이 그 값과 같은 subdomain / service / endpoint를 모두 끌어오고,
+// ip/cidr 범위는 ip 또는 IP 리터럴 host가 그 네트워크 안에 있는 자산을 끌어온다. $1은 작업 id이다. contextCoverageCTE와 달리
+// 사실-앵커 합집합도 테스트된 집합도 담지 않으며, 이미 다룬 것과 무관한 순수한 「선언된 범위 안」이다. 에이전트의
+// list_assets가 써서, 쿼리가 공유 자산 그래프 전체가 아니라 해당 작업의 관련 자산만 돌려준다.
+// 자산 그래프에서 이번 작업 범위의 행만 잘라, 탐색 그래프의 사실과 발견이 범위 밖 자산을 가리키지 않게 한다.
 const scopeTargetCTE = `
 context_tasks AS (
   SELECT t.id AS task_id

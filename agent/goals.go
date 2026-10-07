@@ -14,7 +14,7 @@ import (
 	"github.com/Autumn-27/norma/transcript"
 )
 
-// goalsDefaultTmpl is the built-in EDITABLE body (段 [A]) of the goals-decomposer
+// goalsDefaultTmpl is the built-in EDITABLE body (구간 [A]) of the goals-decomposer
 // prompt, seeded into agent_prompts. No template vars are used today.
 const goalsDefaultTmpl = `你是渗透测试目标分解器。你的职责是从用户输入中识别出**最终要达成的结果**，而不是规划攻击步骤。
 
@@ -82,7 +82,7 @@ type GoalSpec struct {
 // shares the rate limiter, gets recorded by llmrec, and participates in LLM
 // failover instead of quietly bypassing all three.
 //
-// desc is the task's free-text description (背景：靶标范围/flag 数量/交战说明等).
+// desc is the task's free-text description (배경: 대상 범위와 교전 설명 등).
 // It is fed alongside the goal so the decomposer no longer splits blind — the
 // prompt still forbids inventing anything the two texts don't state.
 //
@@ -111,12 +111,12 @@ func DecomposeGoalsWithProvider(ctx context.Context, prov llm.Provider, dataDir,
 	if prov == nil {
 		return nil
 	}
-	// 目标拆解是一次性调用：不挂 transcript store，所以 agentcore 不会往 ctx 上挂
-	// session id（它只在有 writer 时才挂，见 agentcore.Prompt）。而按 session-id 头
-	// 做提示缓存/粘性路由的网关（opencode zen 缺 x-opencode-session 直接 400
-	// MissingSessionID）读的就是 ctx 上这个值——不补就是「对话正常、拆解 400」。
-	// 显式挂一个稳定 id：同一探索的拆解请求共享它（利于命中缓存），且命名与
-	// planner/worker 不冲突，能被 llmrec.parseSession 正确归因。
+	// 목표 분해는 한 번만 호출합니다. transcript store 를 걸지 않으므로 agentcore 는 ctx 에
+	// session id 를 걸지 않습니다(writer 가 있을 때만 겁니다. agentcore.Prompt 참고). session-id 헤더로
+	// 프롬프트 캐시나 고정 라우팅을 하는 게이트웨이(opencode zen 은 x-opencode-session 이 없으면 바로 400
+	// MissingSessionID)는 ctx 의 이 값을 읽습니다. 안 채우면 대화는 되는데 분해만 400 이 됩니다.
+	// 안정된 id 를 명시적으로 겁니다. 같은 탐색의 분해 요청이 그것을 공유해 캐시에 유리하고, 이름은
+	// planner/worker 와 겹치지 않아 llmrec.parseSession 이 올바르게 귀속합니다.
 	if ts != nil {
 		ctx = transcript.WithSessionID(ctx, fmt.Sprintf("exp%d-goals", ts.ID()))
 	}
@@ -128,8 +128,8 @@ func DecomposeGoalsWithProvider(ctx context.Context, prov llm.Provider, dataDir,
 	// {{.EngagementDescription}} template var — else a prompt that references the var
 	// would inject the description twice. System prompt stays pure static instructions.
 	sys := renderSystem("goals", goalsDefaultTmpl, GoalsVars{DataDir: dataDir, Now: nowStr()})
-	// set_constraints 始终可用(不依赖 asset store):正文已含「先抽操作约束再拆目标」这步
-	// (可在 agent 编辑页改措辞),这里只需接上工具。
+	// set_constraints 는 항상 쓸 수 있습니다(asset store 에 의존하지 않음). 본문에 이미 조작 제약을 먼저 뽑고 목표를 쪼개는 단계가 있습니다
+	// (에이전트 편집 페이지에서 문장을 바꿀 수 있음). 여기서는 도구만 연결하면 됩니다.
 	tools := []actool.CoreTool{tsx.setGoals(), tsx.setConstraints()}
 	// Wire add_task_scope only when we have a real asset store + task to write to.
 	// The scope-extraction tail is appended in lockstep so the prompt never asks for
@@ -138,9 +138,9 @@ func DecomposeGoalsWithProvider(ctx context.Context, prov llm.Provider, dataDir,
 		tools = append(tools, tsx.addTaskScope())
 		sys += goalsScopeTail
 	}
-	userMsg := "任务目标：\n" + goalText
+	userMsg := "任务目标：\n" + goalText // han-allow 업스트림 프롬프트·픽스처
 	if d := strings.TrimSpace(desc); d != "" {
-		userMsg += "\n\n任务描述（背景信息，可能含靶标范围/flag 数量/交战说明；仅供参考，不要臆造其中未提及的内容）：\n" + d
+		userMsg += "\n\n任务描述（背景信息，可能含靶标范围/flag 数量/交战说明；仅供参考，不要臆造其中未提及的内容）：\n" + d // han-allow 업스트림 프롬프트·픽스처
 	}
 	// Use captureRun so every LLM step is emitted as an activity record (visible in
 	// the plan tab under the round-0 marker). Falls back gracefully when emit is nil.
@@ -156,10 +156,10 @@ func DecomposeGoalsWithProvider(ctx context.Context, prov llm.Provider, dataDir,
 		Tools:                  tools,
 		PermissionMode:         acperm.ModeBypass,
 		DisableBackgroundTasks: true,
-		// 3 步(抽约束 → 登记范围 → 拆目标)各需一次工具调用,给足回合避免收尾前漏调 set_goals。
+		// 3단계(제약 추출, 범위 등록, 목표 분해)는 각각 도구 호출이 한 번 필요합니다. 턴을 넉넉히 줘 마무리 전에 set_goals 호출이 빠지지 않게 합니다.
 		MaxTurns:     8,
-		NonStreaming: nonStreaming, // 该 profile 选非流式时走 Provider.Complete
-		MaxTokens:    maxTokens,    // 0 = 不发上限,由服务端默认值决定
+		NonStreaming: nonStreaming, // 이 profile 이 비스트리밍이면 Provider.Complete 를 탑니다
+		MaxTokens:    maxTokens,    // 0 = 상한을 보내지 않음. 서버 기본값
 	}, userMsg, captureEmit)
 	// set_goals persisted the goals directly; read them back so the caller sees what
 	// was written (empty slice ⇒ the LLM produced nothing ⇒ caller falls back).

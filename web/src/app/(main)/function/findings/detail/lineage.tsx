@@ -7,7 +7,7 @@ import { api } from "@/lib/api";
 import type { Edge, TaskNode } from "@/lib/types";
 
 // FindingLineageView renders the exploration sub-graph from the task's initial
-// node down to this finding's node — the same 攻击链路图 canvas as the task graph,
+// 노드에서 이 발견의 노드까지 내려감 — 작업 그래프와 같은 공격 경로 그림 캔버스, （탐색 그래프는 작업이 어디까지 이어졌는지 보여주는 그림입니다）
 // scoped to just this finding's lineage.
 export function FindingLineageView({ findingId }: { findingId: string }) {
   const [nodes, setNodes] = React.useState<TaskNode[]>([]);
@@ -35,7 +35,7 @@ export function FindingLineageView({ findingId }: { findingId: string }) {
   if (loaded && nodes.length === 0) {
     return (
       <p className="text-muted-foreground p-6 text-sm">
-        无链路可展示（该漏洞未关联探索节点，或所属任务已删除）。
+        보여줄 경로가 없습니다(이 발견에 탐색 노드가 없거나, 속한 작업이 삭제되었습니다).
       </p>
     );
   }
@@ -45,7 +45,7 @@ export function FindingLineageView({ findingId }: { findingId: string }) {
       nodes={nodes}
       edges={edges}
       className="h-[68vh]"
-      emptyHint={loaded ? "无链路" : "加载中…"}
+      emptyHint={loaded ? "경로 없음" : "불러오는 중…"}
     />
   );
 }
