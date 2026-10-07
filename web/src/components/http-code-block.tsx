@@ -175,7 +175,7 @@ export function HttpCodeBlock({ raw }: { raw: string }) {
           <TooltipContent side="bottom">{copied ? "복사했습니다" : "메시지 복사"}</TooltipContent>
         </Tooltip>
       </div>
-      {/* biome-ignore lint/a11y/useSemanticElements: textarea cannot preserve line numbers and syntax-highlighting markup. */}
+      {/* biome-ignore lint/a11y/useSemanticElements: textarea는 줄 번호와 문법 색 표시를 함께 지킬 수 없습니다. */}
       <div
         role="textbox"
         aria-label="HTTP 메시지 코드"

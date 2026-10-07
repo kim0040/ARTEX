@@ -12,8 +12,8 @@ func TestProxyEnvEmptyIsNil(t *testing.T) {
 }
 
 func TestProxyEnvSetsAllProxyForSocks5(t *testing.T) {
-	// Capture-off egress path: a socks5 proxy, no MITM CA. ALL_PROXY must be set
-	// (curl reads socks5 only from there), and no CA vars should appear.
+	// 캡처가 꺼진 출구 경로입니다. socks5 프록시이고 MITM CA 는 없습니다.
+	// ALL_PROXY 가 있어야 합니다(curl 은 socks5 를 거기서만 읽음). CA 변수는 없어야 합니다.
 	env := proxyEnv("socks5://10.0.0.1:1080", "")
 	has := func(prefix string) bool {
 		for _, e := range env {

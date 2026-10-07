@@ -28,22 +28,23 @@ import (
 	"github.com/Autumn-27/norma/transcript"
 )
 
-// Config describes the LLM backend resolved from the environment.
+// Config 는 환경에서 읽은 LLM 연결 설정입니다.
+// 초보: 플래너, 워커, 메인 에이전트가 이 연결 하나를 나눠 씁니다. 기록 프록시와는 다른 길입니다.
 type Config struct {
 	Format  llm.Format
 	BaseURL string
 	APIKey  string
 	Model   string
-	// Proxy routes all LLM requests through the given proxy URL (http/https/socks5,
-	// optionally with user:pass@ credentials). Empty means direct — it does NOT
-	// fall back to the standard *_PROXY environment variables.
+	// Proxy 는 모든 LLM 요청을 이 프록시 URL 로 보냅니다(http/https/socks5,
+	// user:pass@ 자격 증명도 가능). 비어 있으면 직접 연결입니다. 표준 *_PROXY
+	// 환경 변수로 돌아가지 않습니다.
 	Proxy string
-	// RatePerSecond / RatePerMinute cap the shared request rate across ALL agents
-	// using the provider (0 = that window unlimited).
+	// RatePerSecond / RatePerMinute 는 이 provider 를 쓰는 모든 에이전트의
+	// 요청 속도를 함께 제한합니다(0 = 그 창은 무제한).
 	RatePerSecond float64
 	RatePerMinute float64
-	// ContextWindowK is the model's context window in K tokens (user-configured),
-	// used to size compaction thresholds. 0 = default; see CompactionWindow.
+	// ContextWindowK 는 모델 컨텍스트 창 크기입니다(K token, 사용자가 설정).
+	// 압축 임계값을 정하는 데 씁니다. 0 = 기본값. CompactionWindow 를 보세요.
 	ContextWindowK int
 	// ThinkingType 은 생각「스위치」필드(thinking.type)만 따로 정합니다.
 	//   "" = 보내지 않음(기본, 이 필드를 모르는 모델과 호환); "disabled" = 명시적으로 끔;
@@ -99,18 +100,18 @@ type RetryConfig struct {
 	StreamInterval time.Duration
 }
 
-// compaction window resolution bounds (in K tokens). Below the floor the
-// threshold math (window − summary reserve − buffer) would go non-positive and
-// compaction would fire every turn; above the cap it would never fire.
+// 압축 창을 고르는 범위입니다(K token). 바닥보다 작으면
+// 임계값 계산(창 − 요약 여유 − 버퍼)이 0 이하가 되어
+// 매 턴 압축이 돕니다. 상한보다 크면 압축이 거의 안 돕니다.
 const (
-	defaultWindowK = 200  // unset → assume a 200K window (Claude default)
-	minWindowK     = 32   // floor so effectiveWindow stays comfortably positive
-	maxWindowK     = 1000 // cap at 1M tokens (user request)
+	defaultWindowK = 200  // 비어 있으면 200K 창으로 봅니다(Claude 기본)
+	minWindowK     = 32   // 바닥. 유효 창이 넉넉히 양수가 되게 합니다
+	maxWindowK     = 1000 // 상한 1M token(사용자 요청)
 )
 
-// CompactionWindow returns the model context window in TOKENS for compaction
-// thresholds, resolved from the user-configured size (ContextWindowK). 0/unset →
-// a 200K default; otherwise clamped to [32K, 1M] so compaction stays effective.
+// CompactionWindow 는 압축 임계값에 쓸 모델 컨텍스트 창을 token 단위로 돌려줍니다.
+// 사용자가 넣은 크기(ContextWindowK)에서 정합니다. 0 이거나 비어 있으면
+// 200K 기본입니다. 그 외에는 [32K, 1M] 으로 잘라 압축이 계속 의미 있게 돕니다.
 func (c Config) CompactionWindow() int {
 	k := c.ContextWindowK
 	if k <= 0 {
@@ -125,9 +126,8 @@ func (c Config) CompactionWindow() int {
 	return k * 1000
 }
 
-// compactionConfig builds the agent-core compaction config for a context window
-// in tokens. agentcore.NewSession wires the summarizer (same provider) when this
-// is set on Options.Compaction.
+// compactionConfig 는 token 단위 컨텍스트 창으로 agent-core 압축 설정을 만듭니다.
+// 이 값을 Options.Compaction 에 두면 agentcore.NewSession 이 같은 provider 로 요약기를 잇습니다.
 func compactionConfig(windowTokens int) *compaction.Config {
 	if windowTokens <= 0 {
 		windowTokens = defaultWindowK * 1000
@@ -135,13 +135,13 @@ func compactionConfig(windowTokens int) *compaction.Config {
 	return &compaction.Config{ContextWindow: windowTokens}
 }
 
-// FromEnv resolves the LLM provider config:
+// FromEnv 는 환경 변수에서 LLM provider 설정을 읽습니다.
 //
-//	ARTEX_LLM_PROVIDER = anthropic|openai (default: inferred from keys)
-//	ARTEX_LLM_MODEL    = model id        (default: per provider)
-//	ARTEX_LLM_BASE_URL = endpoint        (optional)
-//	ARTEX_LLM_PROXY    = proxy URL        (optional; http/https/socks5)
-//	ANTHROPIC_API_KEY / OPENAI_API_KEY         = credentials
+//	ARTEX_LLM_PROVIDER = anthropic|openai (기본: 키에서 추론)
+//	ARTEX_LLM_MODEL    = 모델 id          (기본: provider 마다)
+//	ARTEX_LLM_BASE_URL = 끝점             (선택)
+//	ARTEX_LLM_PROXY    = 프록시 URL       (선택. http/https/socks5)
+//	ANTHROPIC_API_KEY / OPENAI_API_KEY    = 자격 증명
 func FromEnv() (Config, bool) {
 	prov := os.Getenv("ARTEX_LLM_PROVIDER")
 	anthKey := os.Getenv("ANTHROPIC_API_KEY")
@@ -191,10 +191,11 @@ func FromEnv() (Config, bool) {
 	return c, true
 }
 
-// ConfigFrom builds a Config from UI-provided strings (provider defaults to
-// anthropic; model defaults per provider). Inputs are trimmed and the base URL
-// is normalized to the API base the provider expects (the provider appends the
-// endpoint path itself), so a full endpoint URL is tolerated.
+// ConfigFrom 은 화면에서 받은 문자열로 Config 를 만듭니다(provider 기본은
+// anthropic, 모델 기본은 provider 마다). 입력은 앞뒤 공백을 자르고, base URL 은
+// provider 가 기대하는 API 기반으로 맞춥니다(provider 가 경로를 스스로 붙임).
+// 그래서 전체 끝점 URL 도 받아 줍니다.
+// 초보: 화면의 LLM 설정이 여기로 들어와, 플래너와 워커가 같은 연결을 탑니다.
 func ConfigFrom(provider, model, baseURL, apiKey, proxy string) Config {
 	c := Config{
 		Model:   strings.TrimSpace(model),
@@ -206,21 +207,21 @@ func ConfigFrom(provider, model, baseURL, apiKey, proxy string) Config {
 	switch strings.TrimSpace(provider) {
 	case "openai":
 		c.Format = llm.FormatOpenAI
-		// provider appends "/chat/completions"; tolerate a full endpoint URL.
+		// provider 가 "/chat/completions" 를 붙입니다. 전체 끝점 URL 도 받아 줍니다.
 		c.BaseURL = strings.TrimRight(strings.TrimSuffix(c.BaseURL, "/chat/completions"), "/")
 		if c.Model == "" {
 			c.Model = "gpt-4o"
 		}
 	case "openai-responses":
 		c.Format = llm.FormatOpenAIResponses
-		// provider appends "/responses"; tolerate a full endpoint URL.
+		// provider 가 "/responses" 를 붙입니다. 전체 끝점 URL 도 받아 줍니다.
 		c.BaseURL = strings.TrimRight(strings.TrimSuffix(c.BaseURL, "/responses"), "/")
 		if c.Model == "" {
 			c.Model = "gpt-5"
 		}
 	default:
 		c.Format = llm.FormatAnthropic
-		// provider appends "/v1/messages".
+		// provider 가 "/v1/messages" 를 붙입니다.
 		c.BaseURL = strings.TrimRight(strings.TrimSuffix(c.BaseURL, "/v1/messages"), "/")
 		if c.Model == "" {
 			c.Model = "claude-opus-4-8"
@@ -229,8 +230,8 @@ func ConfigFrom(provider, model, baseURL, apiKey, proxy string) Config {
 	return c
 }
 
-// isFalsy reports whether an env-var string explicitly requests "off". Empty or
-// unrecognized → false (so an unset var keeps the streaming default).
+// isFalsy 는 환경 변수 문자열이 명시적으로 "끔"을 요청하는지 봅니다. 비어 있거나
+// 알아듣지 못하면 false 입니다(설정 안 한 변수는 스트리밍 기본을 유지).
 func isFalsy(s string) bool {
 	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "0", "false", "off", "no":
@@ -239,7 +240,7 @@ func isFalsy(s string) bool {
 	return false
 }
 
-// Provider returns the short provider name ("anthropic"/"openai").
+// Provider 는 짧은 provider 이름을 돌려줍니다("anthropic"/"openai").
 func (c Config) Provider() string {
 	switch c.Format {
 	case llm.FormatOpenAI:
@@ -250,9 +251,9 @@ func (c Config) Provider() string {
 	return "anthropic"
 }
 
-// NewProvider builds an llm.Provider from the config. When a rate is set, the
-// limiter lives on the single provider instance — so planner + all workers +
-// main agent (which share this provider) are bounded by one shared rate limit.
+// NewProvider 는 설정으로 llm.Provider 를 만듭니다. 속도 제한이 있으면
+// 제한기는 provider 인스턴스 하나에 붙습니다. 그래서 이 provider 를 나눠 쓰는
+// 플래너, 모든 워커, 메인 에이전트가 같은 속도 제한을 탑니다.
 func (c Config) NewProvider() (llm.Provider, error) {
 	client, err := quotaAwareHTTPClient(c.Proxy, c.SessionHeaderKey)
 	if err != nil {
@@ -283,22 +284,22 @@ func (c Config) NewProvider() (llm.Provider, error) {
 	return llm.NewProvider(lc)
 }
 
-// IsQuotaExhaustedMessage deliberately recognizes only explicit balance,
-// billing, credit, or quota-exhaustion signals. Generic 429/rate-limit text,
-// authentication failures, network errors, and server failures are excluded.
+// IsQuotaExhaustedMessage 는 잔액, 결제, 크레딧, 할당량 소진처럼
+// 분명한 신호만 알아봅니다. 평범한 429/속도 제한 문구, 인증 실패,
+// 네트워크 오류, 서버 실패는 제외합니다.
 var nonFailoverHTTPStatus = regexp.MustCompile(`(?:status(?:\s+code)?|http(?:\s+status)?)\s*[=:]?\s*(?:401|403|5\d\d)\b`)
 var transientQuotaLimit = regexp.MustCompile(`(?i)(?:\b(?:rpm|tpm|rpd|qps)\b|quota[_\s-]*metric|rate[_\s-]*limit|too many requests|(?:requests?|tokens?)\s+(?:per|/)\s*(?:second|minute)|(?:per|/)\s*(?:second|minute)\s+(?:requests?|tokens?)|generate[_\s-]*requests[_\s-]*per[_\s-]*(?:minute|second)|tokens?[_\s-]*per[_\s-]*(?:minute|second))`)
 
 func IsQuotaExhaustedMessage(message string) bool {
 	message = strings.ToLower(message)
-	// Authentication/authorization and provider-side 5xx failures never rotate,
-	// even when a gateway happens to echo a quota-looking phrase in the body.
+	// 인증/권한 실패와 provider 쪽 5xx 는 갈아타지 않습니다.
+	// 게이트웨이가 본문에 할당량처럼 보이는 문구를 섞어도 같습니다.
 	if nonFailoverHTTPStatus.MatchString(message) {
 		return false
 	}
-	// Provider APIs frequently describe an ordinary rate limit as "quota
-	// exceeded", especially Google-style responses containing a quota metric.
-	// These limits recover with time and must stay on the current provider.
+	// provider API 는 평범한 속도 제한을 "quota exceeded" 라고 적는 일이 많습니다.
+	// 특히 Google 식 응답은 quota metric 을 포함합니다.
+	// 이런 제한은 시간이 지나면 풀리므로 현재 provider 에 남깁니다.
 	if transientQuotaLimit.MatchString(message) {
 		return false
 	}
@@ -314,41 +315,39 @@ func IsQuotaExhaustedMessage(message string) bool {
 			return true
 		}
 	}
-	// gRPC RESOURCE_EXHAUSTED is overloaded for both account quota and ordinary
-	// request-rate limiting. Preserve it as an explicit exhaustion signal only
-	// when the same error does not identify a transient rate limit.
+	// gRPC RESOURCE_EXHAUSTED 는 계정 할당량과 평범한 요청 속도 제한에
+	// 둘 다 쓰입니다. 같은 오류가 일시적 속도 제한을 가리키지 않을 때만
+	// 명시적 소진 신호로 둡니다.
 	return strings.Contains(message, "resource_exhausted") &&
 		!strings.Contains(message, "rate limit") &&
 		!strings.Contains(message, "too many requests")
 }
 
-// quotaAwareTransport preserves Norma's normal retry behavior except for a 429
-// whose body explicitly says the account quota/balance is exhausted. Norma's
-// retry loop treats every 429 as transient; normalizing only that response to
-// 402 lets a task router fail over immediately while retaining the original
-// response body for provider-specific classification and audit logs.
+// quotaAwareTransport 는 Norma 의 보통 재시도를 그대로 둡니다. 예외는 본문이
+// 계정 할당량이나 잔액 소진을 분명히 말하는 429 입니다. Norma 재시도 루프는
+// 모든 429 를 일시적이라고 봅니다. 그 응답만 402 로 바꾸면 작업 라우터가
+// 바로 다른 provider 로 넘어가고, 원래 응답 본문은 분류와 감사 기록에 남습니다.
 type quotaAwareTransport struct {
 	base http.RoundTripper
-	// sessionHeaderKey, when non-empty, is the HTTP header name each request
-	// carries; its value is the session id read from the request context. Empty
-	// disables it. See Config.SessionHeaderKey.
+	// sessionHeaderKey 가 비어 있지 않으면, 매 요청이 이 HTTP 헤더 이름을 답니다.
+	// 값은 요청 context 에서 읽은 session id 입니다. 비어 있으면 끕니다.
+	// Config.SessionHeaderKey 를 보세요.
 	sessionHeaderKey string
 }
 
 func (t quotaAwareTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	// Custom session-id header: name is user-configured, value is THIS run's
-	// session id (norma stashes it on the context via transcript.WithSessionID).
-	// Stable across a session's turns and distinct across sessions — exactly what
-	// a session-keyed prompt cache wants. Skipped when no session id is present.
+	// 사용자 지정 session-id 헤더입니다. 이름은 사용자가 정하고, 값은 이번 실행의
+	// session id 입니다(norma 가 transcript.WithSessionID 로 context 에 넣음).
+	// 한 세션의 턴 동안 같고, 세션끼리는 다릅니다. session 단위 프롬프트 캐시가
+	// 원하는 형태입니다. session id 가 없으면 건너뜁니다.
 	if t.sessionHeaderKey != "" {
 		if sid := transcript.SessionIDFrom(req.Context()); sid != "" {
 			req.Header.Set(t.sessionHeaderKey, sid)
 		}
 	}
-	// When LLM recording is on, the Recorder puts a Capture on the context so the
-	// raw wire bodies can be persisted. This is the only layer that still sees
-	// them: norma builds the request body internally and decodes the SSE response
-	// before either reaches the recorder.
+	// LLM 기록이 켜지면 Recorder 가 context 에 Capture 를 넣어, 원본 wire 본문을
+	// 남길 수 있게 합니다. 이 층만 그 본문을 아직 봅니다. norma 는 요청 본문을
+	// 안에서 만들고, SSE 응답을 푼 뒤에야 recorder 에 도달합니다.
 	capt := llmrec.CaptureFrom(req.Context())
 	capt.SetRequest(requestBodySnapshot(req))
 
@@ -356,9 +355,8 @@ func (t quotaAwareTransport) RoundTrip(req *http.Request) (*http.Response, error
 	if err != nil || resp == nil {
 		return resp, err
 	}
-	// Tee rather than read: a 200 is an SSE stream that must keep streaming. The
-	// 429 branch below reads through this wrapper, so its body lands in the
-	// capture before being replaced.
+	// 읽지 않고 Tee 합니다. 200 은 계속 흘러야 하는 SSE 스트림입니다.
+	// 아래 429 분기는 이 래퍼를 통해 읽으므로, 본문이 갈리기 전에 capture 에 남습니다.
 	resp.Body = capt.TeeResponse(resp.StatusCode, resp.Body)
 
 	if resp.StatusCode != http.StatusTooManyRequests {
@@ -378,9 +376,9 @@ func (t quotaAwareTransport) RoundTrip(req *http.Request) (*http.Response, error
 	return resp, nil
 }
 
-// requestBodySnapshot copies an outgoing request body without consuming it.
-// norma builds every model request from a *bytes.Reader, so net/http populates
-// GetBody and the copy has no effect on what gets sent.
+// requestBodySnapshot 은 나가는 요청 본문을 소비하지 않고 복사합니다.
+// norma 는 모델 요청을 *bytes.Reader 로 만듭니다. 그래서 net/http 가
+// GetBody 를 채우고, 이 복사는 실제로 나가는 내용에 영향을 주지 않습니다.
 func requestBodySnapshot(req *http.Request) string {
 	if req.GetBody == nil {
 		return ""
@@ -419,11 +417,10 @@ func quotaAwareHTTPClient(proxy, sessionHeaderKey string) (*http.Client, error) 
 	return &http.Client{Transport: quotaAwareTransport{base: transport, sessionHeaderKey: strings.TrimSpace(sessionHeaderKey)}}, nil
 }
 
-// logTestConnection prints the raw HTTP status code(s) and response body of a
-// connection test to the server log, so "연결 테스트" leaves a diagnosable trail of
-// exactly what the gateway returned — 401 bodies, quota text, empty frames — not
-// just the collapsed ok/err the UI shows. Bodies are clipped to keep a chatty
-// SSE stream from flooding the log.
+// logTestConnection 은 연결 테스트의 HTTP 상태 코드와 응답 본문을 서버 로그에 찍습니다.
+// 그래서 "연결 테스트"가 게이트웨이가 실제로 돌려준 것(401 본문, 할당량 문구, 빈 프레임)을
+// 남깁니다. 화면이 보여주는 접힌 ok/err 만으로는 부족합니다. 본문은 잘라, 수다스러운
+// SSE 스트림이 로그를 채우지 않게 합니다.
 func logTestConnection(c Config, capt *llmrec.Capture) {
 	attempts := capt.Attempts()
 	if len(attempts) == 0 {
@@ -437,8 +434,8 @@ func logTestConnection(c Config, capt *llmrec.Capture) {
 	}
 }
 
-// clipBody trims a wire body for logging. 4K is plenty to show an error JSON or
-// the head of an SSE stream while bounding a runaway response.
+// clipBody 는 로그용으로 wire 본문을 자릅니다. 4K 면 오류 JSON 이나
+// SSE 스트림의 앞부분을 보여 주기에 충분하고, 폭주하는 응답은 막습니다.
 func clipBody(s string) string {
 	s = strings.TrimSpace(s)
 	if s == "" {
@@ -451,9 +448,9 @@ func clipBody(s string) string {
 	return s
 }
 
-// TestConnection makes a minimal real completion to verify the provider/model/
-// endpoint/key actually work. Returns the round-trip latency and the model's
-// reply text.
+// TestConnection 은 아주 짧은 실제 완성을 보내, provider/모델/끝점/키가
+// 정말 동작하는지 확인합니다. 왕복 지연과 모델 답 글을 돌려줍니다.
+// 초보: 자산 그래프나 탐색 그래프를 건드리지 않습니다. 화면의 연결 테스트가 이 함수를 탑니다.
 func TestConnection(ctx context.Context, c Config) (time.Duration, string, error) {
 	prov, err := c.NewProvider()
 	if err != nil {

@@ -100,7 +100,7 @@ func TestSideActualChatCheckpointToolResultAndTranscriptIsolation(t *testing.T) 
 			if err != nil {
 				t.Fatal(err)
 			}
-			// Reset the fake to request another Read; the side executor cannot run it.
+			// 가짜를 다시 Read 를 요청하게 되돌립니다. 곁길 실행기는 그것을 돌릴 수 없습니다.
 			p.calls = 0
 			p.path = filepath.Join(dir, "nonexistent")
 			answer, err := (sidequestion.SideQuestionService{Provider: bound}).Answer(t.Context(), req, streaming, nil)

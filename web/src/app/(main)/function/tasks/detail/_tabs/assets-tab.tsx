@@ -363,19 +363,19 @@ export function AssetsTab({ taskId }: { taskId: string }) {
     setLoaded(false);
   }, []);
 
-  // Switching type tabs resets the search (DSL fields differ per type; matches
-  // the global asset view).
-  // biome-ignore lint/correctness/useExhaustiveDependencies: tab changes intentionally reset tab-local controls.
+  // 종류 탭을 바꾸면 검색을 비웁니다(종류마다 DSL 필드가 다릅니다. 전체
+  // 자산 보기와 같습니다).
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 탭이 바뀌면 그 탭의 검색 조건을 일부러 초기화합니다.
   React.useEffect(() => {
     setQuery("");
     setDslError("");
   }, [tab]);
 
-  // Query / tab / page-size changes restart server pagination.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: these controls intentionally reset server pagination.
+  // 검색어, 탭, 페이지 크기가 바뀌면 서버 페이지를 처음부터 다시 셉니다.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 이 조건이 바뀌면 서버 페이지를 일부러 처음으로 되돌립니다.
   React.useEffect(() => setPage(0), [tab, size, query]);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: refreshKey is an explicit manual-reload trigger.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: refreshKey는 사람이 누른 다시 불러오기 신호입니다.
   React.useEffect(() => {
     let active = true;
     const dsl = query.trim();
@@ -383,8 +383,8 @@ export function AssetsTab({ taskId }: { taskId: string }) {
     const load = async () => {
       setLoading(true);
       try {
-        // The search always stays within this task's assets: taskAssets and
-        // searchTaskAssets both pin task_id server-side.
+        // 검색은 항상 이 작업의 자산 안에 머뭅니다. taskAssets와
+        // searchTaskAssets 모두 서버에서 task_id를 고정합니다.
         const [current, nextCounts] = await Promise.all([
           dsl
             ? api.searchTaskAssets(taskId, dsl, tab, size, page * size)
@@ -413,7 +413,7 @@ export function AssetsTab({ taskId }: { taskId: string }) {
         }
       }
     };
-    // Debounce DSL keystrokes; plain (re)loads and polling run immediately.
+    // DSL 키 입력은 잠깐 기다렸다가 적용하고, 일반 불러오기와 주기 조회는 바로 실행합니다.
     const debounce = setTimeout(() => void load(), dsl ? 400 : 0);
     const timer = setInterval(() => void load(), 10_000);
     return () => {

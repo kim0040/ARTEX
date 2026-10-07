@@ -12,13 +12,14 @@ import (
 	"github.com/Autumn-27/artex/db"
 )
 
-// Scheduler drives P3 triggers: on each tick it fires due interval triggers and
-// scans for new findings / newly-met goals (any task) to fire event triggers.
-// Each fire enqueues a NEW conversation on the agent's per-agent trigger queue
-// (StartTriggeredRun): fires for the same agent run one at a time in FIFO order,
-// distinct agents still run concurrently. State is persisted (per-trigger last_fire
-// + finding watermark + fired-goal set) so a restart resumes without double-firing.
-// Triggers only attach to CUSTOM agents.
+// Scheduler는 P3 트리거를 돌립니다. 틱마다 시간이 된 간격 트리거를 울리고
+// 새 발견과 새로 달성된 목표(어느 작업이든)를 살펴 이벤트 트리거를 울립니다.
+// 울릴 때마다 그 에이전트의 트리거 대기열에 새 대화를 넣습니다
+// (StartTriggeredRun). 같은 에이전트의 실행은 FIFO로 한 번에 하나,
+// 다른 에이전트는 동시에 돕니다. 상태는 저장됩니다(트리거별 last_fire,
+// 발견 워터마크, 이미 울린 목표 집합). 재시작해도 두 번 울리지 않고 이어 갑니다.
+// 트리거는 사용자 정의 에이전트에만 붙습니다.
+// 초보용: 발견이 생기거나 목표가 달성되면, 사용자 정의 에이전트 대화를 엔진이 하나씩 깨웁니다.
 type Scheduler struct {
 	s    *Server
 	pg   *db.DB
@@ -26,18 +27,18 @@ type Scheduler struct {
 }
 
 const (
-	schedKeyLastFinding    = "last_finding_id"    // watermark: max finding node id fired for
-	schedKeyFiredGoals     = "fired_goals"        // JSON array of goal node ids already fired
-	schedKeyLastTimeout    = "last_timeout_id"    // watermark: max task id fired for task timeout
-	schedKeyLastToolCall   = "last_toolcall_id"   // watermark: max activity id fired for tool call
-	schedKeyLastTaskCreate = "last_taskcreate_id" // watermark: max task id fired for task create
+	schedKeyLastFinding    = "last_finding_id"    // 워터마크: 이미 울린 발견 노드 id의 최댓값
+	schedKeyFiredGoals     = "fired_goals"        // 이미 울린 목표 노드 id의 JSON 배열
+	schedKeyLastTimeout    = "last_timeout_id"    // 워터마크: 작업 시간 초과로 이미 울린 작업 id의 최댓값
+	schedKeyLastToolCall   = "last_toolcall_id"   // 워터마크: 도구 호출로 이미 울린 활동 id의 최댓값
+	schedKeyLastTaskCreate = "last_taskcreate_id" // 워터마크: 작업 생성으로 이미 울린 작업 id의 최댓값
 )
 
 func newScheduler(s *Server) *Scheduler {
 	return &Scheduler{s: s, pg: s.m.pg, tick: 5 * time.Second}
 }
 
-// Run loops until ctx is done, ticking the scheduler. Started once from server New.
+// Run은 ctx가 끝날 때까지 스케줄러를 틱합니다. 서버 New에서 한 번 시작합니다.
 func (sc *Scheduler) Run(ctx context.Context) {
 	if sc.pg == nil {
 		return
@@ -56,8 +57,8 @@ func (sc *Scheduler) Run(ctx context.Context) {
 	}
 }
 
-// init seeds the watermarks on first run so pre-existing findings/goals don't all
-// fire at once — only events created AFTER the scheduler first starts count.
+// init은 첫 실행 때 워터마크를 심어, 이미 있던 발견/목표가 한꺼번에
+// 울리지 않게 합니다. 스케줄러가 처음 시작한 뒤에 생긴 이벤트만 셉니다.
 func (sc *Scheduler) init() {
 	if sc.mustState(schedKeyLastFinding) == "" {
 		var maxID int64
@@ -130,7 +131,7 @@ func (sc *Scheduler) step() {
 	sc.fireTaskCreates(triggers)
 }
 
-// fireIntervals fires triggers whose interval has elapsed since last_fire.
+// fireIntervals는 last_fire 이후 간격이 지난 트리거를 울립니다.
 func (sc *Scheduler) fireIntervals(triggers []*db.AgentTrigger) {
 	now := time.Now()
 	for _, tr := range triggers {
@@ -147,8 +148,8 @@ func (sc *Scheduler) fireIntervals(triggers []*db.AgentTrigger) {
 	}
 }
 
-// fireFindings fires on_finding triggers for findings above the persisted
-// watermark (monotonic node id → no double-fire across restarts).
+// fireFindings는 저장된 워터마크보다 위의 발견에 on_finding 트리거를 울립니다
+// (노드 id가 단조 증가 → 재시작해도 두 번 울리지 않음).
 func (sc *Scheduler) fireFindings(triggers []*db.AgentTrigger) {
 	var want []*db.AgentTrigger
 	for _, tr := range triggers {
@@ -161,9 +162,9 @@ func (sc *Scheduler) fireFindings(triggers []*db.AgentTrigger) {
 	if err != nil || len(events) == 0 {
 		return
 	}
-	// Advance the watermark whether or not any on_finding trigger is active: a
-	// finding fires only for triggers live at the moment it appears. Otherwise a
-	// trigger enabled later would replay the entire historical backlog at once.
+	// on_finding 트리거가 켜져 있든 없든 워터마크는 올립니다. 발견은
+	// 나타나는 순간에 살아있는 트리거에만 울립니다. 그렇지 않으면
+	// 나중에 켠 트리거가 옛 발견을 한 번에 전부 다시 울립니다.
 	maxID := last
 	for _, e := range events {
 		if e.NodeID > maxID {
@@ -181,7 +182,7 @@ func (sc *Scheduler) fireFindings(triggers []*db.AgentTrigger) {
 	_ = sc.pg.SetSchedState(schedKeyLastFinding, strconv.FormatInt(maxID, 10))
 }
 
-// fireGoals fires on_goal_met triggers for met goals not yet in the fired set.
+// fireGoals는 아직 울린 집합에 없는, 달성된 목표에 on_goal_met 트리거를 울립니다.
 func (sc *Scheduler) fireGoals(triggers []*db.AgentTrigger) {
 	var want []*db.AgentTrigger
 	for _, tr := range triggers {
@@ -193,8 +194,8 @@ func (sc *Scheduler) fireGoals(triggers []*db.AgentTrigger) {
 	if err != nil || len(events) == 0 {
 		return
 	}
-	// Mark goals as consumed whether or not a trigger is active, so enabling an
-	// on_goal_met trigger later doesn't replay every already-met goal.
+	// 트리거가 켜져 있든 없든 목표는 소비했다고 표시합니다. 나중에
+	// on_goal_met를 켜도 이미 달성된 목표를 전부 다시 울리지 않게 합니다.
 	fired := sc.firedGoalSet()
 	changed := false
 	for _, e := range events {
@@ -216,8 +217,8 @@ func (sc *Scheduler) fireGoals(triggers []*db.AgentTrigger) {
 	}
 }
 
-// fireTaskTimeouts fires on_task_timeout triggers for tasks that newly reached
-// status='timeout' above the persisted watermark (task id → no double-fire).
+// fireTaskTimeouts는 새로 status가 timeout이 된 작업에 on_task_timeout을 울립니다.
+// 저장된 워터마크보다 위만(작업 id → 두 번 울리지 않음).
 func (sc *Scheduler) fireTaskTimeouts(triggers []*db.AgentTrigger) {
 	var want []*db.AgentTrigger
 	for _, tr := range triggers {
@@ -230,7 +231,7 @@ func (sc *Scheduler) fireTaskTimeouts(triggers []*db.AgentTrigger) {
 	if err != nil || len(events) == 0 {
 		return
 	}
-	// Advance the watermark even with no active trigger — see fireFindings.
+	// 활성 트리거가 없어도 워터마크는 올립니다. fireFindings를 보세요.
 	maxID := last
 	for _, e := range events {
 		if e.NodeID > maxID {
@@ -247,8 +248,8 @@ func (sc *Scheduler) fireTaskTimeouts(triggers []*db.AgentTrigger) {
 	_ = sc.pg.SetSchedState(schedKeyLastTimeout, strconv.FormatInt(maxID, 10))
 }
 
-// fireTaskCreates fires on_task_create triggers for tasks newly created above the
-// persisted watermark (task id → no double-fire across restarts).
+// fireTaskCreates는 워터마크보다 새로 생긴 작업에 on_task_create를 울립니다
+// (작업 id → 재시작해도 두 번 울리지 않음).
 func (sc *Scheduler) fireTaskCreates(triggers []*db.AgentTrigger) {
 	var want []*db.AgentTrigger
 	for _, tr := range triggers {
@@ -261,7 +262,7 @@ func (sc *Scheduler) fireTaskCreates(triggers []*db.AgentTrigger) {
 	if err != nil || len(events) == 0 {
 		return
 	}
-	// Advance the watermark even with no active trigger — see fireFindings.
+	// 활성 트리거가 없어도 워터마크는 올립니다. fireFindings를 보세요.
 	maxID := last
 	for _, e := range events {
 		if e.NodeID > maxID {
@@ -278,9 +279,9 @@ func (sc *Scheduler) fireTaskCreates(triggers []*db.AgentTrigger) {
 	_ = sc.pg.SetSchedState(schedKeyLastTaskCreate, strconv.FormatInt(maxID, 10))
 }
 
-// fireToolCalls fires on_tool_call triggers for tool calls (tool_result rows) above
-// the persisted watermark whose tool name is in the trigger's selected set. The fire
-// message carries the task id/desc/goal + tool name + (truncated) input & output.
+// fireToolCalls는 워터마크보다 위의 도구 호출(tool_result 행) 중
+// 트리거가 고른 도구 이름인 것에 on_tool_call을 울립니다. 울림
+// 메시지에는 작업 id/설명/목표, 도구 이름, 자른 입력과 출력이 들어갑니다.
 func (sc *Scheduler) fireToolCalls(triggers []*db.AgentTrigger) {
 	var want []*db.AgentTrigger
 	for _, tr := range triggers {
@@ -293,7 +294,7 @@ func (sc *Scheduler) fireToolCalls(triggers []*db.AgentTrigger) {
 	if err != nil || len(events) == 0 {
 		return
 	}
-	// Advance the watermark even with no active trigger — see fireFindings.
+	// 활성 트리거가 없어도 워터마크는 올립니다. fireFindings를 보세요.
 	maxID := last
 	for _, e := range events {
 		if e.NodeID > maxID {
@@ -302,8 +303,8 @@ func (sc *Scheduler) fireToolCalls(triggers []*db.AgentTrigger) {
 		if len(want) == 0 {
 			continue
 		}
-		// A failed finding write has no committed finding to report. Keep other
-		// tool-error triggers available for user-defined automation.
+		// 발견 쓰기가 실패하면 확정된 발견이 없어 보고할 것이 없습니다. 다른
+		// 도구 오류 트리거는 사용자가 정의한 자동화를 위해 남겨 둡니다.
 		if e.ToolIsErr && e.Tool == "report_finding" {
 			continue
 		}
@@ -323,7 +324,7 @@ func (sc *Scheduler) fireToolCalls(triggers []*db.AgentTrigger) {
 	_ = sc.pg.SetSchedState(schedKeyLastToolCall, strconv.FormatInt(maxID, 10))
 }
 
-// containsFold reports whether name is in set (case-insensitive).
+// containsFold는 name이 set에 있는지 알려 줍니다(대소문자 무시).
 func containsFold(set []string, name string) bool {
 	for _, s := range set {
 		if strings.EqualFold(s, name) {
@@ -333,7 +334,7 @@ func containsFold(set []string, name string) bool {
 	return false
 }
 
-// trunc caps s to max runes, appending an ellipsis + original length when cut.
+// trunc는 s를 max 글자까지 자릅니다. 잘리면 말줄임과 원래 길이를 붙입니다.
 func trunc(s string, max int) string {
 	r := []rune(s)
 	if len(r) <= max {

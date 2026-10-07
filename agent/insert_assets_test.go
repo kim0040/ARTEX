@@ -9,7 +9,7 @@ import (
 	"github.com/Autumn-27/artex/db"
 )
 
-// testDB opens a DB connection, skipping if PG is unavailable.
+// testDB 는 DB 연결을 엽니다. PG 를 쓸 수 없으면 테스트를 건너뜁니다.
 func testDB(t *testing.T) *db.DB {
 	t.Helper()
 	dsn, _, err := db.DSN()
@@ -23,7 +23,7 @@ func testDB(t *testing.T) *db.DB {
 	return d
 }
 
-// callInsertAssets calls the insert_assets tool with the given payload.
+// callInsertAssets 는 주어진 내용으로 insert_assets 도구를 호출합니다.
 func callInsertAssets(t *testing.T, ts *ToolSet, payload any) map[string]any {
 	t.Helper()
 	raw, _ := json.Marshal(payload)
@@ -41,7 +41,7 @@ func callInsertAssets(t *testing.T, ts *ToolSet, payload any) map[string]any {
 }
 
 // =====================================================================
-// TestInsertAssetsSubdomainSideEffects
+// TestInsertAssetsSubdomainSideEffects 테스트
 // 서브도메인을 넣으면 root_domain 과 IP 자산이 자동으로 생기고, IP 는 도메인에 묶입니다
 // =====================================================================
 func TestInsertAssetsSubdomainSideEffects(t *testing.T) {
@@ -64,7 +64,7 @@ func TestInsertAssetsSubdomainSideEffects(t *testing.T) {
 		"task_id": 999,
 	})
 
-	// no errors
+	// 오류 없음
 	if errs, _ := out["errors"].([]any); len(errs) > 0 {
 		t.Errorf("unexpected errors: %v", errs)
 	}
@@ -73,14 +73,14 @@ func TestInsertAssetsSubdomainSideEffects(t *testing.T) {
 		t.Fatal("no results returned")
 	}
 
-	// root_domain should exist
+	// root_domain 이 있어야 합니다
 	var rootCnt int
 	d.QueryRow(`SELECT COUNT(*) FROM assets WHERE type='root_domain' AND domain='sideeffect-test.com'`).Scan(&rootCnt)
 	if rootCnt != 1 {
 		t.Errorf("side-effect: root_domain not created, got %d", rootCnt)
 	}
 
-	// IP asset should exist with bound_domains containing our subdomain
+	// IP 자산이 있어야 하고, bound_domains 에 우리 서브도메인이 있습니다
 	var ipID int64
 	var boundDomains []byte
 	d.QueryRow(`SELECT id, array_to_json(bound_domains)::text FROM assets WHERE type='ip' AND ip='7.8.9.10'`).Scan(&ipID, &boundDomains)
@@ -99,7 +99,7 @@ func TestInsertAssetsSubdomainSideEffects(t *testing.T) {
 		t.Errorf("side-effect: bound_domains should contain subdomain, got %v", domains)
 	}
 
-	// record_value stored as array
+	// record_value 는 배열로 저장됩니다
 	var rvRaw []byte
 	d.QueryRow(`SELECT array_to_json(record_value)::text FROM assets WHERE type='subdomain' AND domain='ia-sub.sideeffect-test.com'`).Scan(&rvRaw)
 	var rv []string
@@ -110,7 +110,7 @@ func TestInsertAssetsSubdomainSideEffects(t *testing.T) {
 }
 
 // =====================================================================
-// TestInsertAssetsMultiIPSubdomain
+// TestInsertAssetsMultiIPSubdomain 테스트
 // IP 가 여러 개인 서브도메인: 모든 IP 가 record_value[] 에 들어가고, 각각 IP 자산이 생깁니다
 // =====================================================================
 func TestInsertAssetsMultiIPSubdomain(t *testing.T) {
@@ -136,7 +136,7 @@ func TestInsertAssetsMultiIPSubdomain(t *testing.T) {
 		t.Errorf("unexpected errors: %v", errs)
 	}
 
-	// Both IPs should have IP assets
+	// 두 IP 모두 IP 자산이 있어야 합니다
 	var ip1Cnt, ip2Cnt int
 	d.QueryRow(`SELECT COUNT(*) FROM assets WHERE type='ip' AND ip='1.1.1.1'`).Scan(&ip1Cnt)
 	d.QueryRow(`SELECT COUNT(*) FROM assets WHERE type='ip' AND ip='2.2.2.2'`).Scan(&ip2Cnt)
@@ -147,7 +147,7 @@ func TestInsertAssetsMultiIPSubdomain(t *testing.T) {
 		t.Error("IP 2.2.2.2 asset not created")
 	}
 
-	// record_value should contain both IPs
+	// record_value 에 두 IP 가 모두 있어야 합니다
 	var rvRaw []byte
 	d.QueryRow(`SELECT array_to_json(record_value)::text FROM assets WHERE type='subdomain' AND domain='multi.multiip-test.io'`).Scan(&rvRaw)
 	var rv []string
@@ -158,7 +158,7 @@ func TestInsertAssetsMultiIPSubdomain(t *testing.T) {
 }
 
 // =====================================================================
-// TestInsertAssetsHTTPServiceTechnologies
+// TestInsertAssetsHTTPServiceTechnologies 테스트
 // HTTP 서비스를 넣으면 technologies 가 저장되고 다시 읽을 수 있습니다. IP 가 있으면 도메인과 포트가 IP 자산에 쓰입니다
 // =====================================================================
 func TestInsertAssetsHTTPServiceTechnologies(t *testing.T) {
@@ -187,14 +187,14 @@ func TestInsertAssetsHTTPServiceTechnologies(t *testing.T) {
 		t.Errorf("unexpected errors: %v", errs)
 	}
 
-	// technologies should be stored
+	// technologies 가 저장되어야 합니다
 	var techCnt int
 	d.QueryRow(`SELECT array_length(technologies,1) FROM assets WHERE url='https://tech-test.example.com'`).Scan(&techCnt)
 	if techCnt != 3 {
 		t.Errorf("technologies: want 3, got %d", techCnt)
 	}
 
-	// QueryByType should return technologies correctly (verifies array_to_json scan)
+	// QueryByType 이 technologies 를 맞게 돌려줘야 합니다(array_to_json 스캔 확인)
 	assets, err := d.Assets().QueryByType("service", 50, 0)
 	if err != nil {
 		t.Fatal(err)
@@ -213,7 +213,7 @@ func TestInsertAssetsHTTPServiceTechnologies(t *testing.T) {
 		t.Errorf("QueryByType: technologies roundtrip failed, got %v", found.Technologies)
 	}
 
-	// side effect: IP asset should exist with bound_domains containing the service domain
+	// 부작용: IP 자산이 있어야 하고, bound_domains 에 서비스 도메인이 있습니다
 	var ipID int64
 	var bdRaw []byte
 	var portCnt int
@@ -233,7 +233,7 @@ func TestInsertAssetsHTTPServiceTechnologies(t *testing.T) {
 		t.Errorf("side-effect: IP bound_domains missing service domain, got %v", bd)
 	}
 
-	// side effect: IP open_ports should contain port 443
+	// 부작용: IP open_ports 에 포트 443 이 있습니다
 	d.QueryRow(`SELECT cardinality(open_ports) FROM assets WHERE type='ip' AND ip='3.4.5.6'`).Scan(&portCnt)
 	if portCnt == 0 {
 		t.Error("side-effect: IP open_ports not set for HTTP service")
@@ -241,7 +241,7 @@ func TestInsertAssetsHTTPServiceTechnologies(t *testing.T) {
 }
 
 // =====================================================================
-// TestInsertAssetsOtherService
+// TestInsertAssetsOtherService 테스트
 // HTTP 가 아닌 서비스: c_segment 가 자동으로 생기고, IP 자산에 open_ports 와 bound_domains 가 있습니다
 // =====================================================================
 func TestInsertAssetsOtherService(t *testing.T) {
@@ -271,21 +271,21 @@ func TestInsertAssetsOtherService(t *testing.T) {
 		t.Errorf("unexpected errors: %v", errs)
 	}
 
-	// c_segment should be auto-set on the service
+	// 서비스에 c_segment 가 자동으로 있어야 합니다
 	var cseg *string
 	d.QueryRow(`SELECT c_segment::text FROM assets WHERE type='service' AND ip='10.20.30.40'`).Scan(&cseg)
 	if cseg == nil || *cseg != "10.20.30.0/24" {
 		t.Errorf("c_segment: want 10.20.30.0/24, got %v", cseg)
 	}
 
-	// IP side-effect: port 3306 in open_ports
+	// IP 부작용: open_ports 에 포트 3306
 	var portCnt int
 	d.QueryRow(`SELECT cardinality(open_ports) FROM assets WHERE type='ip' AND ip='10.20.30.40'`).Scan(&portCnt)
 	if portCnt == 0 {
 		t.Error("side-effect: IP open_ports should contain port 3306")
 	}
 
-	// IP side-effect: bound_domains contains the service domain
+	// IP 부작용: bound_domains 에 서비스 도메인
 	var bdRaw []byte
 	d.QueryRow(`SELECT array_to_json(bound_domains)::text FROM assets WHERE type='ip' AND ip='10.20.30.40'`).Scan(&bdRaw)
 	var bd []string
@@ -302,7 +302,7 @@ func TestInsertAssetsOtherService(t *testing.T) {
 }
 
 // =====================================================================
-// TestInsertAssetsMixedBatch
+// TestInsertAssetsMixedBatch 테스트
 // 섞어 일괄 삽입: 한 번 호출로 여러 유형을 넣습니다
 // =====================================================================
 func TestInsertAssetsMixedBatch(t *testing.T) {
@@ -319,13 +319,13 @@ func TestInsertAssetsMixedBatch(t *testing.T) {
 
 	out := callInsertAssets(t, ts, map[string]any{
 		"assets": []any{
-			// root_domain
+			// 루트 도메인
 			map[string]any{"type": "root_domain", "domain": "batch-test.org"},
-			// subdomain with A record
+			// A 레코드가 있는 서브도메인
 			map[string]any{"type": "subdomain", "domain": "batch-sub.batch-test.org", "record_type": "A", "record_value": []string{"55.66.77.88"}},
-			// HTTP service
+			// HTTP 서비스
 			map[string]any{"type": "service", "url": "https://batch-test.org/api", "technologies": []string{"Go", "PostgreSQL"}, "status_code": 200},
-			// endpoint
+			// 끝점
 			map[string]any{"type": "endpoint", "url": "https://batch-test.org/api/users", "method": "GET"},
 		},
 		"task_id": 777,
@@ -339,7 +339,7 @@ func TestInsertAssetsMixedBatch(t *testing.T) {
 		t.Errorf("mixed batch: want 4 results, got %d", len(results))
 	}
 
-	// verify all types exist in DB
+	// 모든 유형이 DB 에 있는지 확인합니다
 	types := []string{"root_domain", "subdomain", "service", "endpoint"}
 	for _, typ := range types {
 		var cnt int
@@ -360,7 +360,7 @@ func TestInsertAssetsMixedBatch(t *testing.T) {
 }
 
 // =====================================================================
-// TestInsertAssetsDedup
+// TestInsertAssetsDedup 테스트
 // 멱등 쓰기: 같은 자산을 두 번 넣으면 같은 ID 가 돌아옵니다
 // =====================================================================
 func TestInsertAssetsDedup(t *testing.T) {
@@ -397,7 +397,7 @@ func TestInsertAssetsDedup(t *testing.T) {
 }
 
 // =====================================================================
-// TestInsertAssetsRejectsHostnameIPPerItem
+// TestInsertAssetsRejectsHostnameIPPerItem 테스트
 // 한 묶음에 ip 칸에 호스트 이름이 들어간 항목이 있으면 그 항목만 실패하고 나머지는 그대로 들어갑니다.
 // 오류에 index 와 고치는 방법이 있어, 에이전트가 다음 턴에 스스로 고칠 수 있습니다.
 // =====================================================================
@@ -417,8 +417,8 @@ func TestInsertAssetsRejectsHostnameIPPerItem(t *testing.T) {
 		},
 	})
 
-	// The two valid entries must survive the bad one — a whole-batch failure
-	// would make the agent re-send assets that were already fine.
+	// 잘못된 항목이 있어도 유효한 둘은 남아야 합니다. 묶음 전체가 실패하면
+	// 에이전트가 이미 괜찮았던 자산을 다시 보냅니다.
 	results, _ := out["results"].([]any)
 	if len(results) != 2 {
 		t.Fatalf("results=%v, want the 2 valid assets", out["results"])
@@ -439,7 +439,7 @@ func TestInsertAssetsRejectsHostnameIPPerItem(t *testing.T) {
 		}
 	}
 
-	// The rejected value must not have reached the table.
+	// 거절된 값은 표에 들어가면 안 됩니다.
 	var stored int
 	if err := d.QueryRow(`SELECT count(*) FROM assets WHERE ip='cdn.badip-test.com'`).Scan(&stored); err != nil {
 		t.Fatal(err)

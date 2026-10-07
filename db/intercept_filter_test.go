@@ -44,7 +44,7 @@ func TestInterceptApprovalFilters(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					// Legacy source fields and tied timestamps must filter/page consistently.
+					// 예전 출처 필드와 같은 타임스탬프도 필터와 페이지가 일관돼야 한다.
 					if i == 0 {
 						if _, err = d.Exec(`UPDATE intercept_pending SET decision_source='' WHERE id=$1`, id); err != nil {
 							t.Fatal(err)
@@ -116,12 +116,12 @@ func TestInterceptApprovalFilters(t *testing.T) {
 	if err != nil || total != baseline+4 {
 		t.Fatalf("global filter count=%d want=%d err=%v", total, baseline+4, err)
 	}
-	// Values must remain SQL parameters even for direct store callers.
+	// 저장소를 직접 부르는 쪽도 값은 SQL 매개변수로 남아야 한다.
 	rows, total, err = d.ListTaskInterceptsPage(scope, 1, 20, InterceptApprovalFilter{Status: "denied' OR 1=1 --"})
 	if err != nil || total != 0 || len(rows) != 0 {
 		t.Fatalf("invalid value escaped filter: %d %v", total, err)
 	}
-	// A rule's persisted source survives deletion of its associated rule.
+	// 규칙에 저장된 출처는 그 규칙을 지워도 남는다.
 	_, err = d.Exec(`UPDATE intercept_pending SET decision_source='rule' WHERE task_id=$1 AND rule_id=$2`, scope, rule.ID)
 	if err != nil {
 		t.Fatal(err)

@@ -22,16 +22,16 @@ const (
 	keyChars       = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 )
 
-// loadOrCreateJWTKey reads the 32-byte signing key from keyDir/jwt.key. keyDir is
-// the project base dir (next to the executable), NOT the browsable workspace root
-// (dataDir) — the signing key must never be listable/downloadable via the file
-// manager. Legacy installs kept it at dataDir/jwt.key; if present there and not yet
-// at the new location, it is migrated (key preserved, so sessions stay valid) and
-// the old file removed so it disappears from the workspace. On first run a random
-// key is generated and persisted.
+// loadOrCreateJWTKey는 keyDir/jwt.key에서 32바이트 서명 키를 읽습니다. keyDir는
+// 실행 파일 옆의 프로젝트 기본 디렉터리입니다. 브라우저로 볼 수 있는 작업 공간 루트
+// (dataDir)가 아닙니다. 서명 키는 파일 관리자에서 보이거나 내려받을 수 있으면 안 됩니다.
+// 예전 설치는 dataDir/jwt.key에 두었습니다. 거기 있고 새 위치에는 아직 없으면
+// 키를 그대로 옮깁니다. 그래서 세션은 유지되고, 옛 파일은 지워 작업 공간에서 사라집니다.
+// 처음 실행이면 무작위 키를 만들어
+// 파일에 저장해 둡니다.
 func loadOrCreateJWTKey(keyDir, dataDir string) ([]byte, error) {
 	path := filepath.Join(keyDir, jwtKeyFilename)
-	// one-time migration out of the old in-workspace location.
+	// 작업 공간 안에 있던 옛 위치에서 한 번만 옮깁니다.
 	if legacy := filepath.Join(dataDir, jwtKeyFilename); legacy != path {
 		if _, err := os.Stat(path); os.IsNotExist(err) {
 			if data, rerr := os.ReadFile(legacy); rerr == nil {
@@ -60,7 +60,7 @@ func loadOrCreateJWTKey(keyDir, dataDir string) ([]byte, error) {
 	return buf, nil
 }
 
-// signJWT issues a 7-day HS256 token for user ARTEX.
+// signJWT는 사용자 ARTEX용으로 7일짜리 HS256 토큰을 발급합니다.
 func signJWT(key []byte) (string, error) {
 	return jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.RegisteredClaims{
 		Subject:   "ARTEX",
@@ -69,7 +69,7 @@ func signJWT(key []byte) (string, error) {
 	}).SignedString(key)
 }
 
-// verifyJWT returns true when tokenStr is a valid, non-expired HS256 token.
+// verifyJWT는 tokenStr이 유효하고 만료되지 않은 HS256 토큰이면 true를 돌려줍니다.
 func verifyJWT(tokenStr string, key []byte) bool {
 	t, err := jwt.Parse(tokenStr, func(t *jwt.Token) (any, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
@@ -80,8 +80,8 @@ func verifyJWT(tokenStr string, key []byte) bool {
 	return err == nil && t.Valid
 }
 
-// extractToken reads the JWT from Authorization: Bearer header,
-// artex_token cookie, or ?token= query param (for SSE connections).
+// extractToken은 Authorization: Bearer 헤더,
+// artex_token 쿠키, 또는 ?token= 쿼리(SSE 연결용)에서 JWT를 읽습니다.
 func extractToken(r *http.Request) string {
 	if h := r.Header.Get("Authorization"); strings.HasPrefix(h, "Bearer ") {
 		return strings.TrimPrefix(h, "Bearer ")
@@ -92,8 +92,8 @@ func extractToken(r *http.Request) string {
 	return r.URL.Query().Get("token")
 }
 
-// requireAuth wraps h with JWT validation.
-// /api/auth/* and /api/health are exempt.
+// requireAuth는 h를 JWT 검사로 감쌉니다.
+// /api/auth/* 와 /api/health 는 검사하지 않습니다.
 func (s *Server) requireAuth(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p := r.URL.Path
@@ -114,7 +114,7 @@ func (s *Server) requireAuth(h http.Handler) http.Handler {
 	})
 }
 
-// GET /api/auth/status — reports whether the admin password has been initialised.
+// GET /api/auth/status — 관리자 비밀번호를 이미 설정했는지 알려 줍니다.
 func (s *Server) authStatus(w http.ResponseWriter, r *http.Request) {
 	pg := s.pg(w)
 	if pg == nil {
@@ -124,7 +124,7 @@ func (s *Server) authStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"initialized": hash != ""})
 }
 
-// POST /api/auth/init — sets the password for the first time; rejected if already set.
+// POST /api/auth/init — 비밀번호를 처음 설정합니다. 이미 있으면 거절합니다.
 func (s *Server) authInit(w http.ResponseWriter, r *http.Request) {
 	pg := s.pg(w)
 	if pg == nil {
@@ -159,9 +159,9 @@ func (s *Server) authInit(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"token": tok})
 }
 
-// POST /api/auth/change-password — changes the admin password. Requires a valid
-// token (this route is under /api/auth/* which requireAuth exempts, so the token
-// is validated here) AND the current password.
+// POST /api/auth/change-password — 관리자 비밀번호를 바꿉니다. 유효한
+// 토큰이 필요합니다. 이 경로는 /api/auth/* 라 requireAuth가 빼 두므로, 여기서
+// 토큰을 검사합니다. 현재 비밀번호도 함께 있어야 합니다.
 func (s *Server) authChangePassword(w http.ResponseWriter, r *http.Request) {
 	pg := s.pg(w)
 	if pg == nil {
@@ -204,7 +204,7 @@ func (s *Server) authChangePassword(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"ok": true})
 }
 
-// POST /api/auth/login — validates username/password and returns a JWT.
+// POST /api/auth/login — 사용자 이름과 비밀번호를 확인하고 JWT를 돌려줍니다.
 func (s *Server) authLogin(w http.ResponseWriter, r *http.Request) {
 	pg := s.pg(w)
 	if pg == nil {

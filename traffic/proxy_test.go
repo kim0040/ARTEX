@@ -15,10 +15,10 @@ func TestValidateProxyURL(t *testing.T) {
 		}
 	}
 	bad := []string{
-		"127.0.0.1:8080",         // no scheme
-		"ftp://host:21",          // unsupported scheme
-		"http://",                // no host
-		"socks4://10.0.0.1:1080", // unsupported scheme
+		"127.0.0.1:8080",         // 스킴 없음
+		"ftp://host:21",          // 지원하지 않는 스킴
+		"http://",                // 호스트 없음
+		"socks4://10.0.0.1:1080", // 지원하지 않는 스킴
 	}
 	for _, raw := range bad {
 		if _, err := ValidateProxyURL(raw); err == nil {
@@ -42,14 +42,14 @@ func TestSetUpstreamProxyStoreClear(t *testing.T) {
 	if pw, _ := u.User.Password(); u.User.Username() != "user" || pw != "pass" {
 		t.Fatalf("stored upstream lost credentials: %v", u)
 	}
-	// Empty clears back to direct.
+	// 빈 값은 직접 연결로 되돌립니다.
 	if err := tr.SetUpstreamProxy("  "); err != nil {
 		t.Fatalf("SetUpstreamProxy(clear): %v", err)
 	}
 	if got := tr.upstream.Load(); got != nil {
 		t.Fatalf("after clear upstream = %v, want nil", got)
 	}
-	// Invalid value is rejected and does not mutate current state.
+	// 잘못된 값은 거부되고, 지금 상태를 바꾸지 않습니다.
 	if err := tr.SetUpstreamProxy("nope://x"); err == nil {
 		t.Fatal("SetUpstreamProxy(invalid) expected error")
 	}
@@ -63,12 +63,12 @@ func TestProxyAddr(t *testing.T) {
 		addr string
 		want string
 	}{
-		// Bare :port means "bind all interfaces" — the legacy default. The URL
-		// agents consume must still point at loopback so they reach the local proxy.
+		// 맨 :포트 는 "모든 인터페이스에 바인드"입니다. 예전 기본값입니다.
+		// 에이전트가 쓰는 URL 은 여전히 루프백을 가리켜 로컬 프록시에 닿아야 합니다.
 		{":8788", "http://127.0.0.1:8788"},
-		// Explicit loopback — the current default since #129 (open proxy exposure).
+		// 명시적 루프백. #129 이후의 현재 기본값입니다(열린 프록시 노출).
 		{"127.0.0.1:8788", "http://127.0.0.1:8788"},
-		// Explicit all-interface bind is still supported (remote capture via SSH).
+		// 모든 인터페이스 바인드도 여전히 됩니다(SSH 로 원격 캡처).
 		{"0.0.0.0:8788", "http://0.0.0.0:8788"},
 	}
 	for _, c := range cases {

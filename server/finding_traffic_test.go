@@ -41,8 +41,8 @@ func trafficEvidenceServer(t *testing.T) (*Server, *db.RecordedFinding, func(str
 	cancel()
 	s := New(ctx, m, t.TempDir(), t.TempDir(), t.TempDir())
 	s.archiveWG.Wait()
-	// The archive test below replaces the cancelled service context. Wait for
-	// the side-question snapshot writer too before reusing this fixture.
+	// 아래 보관 테스트가 취소된 서비스 컨텍스트를 바꿉니다.
+	// 이 픽스처를 다시 쓰기 전에 사이드 질문 스냅샷 기록도 기다립니다.
 	<-s.side.done
 	token, err := signJWT(s.jwtKey)
 	if err != nil {
@@ -180,7 +180,7 @@ func TestFindingTrafficAPIAndExport(t *testing.T) {
 	if w = req("GET", fmt.Sprintf("%s/%d/body?side=response&download=1", base, first), ""); w.Code != 200 || !bytes.Equal(w.Body.Bytes(), body) {
 		t.Fatal("download after original removal failed")
 	}
-	// IDs belong to the requested finding; cross-finding detail cannot be read.
+	// id는 요청한 발견의 것입니다. 다른 발견의 상세는 읽을 수 없습니다.
 	finding, err := s.m.pg.GetFinding(f.FindingID)
 	if err != nil {
 		t.Fatal(err)
@@ -230,12 +230,12 @@ func TestFindingTrafficAPIAndExport(t *testing.T) {
 	if binaries != 3 || !linked {
 		t.Fatalf("missing attachments/links: %d %v", binaries, linked)
 	}
-	// Reports can use snapshots with capture stopped and original rows gone.
+	// 보고서는 캡처가 꺼지고 원래 행이 없어도, 스냅샷으로 만들 수 있습니다.
 	result, err := s.toolGetFindingTraffic().Call(context.Background(), json.RawMessage(fmt.Sprintf(`{"finding_id":"%d"}`, f.FindingID)), nil)
 	if err != nil || !strings.Contains(result.Flatten(), "proof note") {
 		t.Fatal(result, err)
 	}
-	// Corrupt body must fail before an attachment response is sent.
+	// 본문이 깨졌으면 첨부 응답을 보내기 전에 실패해야 합니다.
 	snap := list.Bindings[0].Snapshot
 	path := filepath.Join(s.m.dir, "evidence", "blobs", snap.RespHash[:2], snap.RespHash+".bin")
 	if err = os.WriteFile(path, []byte("corrupt"), 0600); err != nil {
@@ -305,7 +305,7 @@ func TestFindingTrafficArchiveV3RoundTripAndRetry(t *testing.T) {
 	if _, err = s.m.pg.QueueTaskArchiveRestore(job.ID); err != nil {
 		t.Fatal(err)
 	}
-	// Force a database error after validated body installation; then retry normally.
+	// 검증된 본문을 넣은 뒤에 DB 오류를 일으키고, 그다음 보통대로 다시 시도합니다.
 	if _, err = s.m.pg.Exec(`CREATE FUNCTION fail_evidence_restore_test() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'restore fixture failure'; END $$`); err != nil {
 		t.Fatal(err)
 	}
@@ -350,7 +350,7 @@ func TestFindingTrafficArchiveV3RoundTripAndRetry(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	// The read tool enforces task visibility too.
+	// 읽기 도구도 작업이 보이는지 검사합니다.
 	result, err := s.toolGetFindingTraffic().Call(agent.WithRunInfo(ctx, agent.RunInfo{TaskID: sid}), json.RawMessage(fmt.Sprintf(`{"finding_id":"%d"}`, f.FindingID)), nil)
 	if err != nil || !strings.Contains(result.Flatten(), "읽을 수 없습니다") {
 		t.Fatal(result, err)
@@ -378,7 +378,7 @@ func TestFindingTrafficFailedReportDoesNotTrigger(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// A nil server makes any attempted trigger fail this test immediately.
+	// 서버가 nil이면, 트리거를 시도하는 순간 이 테스트가 바로 실패합니다.
 	scheduler := &Scheduler{pg: s.m.pg}
 	scheduler.fireToolCalls([]*db.AgentTrigger{{OnToolCall: true, ToolNames: []string{"report_finding"}, AgentKey: "reporter"}})
 	if got := scheduler.mustState(schedKeyLastToolCall); got != strconv.FormatInt(id, 10) {

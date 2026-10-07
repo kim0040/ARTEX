@@ -35,7 +35,7 @@ func TestEngineActiveLLMCallsConcurrent(t *testing.T) {
 		t.Fatalf("active calls after completion = %d, want 0", got)
 	}
 
-	// A defensive extra end must never expose a negative UI count.
+	// 방어용으로 한 번 더 끝내도, 화면 개수가 음수가 되면 안 됩니다.
 	e.EndLLMCall(taskID)
 	if got := e.ActiveLLMCalls(taskID); got != 0 {
 		t.Fatalf("active calls after extra end = %d, want 0", got)

@@ -15,9 +15,9 @@ import (
 	"github.com/Autumn-27/norma/transcript"
 )
 
-// Full chain against a real PG: Recorder → norma provider → capturing transport
-// → llm_records. The unit tests cover each hop; this proves the raw bodies
-// actually survive all the way into the row an operator opens when debugging.
+// 진짜 PG까지의 전체 체인: Recorder → norma 프로바이더 → 가로채는 전송
+// → llm_records. 단위 테스트는 각 구간을 보고, 이것은 원문 본문이
+// 운영자가 디버그 때 여는 행까지 실제로 남는지를 봅니다.
 func TestRecorderPersistsRawWireBodies(t *testing.T) {
 	m, err := NewManager(t.TempDir(), "")
 	if err != nil {
@@ -36,8 +36,8 @@ func TestRecorderPersistsRawWireBodies(t *testing.T) {
 		`event: content_block_delta`,
 		`data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"probing"}}`,
 		``,
-		// A tool_use block: the normalized response body drops these entirely, so
-		// its presence in raw_response is the whole point of the feature.
+		// tool_use 블록: 정규화한 응답 본문은 이것을 통째로 버립니다. 그래서
+		// raw_response에 있는지가 이 기능의 전부입니다.
 		`event: content_block_start`,
 		`data: {"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu_raw","name":"bash"}}`,
 		``,
@@ -66,9 +66,9 @@ func TestRecorderPersistsRawWireBodies(t *testing.T) {
 	const session = "exp999999-rawtest"
 	rec := llmrec.Wrap(inner, pg, cfg.Model, "raw-test-profile", "", "", func() bool { return true })
 
-	// Clean up whatever this test writes, whether or not it passes. Must be a
-	// defer registered after `defer m.Close()` (LIFO puts it first) — a
-	// t.Cleanup would run after the manager already closed the pool.
+	// 통과하든 실패하든 이 테스트가 쓴 것은 치웁니다. `defer m.Close()` 뒤에
+	// 등록한 defer여야 합니다(LIFO라 먼저 돕니다). t.Cleanup이면
+	// 매니저가 풀을 닫은 뒤에 돕니다.
 	defer func() {
 		if _, err := pg.Exec(`DELETE FROM llm_records WHERE session_id = $1`, session); err != nil {
 			t.Logf("cleanup: %v", err)
@@ -103,8 +103,8 @@ func TestRecorderPersistsRawWireBodies(t *testing.T) {
 	if got.RawResponse != sse {
 		t.Errorf("raw_response is not the wire bytes:\n got: %q\nwant: %q", got.RawResponse, sse)
 	}
-	// The tool call is absent from the normalized body but present in the raw one
-	// — the specific gap this feature closes.
+	// 도구 호출은 정규화 본문에는 없고 원문에는 있습니다.
+	// 이 기능이 메우는 바로 그 빈틈입니다.
 	if strings.Contains(got.ResponseBody, "toolu_raw") {
 		t.Error("normalized body unexpectedly contains the tool_use block; test no longer proves the gap")
 	}
@@ -126,7 +126,7 @@ func TestRecorderPersistsRawWireBodies(t *testing.T) {
 	if tool, _ := tools[0].(map[string]any); tool["input_schema"] == nil {
 		t.Errorf("raw_request lost the tool schema: %v", tool)
 	}
-	// The normalized request keeps tool names only, so the schema is unique to raw.
+	// 정규화 요청은 도구 이름만 남기므로, 스키마는 원문에만 있습니다.
 	if strings.Contains(got.RequestBody, "input_schema") {
 		t.Error("normalized request unexpectedly carries schemas; test no longer proves the gap")
 	}

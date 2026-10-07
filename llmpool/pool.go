@@ -14,46 +14,44 @@ import (
 	"github.com/Autumn-27/norma/llm"
 )
 
-// Member is one LLM profile in the chain, already built into a provider (wrapped
-// with the recorder by the caller, so a failed attempt is still recorded under
-// its own profile name).
+// Member 는 사슬 안의 LLM 설정 하나입니다. 호출자가 이미 provider 로 만들어
+// 기록기까지 감쌌습니다. 그래서 실패한 시도도 그 설정 이름으로 기록에 남습니다.
 type Member struct {
-	ID       int64  // llm_profiles.id
-	Name     string // profile name, for logs / UI
+	ID       int64  // llm_profiles.id. 설정 행
+	Name     string // 설정 이름. 로그와 화면용
 	Model    string
-	Format   string // "anthropic" | "openai"
-	Priority int    // the profile's configured priority (display only)
-	Active   bool   // is_default (display only)
-	// Rank is the ordering key the caller assigned: higher goes first, and members
-	// sharing a Rank take turns leading (load-spreading across duplicate keys).
-	// The caller encodes "active profile heads the chain" as a Rank above every
-	// user-settable priority, so this type needs no policy of its own.
+	Format   string // "anthropic" | "openai". 호출 형식
+	Priority int    // 설정에 적힌 우선순위. 화면 표시용
+	Active   bool   // is_default. 화면 표시용
+	// Rank 는 호출자가 매긴 순서 키입니다. 클수록 앞이고, 같은 Rank 는 돌아가며
+	// 앞장을 섭니다(같은 키를 여러 설정에 나눠 부하를 흩뿌립니다). 호출자는
+	// "활성 설정이 사슬의 머리"를, 사용자가 넣을 수 있는 어떤 우선순위보다 높은
+	// Rank 로 표현합니다. 그래서 이 타입 자체에는 정책이 없습니다.
 	Rank int
-	// WindowTokens is the profile's context window in tokens. A member whose
-	// window can't hold the request is skipped rather than made to fail on it.
+	// WindowTokens 는 설정의 컨텍스트 창(토큰)입니다. 이번 요청이 창에 안 들어가면
+	// 실패를 시켜 보지 않고 건너뜁니다.
 	WindowTokens int
 	Prov         llm.Provider
 }
 
-// RankActive is the Rank the caller gives the chain head (the active profile, or
-// an explicitly bound one) so it always outranks any configured priority.
+// RankActive 는 호출자가 사슬 머리(활성 설정, 또는 명시적으로 묶인 설정)에
+// 주는 Rank 입니다. 설정된 어떤 우선순위보다 항상 앞섭니다.
 const RankActive = int(^uint(0)>>1) - 1
 
-// ErrExhausted is returned when every member of the chain failed.
+// ErrExhausted 는 사슬의 모든 설정이 실패했을 때 돌아옵니다.
 var ErrExhausted = errors.New("LLM 순회: 모든 설정을 쓸 수 없습니다")
 
-// Pool is an llm.Provider that fails over across an ordered chain of members.
-// It is safe for concurrent use: members are immutable after construction and
-// all mutable state lives in the shared Registry.
+// Pool 은 정렬된 설정 사슬로 장애 전환하는 llm.Provider 입니다.
+// 동시에 써도 안전합니다. 멤버는 만든 뒤 바뀌지 않고, 바뀌는 상태는
+// 공유 Registry 에만 있습니다.
 type Pool struct {
-	members []*Member // in chain order (active first, then priority DESC)
+	members []*Member // 사슬 순서(활성 설정이 먼저, 그다음 우선순위 내림차순)
 	health  *Registry
-	rr      atomic.Uint64 // rotates the starting point within an equal-priority group
+	rr      atomic.Uint64 // 같은 우선순위 묶음 안에서 시작점을 돌립니다
 }
 
-// New builds a Pool over members (already in chain order). Returns nil when the
-// chain is empty. A single-member chain is still a valid Pool — it just behaves
-// exactly like the bare provider.
+// New 는 이미 사슬 순서로 정렬된 멤버로 Pool 을 만듭니다. 사슬이 비면 nil 입니다.
+// 멤버가 하나여도 올바른 Pool 입니다. 그냥 맨 provider 와 똑같이 동작합니다.
 func New(members []*Member, health *Registry) *Pool {
 	if len(members) == 0 {
 		return nil
@@ -64,21 +62,20 @@ func New(members []*Member, health *Registry) *Pool {
 	return &Pool{members: members, health: health}
 }
 
-// Members returns the chain in order (read-only).
+// Members 는 사슬을 순서대로 돌려줍니다. 읽기 전용으로 다루세요.
 func (p *Pool) Members() []*Member { return p.members }
 
-// Head returns the first member of the chain.
+// Head 는 사슬의 첫 멤버를 돌려줍니다.
 func (p *Pool) Head() *Member { return p.members[0] }
 
-// Stream implements llm.Provider with failover.
+// Stream 은 장애 전환이 있는 llm.Provider.Stream 입니다.
 //
-// The one hard rule: a member may only be abandoned BEFORE it has yielded any
-// event. Once text or a tool_use has reached the caller, re-sending the same
-// request to another model would duplicate output and corrupt the conversation
-// history — so a mid-stream failure is surfaced as-is and left to the agent
-// harness's resume logic. Fortunately the failures this exists for (402 no
-// credit, 401 bad key, 429, 5xx) all surface during request establishment,
-// before the body is read, so they always land in the safe window.
+// 딱 하나의 규칙: 멤버는 이벤트를 하나도 내기 전에만 버릴 수 있습니다.
+// 글이나 tool_use 가 호출자에게 도달한 뒤 같은 요청을 다른 모델에 다시 보내면
+// 출력이 두 번 쌓이고 대화 기록이 망가집니다. 그래서 스트림 중간의 실패는
+// 그대로 올리고, 에이전트 하네스의 이어하기에 맡깁니다. 이 장치가 겨냥하는
+// 실패(402 잔액 없음, 401 나쁜 키, 429, 5xx)는 본문을 읽기 전, 요청을
+// 맺는 동안에 나오므로 항상 안전한 구간에 떨어집니다.
 func (p *Pool) Stream(ctx context.Context, req llm.CompletionRequest) iter.Seq2[llm.StreamEvent, error] {
 	order := p.order(req)
 	return func(yield func(llm.StreamEvent, error) bool) {
@@ -89,18 +86,18 @@ func (p *Pool) Stream(ctx context.Context, req llm.CompletionRequest) iter.Seq2[
 			for ev, err := range m.Prov.Stream(ctx, req) {
 				if err != nil && !emitted && shouldFailover(ctx, err) {
 					failed = err
-					break // safe window: nothing reached the caller yet
+					break // 안전 구간: 아직 호출자에게 아무것도 안 갔음
 				}
 				emitted = true
 				if !yield(ev, err) {
-					return // caller stopped consuming (cancel / early exit)
+					return // 호출자가 소비를 멈춤(취소 / 조기 종료)
 				}
 				if err != nil {
-					return // terminal error already handed to the caller
+					return // 끝 오류는 이미 호출자에게 넘김
 				}
 			}
 			if failed == nil {
-				p.health.Pass(m.ID) // completed (or failed in a non-failover way)
+				p.health.Pass(m.ID) // 끝났거나, 장애 전환 대상이 아닌 실패
 				return
 			}
 			lastErr = failed
@@ -122,11 +119,10 @@ func (p *Pool) Stream(ctx context.Context, req llm.CompletionRequest) iter.Seq2[
 	}
 }
 
-// Complete implements llm.Provider with failover for non-streaming calls. A
-// non-streaming request is atomic — it never delivers partial output — so every
-// failover-eligible failure lands in the safe window and the next member can be
-// tried without risk of duplicated output. Mirrors Stream's health-tripping and
-// chain-exhaustion behavior.
+// Complete 는 스트림이 아닌 호출의 장애 전환입니다. 스트림이 아닌 요청은
+// 원자적입니다. 부분 출력을 넘기지 않으므로, 장애 전환 대상인 실패는 모두
+// 안전 구간에 떨어지고 출력이 두 번 쌓일 위험 없이 다음 멤버를 시도합니다.
+// 건강 상태 트립과 사슬 소진은 Stream 과 같습니다.
 func (p *Pool) Complete(ctx context.Context, req llm.CompletionRequest) (llm.Message, string, llm.Usage, error) {
 	order := p.order(req)
 	var lastErr error
@@ -137,8 +133,8 @@ func (p *Pool) Complete(ctx context.Context, req llm.CompletionRequest) (llm.Mes
 			return msg, sr, usage, nil
 		}
 		if !shouldFailover(ctx, err) {
-			// Non-failover error (e.g. ctx cancel, deterministic 4xx): surface as-is
-			// without tripping health, matching Stream's non-failover path.
+			// 장애 전환 대상이 아닌 오류(예: ctx 취소, 원인이 분명한 4xx)는
+			// 건강 상태를 트립하지 않고 그대로 올립니다. Stream 의 같은 경로와 맞춥니다.
 			p.health.Pass(m.ID)
 			return llm.Message{}, "", llm.Usage{}, err
 		}
@@ -160,11 +156,11 @@ func (p *Pool) Complete(ctx context.Context, req llm.CompletionRequest) (llm.Mes
 	return llm.Message{}, "", llm.Usage{}, fmt.Errorf("%w：%v", ErrExhausted, lastErr)
 }
 
-// order picks the members to try, in order: skip those in a cooling-off window
-// and those whose context window can't hold this request, then rotate within each
-// equal-priority group so same-priority profiles share the load. Never returns an
-// empty slice — if everything is filtered out, the head of the chain is tried
-// anyway, since stalling the engine is worse than one more failed request.
+// order 는 시도할 멤버를 고릅니다. 쉬는 시간 중인 것과, 컨텍스트 창이 이번
+// 요청을 담지 못하는 것은 건너뜁니다. 그다음 같은 우선순위 묶음 안에서는
+// 돌아가며 앞에 세워, 같은 우선순위 설정이 부하를 나눕니다. 빈 조각은
+// 돌려주지 않습니다. 전부 걸러지면 사슬 머리를 그래도 시도합니다. 엔진을
+// 멈추는 것보다 실패한 요청 한 번이 낫기 때문입니다.
 func (p *Pool) order(req llm.CompletionRequest) []*Member {
 	est := estimateTokens(req)
 	var open []*Member
@@ -173,19 +169,19 @@ func (p *Pool) order(req llm.CompletionRequest) []*Member {
 			continue
 		}
 		if m.WindowTokens > 0 && est > m.WindowTokens {
-			continue // would 400 on length — not a useful failover target
+			continue // 길이 때문에 400 이 날 대상 — 장애 전환으로 쓸모 없음
 		}
 		open = append(open, m)
 	}
 	if len(open) == 0 {
-		return p.members[:1] // last resort: probe the head rather than stall
+		return p.members[:1] // 마지막 수단: 멈추지 말고 머리를 한 번 두드림
 	}
 	return rotateGroups(open, p.rr.Add(1)-1)
 }
 
-// rotateGroups rotates each run of equal-ranked members by n, so profiles sharing
-// a priority take turns going first (free load-spreading across duplicate keys).
-// The chain head has its own Rank and always stays at the front.
+// rotateGroups 는 같은 Rank 가 이어진 구간을 n 만큼 돌립니다. 우선순위를
+// 공유하는 설정이 돌아가며 앞장을 섭니다(같은 키에 부하를 공짜로 나눕니다).
+// 사슬 머리는 자기 Rank 가 있어 항상 맨 앞에 남습니다.
 func rotateGroups(in []*Member, n uint64) []*Member {
 	out := make([]*Member, 0, len(in))
 	for i := 0; i < len(in); {
@@ -207,12 +203,12 @@ func rotateGroups(in []*Member, n uint64) []*Member {
 	return out
 }
 
-// statusRe pulls the HTTP status out of the SDK's error text, which is formatted
-// as "<prefix>: status <code>: <body>" (norma/llm/retry.go). The SDK exposes no
-// typed error, so the string is what we have.
+// statusRe 는 SDK 오류 글에서 HTTP 상태를 뽑습니다. 형식은
+// "<prefix>: status <code>: <body>" 입니다(norma/llm/retry.go). SDK 가
+// 타입 있는 오류를 주지 않아서, 문자열이 유일한 단서입니다.
 var statusRe = regexp.MustCompile(`status (\d{3})`)
 
-// statusOf returns the HTTP status carried by err, or 0 if it isn't one.
+// statusOf 는 err 가 가진 HTTP 상태를 돌려줍니다. 아니면 0 입니다.
 func statusOf(err error) int {
 	m := statusRe.FindStringSubmatch(err.Error())
 	if m == nil {
@@ -222,12 +218,12 @@ func statusOf(err error) int {
 	return code
 }
 
-// shouldFailover reports whether err justifies trying the next profile.
+// shouldFailover 는 err 때문에 다음 설정을 시도해도 되는지 보고합니다.
 //
-// Never fails over on context cancellation — that's the user stopping a task or a
-// task-level timeout, and burning a backup key on it would both waste credit and
-// pollute the run's termination diagnosis. Never on 400 either: a malformed or
-// over-long request fails identically everywhere.
+// context 취소에는 넘어가지 않습니다. 그건 사용자가 작업을 멈추거나 작업
+// 제한 시간이 된 것이고, 예비 키를 태우면 잔액도 낭비되고 종료 진단도
+// 더러워집니다. 400 도 넘어가지 않습니다. 형식이 나쁘거나 너무 긴 요청은
+// 어디서나 똑같이 실패합니다.
 func shouldFailover(ctx context.Context, err error) bool {
 	if err == nil {
 		return false
@@ -237,9 +233,9 @@ func shouldFailover(ctx context.Context, err error) bool {
 	}
 	switch code := statusOf(err); {
 	case code == 0:
-		return true // no status → transport-level failure (reset / DNS / timeout)
+		return true // 상태 없음 → 전송 계층 실패(reset / DNS / timeout)
 	case code == 400:
-		return false // bad or over-long request: identical everywhere
+		return false // 나쁘거나 너무 긴 요청: 어디서나 같음
 	case code == 401, code == 402, code == 403, code == 404, code == 408, code == 429:
 		return true
 	case code >= 500:
@@ -248,9 +244,9 @@ func shouldFailover(ctx context.Context, err error) bool {
 	return false
 }
 
-// isHardFailure reports whether the failure is deterministic (the profile will
-// keep failing until a human fixes it) rather than transient. Hard failures open
-// the breaker on the first occurrence.
+// isHardFailure 는 실패가 결정적인지 보고합니다. 사람이 고치기 전까지 같은
+// 설정은 계속 실패합니다. 일시적 실패와 다릅니다. 결정적 실패는 한 번에
+// 차단기를 엽니다.
 func isHardFailure(err error) bool {
 	switch statusOf(err) {
 	case 401, 402, 403, 404:
@@ -259,7 +255,7 @@ func isHardFailure(err error) bool {
 	return false
 }
 
-// trimErr shortens an error for logs/UI — provider bodies can be long.
+// trimErr 는 로그와 화면용으로 오류를 줄입니다. provider 본문은 길 수 있습니다.
 func trimErr(err error) string {
 	s := strings.TrimSpace(strings.ReplaceAll(err.Error(), "\n", " "))
 	if len(s) > 300 {
@@ -268,9 +264,9 @@ func trimErr(err error) string {
 	return s
 }
 
-// estimateTokens roughly sizes a request so members whose context window clearly
-// can't hold it are skipped. Deliberately crude (~3.5 chars/token) and biased to
-// over-estimate slightly; it only needs to tell "fits" from "nowhere near".
+// estimateTokens 는 요청 크기를 대충 잽니다. 컨텍스트 창이 명백히 못 담는
+// 멤버를 건너뛰기 위해서입니다. 일부러 거칠고(~3.5자/토큰) 조금 크게 잡습니다.
+// "들어간다"와 "한참 모자라다"만 가르면 됩니다.
 func estimateTokens(req llm.CompletionRequest) int {
 	n := 0
 	for _, s := range req.System {
@@ -280,8 +276,8 @@ func estimateTokens(req llm.CompletionRequest) int {
 		n += blocksLen(m.Content)
 	}
 	for _, t := range req.Tools {
-		// InputSchema is a decoded map, so its serialized size isn't available
-		// cheaply — charge a flat ~120 chars per top-level property instead.
+		// InputSchema 는 이미 풀린 map 이라 직렬화 크기를 싸게 알 수 없습니다.
+		// 최상위 속성 하나당 약 120자를 대신 셉니다.
 		n += len(t.Name) + len(t.Description) + len(t.InputSchema)*120
 	}
 	return n * 2 / 7 // ≈ len/3.5

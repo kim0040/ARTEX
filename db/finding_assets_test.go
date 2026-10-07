@@ -14,7 +14,7 @@ func cleanupTreeFixtures(d *DB, taskID int64, rootDomains ...string) {
 	d.DeleteFindingsByTask(taskID)                                                //nolint:errcheck
 }
 
-// seedTreeAsset inserts one asset row.
+// seedTreeAsset은 자산 행 하나를 넣는다.
 func seedTreeAsset(t *testing.T, d *DB, kind string, cols map[string]any) int64 {
 	t.Helper()
 	names := []string{"type"}

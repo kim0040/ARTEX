@@ -6,27 +6,26 @@ import (
 	"time"
 )
 
-// SkillUsage is one Skill() invocation — the always-on skill call ledger. Written
-// from the Skill meta-tool's OnInvoke hook (server/assembly.go), one row per load.
-// Carries only dimensions (which skill, which agent, which task/session), never the
-// caller's args text — args_len is kept so an "empty vs substantial context" split
-// is still possible without storing prompt content, mirroring llm_usage.
+// SkillUsage는 Skill()을 한 번 부른 기록이다. 항상 켜 두는 스킬 호출 장부다.
+// Skill 메타 도구의 OnInvoke 훅(server/assembly.go)에서 적재마다 한 줄을 쓴다.
+// 어떤 스킬을, 어떤 에이전트가, 어느 작업·세션에서 불렀는지만 남기고, 인자 글은 저장하지 않는다.
+// args_len만 남겨 프롬프트 없이 「빈 맥락인지, 내용이 있는 맥락인지」를 가를 수 있다. llm_usage와 같다.
 //
-// Rows deliberately outlive their task: skill_usage has no foreign keys, so deleting
-// a task keeps its skill statistics intact (same rationale as llm_usage).
+// 행은 일부러 작업보다 오래 남는다. skill_usage에는 외래 키가 없어, 작업을 지워도
+// 스킬 통계는 남는다(llm_usage와 같은 이유다).
 type SkillUsage struct {
-	Skill         string `json:"skill"`          // skill directory name (matches agent_skill_visibility.skill_name)
-	AgentKey      string `json:"agent_key"`      // worker / planner / mainagent / custom agent key
-	TaskID        int64  `json:"task_id"`        // 0 for non-task runs (chat sessions)
-	ExplorationID int64  `json:"exploration_id"` // 0 when unknown
-	IntentID      int64  `json:"intent_id"`      // worker's intent node; 0 for planner/mainagent/chat
-	SessionID     string `json:"session_id"`     // chat conversation id; empty for task runs
+	Skill         string `json:"skill"`          // 스킬 디렉터리 이름(agent_skill_visibility.skill_name과 같다)
+	AgentKey      string `json:"agent_key"`      // worker / planner / mainagent / 사용자 에이전트 키
+	TaskID        int64  `json:"task_id"`        // 작업이 아닌 실행(채팅 세션)이면 0
+	ExplorationID int64  `json:"exploration_id"` // 모르면 0
+	IntentID      int64  `json:"intent_id"`      // 워커의 의도 노드. 플래너·메인 에이전트·채팅은 0
+	SessionID     string `json:"session_id"`     // 채팅 대화 id. 작업 실행이면 비어 있다
 	ArgsLen       int    `json:"args_len"`
-	Found         bool   `json:"found"` // false = the model named a skill that does not exist
+	Found         bool   `json:"found"` // false = 모델이 없는 스킬 이름을 말했다
 }
 
-// InsertSkillUsage appends one ledger row. Best-effort: callers log and continue on
-// error (a lost metering row must never break a skill invocation).
+// InsertSkillUsage는 장부 한 줄을 덧붙인다. 최선을 다할 뿐, 실패해도 호출자는 로그만 남기고 계속한다.
+// 통계 한 줄을 잃어도 스킬 호출이 깨지면 안 된다.
 func (d *DB) InsertSkillUsage(u *SkillUsage) error {
 	_, err := d.Exec(`
 INSERT INTO skill_usage(skill, agent_key, task_id, exploration_id, intent_id, session_id, args_len, found)
@@ -43,22 +42,22 @@ func nullIfZero(v int64) any {
 	return nil
 }
 
-// SkillStat is one skill's aggregate usage, for the skills page.
+// SkillStat은 스킬 하나의 사용 합계다. 스킬 화면이 이 값을 보여 준다.
 type SkillStat struct {
 	Skill    string     `json:"skill"`
 	Calls    int        `json:"calls"`
-	Tasks    int        `json:"tasks"`     // distinct tasks that loaded it (chat runs excluded)
-	Agents   []string   `json:"agents"`    // agent keys that loaded it, most-used first
-	LastUsed *time.Time `json:"last_used"` // nil when never called
+	Tasks    int        `json:"tasks"`     // 이 스킬을 불러 온 서로 다른 작업 수(채팅 실행은 제외)
+	Agents   []string   `json:"agents"`    // 불러 온 에이전트 키. 많이 쓴 순
+	LastUsed *time.Time `json:"last_used"` // 한 번도 안 불렀으면 nil
 }
 
-// SkillStats aggregates the whole ledger grouped by skill, most-used first. Skills
-// that were never invoked are absent — callers merge against the skill list on disk.
-// Only resolved calls count; misses are reported separately by MissingSkillStats.
+// SkillStats는 장부 전체를 스킬별로 모아, 많이 쓴 순으로 돌려준다.
+// 한 번도 안 부른 스킬은 빠진다. 호출자가 디스크의 스킬 목록과 합친다.
+// 실제로 찾은 호출만 센다. 못 찾은 이름은 MissingSkillStats가 따로 보여 준다.
 func (d *DB) SkillStats() ([]SkillStat, error) {
-	// agent keys come back as one comma-joined string rather than text[]: the pgx
-	// stdlib driver has no database/sql Scan target for arrays, and agent keys are
-	// [a-z0-9_-] so a comma join is unambiguous.
+	// 에이전트 키는 text[]가 아니라 쉼표로 이은 문자열로 받는다. pgx
+	// 표준 드라이버는 배열을 database/sql로 Scan할 대상이 없고, 키는
+	// [a-z0-9_-]라 쉼표로 이어 붙여도 헷갈리지 않는다.
 	rows, err := d.Query(`
 SELECT skill, COUNT(*) AS calls,
        COUNT(DISTINCT task_id) AS tasks,
@@ -100,9 +99,8 @@ ORDER BY COUNT(*) DESC, skill`)
 	return mergeArchivedSkillStats(out, archived, false), nil
 }
 
-// MissingSkillStats returns the skill names agents asked for that do not exist,
-// most-requested first — the "wished it existed" gap list. Names come from the model
-// so they are shown as-is (already length-capped at insert time).
+// MissingSkillStats는 에이전트가 찾았지만 없는 스킬 이름을, 요청이 많은 순으로 돌려준다.
+// 「있었으면 하는 이름」 목록이다. 이름은 모델이 말한 그대로 보여 준다(넣을 때 이미 길이를 잘랐다).
 func (d *DB) MissingSkillStats(limit int) ([]SkillStat, error) {
 	if limit <= 0 || limit > 200 {
 		limit = 20
@@ -151,7 +149,7 @@ ORDER BY COUNT(*) DESC, skill`)
 	return out, nil
 }
 
-// SkillCall is one row of a skill's recent-call list (detail panel).
+// SkillCall은 스킬의 최근 호출 목록(상세 패널) 한 줄이다.
 type SkillCall struct {
 	TS        time.Time `json:"ts"`
 	AgentKey  string    `json:"agent_key"`
@@ -160,7 +158,7 @@ type SkillCall struct {
 	ArgsLen   int       `json:"args_len"`
 }
 
-// RecentSkillCalls returns the most recent invocations of one skill, newest first.
+// RecentSkillCalls는 스킬 하나의 최근 호출을 최신 순으로 돌려준다.
 func (d *DB) RecentSkillCalls(skill string, limit int) ([]SkillCall, error) {
 	if limit <= 0 || limit > 200 {
 		limit = 50
@@ -186,8 +184,8 @@ LIMIT $2`, skill, limit)
 	return out, rows.Err()
 }
 
-// SkillCallsByTask counts a task's skill loads, most-used first. Powers a per-task
-// view of which procedures its agents actually reached for.
+// SkillCallsByTask는 한 작업이 불러 온 스킬을 많이 쓴 순으로 센다.
+// 그 작업의 에이전트가 실제로 어떤 절차를 집었는지, 작업 화면이 이 수를 보여 준다.
 func (d *DB) SkillCallsByTask(taskID int64) ([]SkillStat, error) {
 	rows, err := d.Query(`
 SELECT skill, COUNT(*) AS calls, MAX(ts) AS last_used

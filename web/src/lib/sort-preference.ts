@@ -32,7 +32,7 @@ export function useStoredSortPreference<Field extends string>(
         const direction = parsed.direction === "asc" || parsed.direction === "desc" ? parsed.direction : null;
         if (field && direction) setPreference({ field, direction });
       } catch {
-        // Ignore malformed or legacy preferences and retain the current default.
+        // 깨졌거나 예전 형식의 설정은 무시하고 지금 기본값을 유지합니다.
       }
     }
     setHydrated(true);

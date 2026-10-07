@@ -13,9 +13,9 @@ import (
 )
 
 func TestRenderTemplateCommand(t *testing.T) {
-	// command: string params shell-quoted; array → JSON (also quoted).
+	// command: 문자열 매개변수는 셸 따옴표, 배열은 JSON(역시 따옴표)입니다.
 	got := renderTemplate("nmap -p {ports} {target}", map[string]any{
-		"target": "10.0.0.1; rm -rf /", // injection attempt → must be single-quoted
+		"target": "10.0.0.1; rm -rf /", // 주입을 시도해도 작은따옴표 안에 들어가야 합니다.
 		"ports":  []any{80.0, 443.0},
 	}, shellQuote)
 	if !strings.Contains(got, `'10.0.0.1; rm -rf /'`) {
@@ -30,7 +30,7 @@ func TestRenderTemplateCommand(t *testing.T) {
 }
 
 func TestRenderTemplateHTTP(t *testing.T) {
-	// http: identity (no shell quoting) — raw substitution into url/body.
+	// http: 그대로 넣습니다(셸 따옴표 없음). url/본문에 원문을 치환합니다.
 	got := renderTemplate("https://x/submit?flag={flag}", map[string]any{"flag": "CTF{abc}"}, identity)
 	if got != "https://x/submit?flag=CTF{abc}" {
 		t.Fatalf("http render: %q", got)
@@ -45,9 +45,9 @@ func TestScalarStr(t *testing.T) {
 	}{
 		{"hi", "hi", true},
 		{true, "true", true},
-		{float64(80), "80", true},   // integer-valued float → no decimal
-		{float64(1.5), "1.5", true}, // real float
-		{[]any{1, 2}, "", false},    // array → not scalar
+		{float64(80), "80", true},   // 정수로 떨어진 소수는 소수점을 붙이지 않습니다.
+		{float64(1.5), "1.5", true}, // 진짜 소수
+		{[]any{1, 2}, "", false},    // 배열이라 스칼라가 아닙니다.
 		{map[string]any{}, "", false},
 	}
 	for _, c := range cases {
@@ -59,13 +59,13 @@ func TestScalarStr(t *testing.T) {
 }
 
 func TestEnsureSchema(t *testing.T) {
-	// empty → thin {args:string}
+	// 비어 있으면 얇은 {args:string}입니다.
 	m := ensureSchema(nil)
 	props, _ := m["properties"].(map[string]any)
 	if _, ok := props["args"]; !ok {
 		t.Fatalf("empty schema should default to args: %v", m)
 	}
-	// non-empty → passthrough
+	// 내용이 있으면 그대로 통과합니다.
 	raw := json.RawMessage(`{"type":"object","properties":{"target":{"type":"string"}}}`)
 	m2 := ensureSchema(raw)
 	p2, _ := m2["properties"].(map[string]any)
@@ -80,9 +80,9 @@ func TestShellQuote(t *testing.T) {
 	}
 }
 
-// TestExecPython runs a real Python script end-to-end: it must read params from
-// stdin JSON and the mirrored env var, then print — verifying the whole script
-// param-passing path. Skips if no python3.
+// TestExecPython은 진짜 파이썬 스크립트를 끝까지 돌립니다. stdin JSON과
+// 같이 넘긴 환경 변수에서 매개변수를 읽고 출력해야 합니다. 스크립트
+// 매개변수 전달 경로 전체를 확인합니다. python3가 없으면 건너뜁니다.
 func TestExecPython(t *testing.T) {
 	interp, err := exec.LookPath("python3")
 	if err != nil {
@@ -107,9 +107,9 @@ print("port=" + str(a["port"]))
 	}
 }
 
-// TestRunHTTPTool functionally exercises the http executor against a local server:
-// method/url/header/body templates are rendered from params, the request is sent,
-// and the response status+body are returned. No recording proxy → s.m untouched.
+// TestRunHTTPTool은 http 실행기를 로컬 서버로 기능 확인합니다.
+// method/url/헤더/본문 틀을 매개변수로 그리고, 요청을 보낸 뒤
+// 응답 상태와 본문을 돌려받습니다. 기록 프록시가 없어 s.m은 건드리지 않습니다.
 func TestRunHTTPTool(t *testing.T) {
 	var gotMethod, gotAuth, gotBody string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -165,11 +165,11 @@ func TestDetectPython(t *testing.T) {
 	}
 }
 
-// The http tool must truncate an oversized response through norma's Capture, the
-// same valve every other tool uses — a session with no OutputDir falls back to a
-// head+tail cut, so a body far past the default cap comes back shortened.
+// http 도구는 너무 큰 응답을 norma의 Capture로 잘라야 합니다. 다른 도구와
+// 같은 밸브입니다. OutputDir가 없는 세션은 앞뒤만 남기는 자르기로 가고,
+// 기본 상한을 훨씬 넘는 본문은 짧게 돌아옵니다.
 func TestHTTPToolTruncatesLargeBody(t *testing.T) {
-	big := strings.Repeat("x", 40000) // past Capture's 30000 default
+	big := strings.Repeat("x", 40000) // Capture 기본값 30000을 넘깁니다.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(big))
 	}))

@@ -48,8 +48,8 @@ var (
 	ErrTaskArchiveFormatMismatch = errors.New("task archive format is not supported")
 )
 
-// TaskArchive is the compact PostgreSQL record retained while a task is cold.
-// Sensitive profile configuration and API keys are intentionally absent.
+// TaskArchive는 작업이 차가울 때 남겨 두는 작은 PostgreSQL 기록이다.
+// 민감한 프로파일 설정과 API 키는 일부러 넣지 않는다.
 type TaskArchive struct {
 	ID                      int64           `json:"id"`
 	TaskID                  int64           `json:"task_id"`
@@ -79,9 +79,8 @@ type TaskArchive struct {
 	UpdatedAt               time.Time       `json:"updated_at"`
 }
 
-// TaskArchiveBlockers returns one live direct dependent for every source task
-// that cannot currently be archived. Dependents already queued for archiving do
-// not block their source because the FIFO worker will compact them first.
+// TaskArchiveBlockers는 지금 보관할 수 없는 원본 작업마다, 살아있는 직접 의존 작업 하나를 돌려준다.
+// 이미 보관 대기열에 있는 의존 작업은 원본을 막지 않는다. FIFO 워커가 그것들을 먼저 압축한다.
 func (d *DB) TaskArchiveBlockers() (map[int64]int64, error) {
 	rows, err := d.Query(`SELECT relation.source_task_id, MIN(child.id)
 FROM task_relations relation
@@ -111,9 +110,9 @@ type TaskArchivePage struct {
 	Size  int           `json:"size"`
 }
 
-// TaskArchiveSnapshot is serialized into manifest.json inside the cold package.
-// Small tables remain JSON arrays in Tables. Large v2 tables are streamed to
-// package files listed in StreamedTables so their size is not bounded by memory.
+// TaskArchiveSnapshot은 차가운 패키지 안의 manifest.json으로 직렬화된다.
+// 작은 테이블은 Tables 안의 JSON 배열로 남는다. 큰 v2 테이블은
+// StreamedTables에 적은 패키지 파일로 흘려 보내, 크기가 메모리에 묶이지 않게 한다.
 type TaskArchiveSnapshot struct {
 	FormatVersion     int                        `json:"format_version"`
 	CreatedAt         time.Time                  `json:"created_at"`
@@ -215,8 +214,8 @@ ORDER BY COALESCE(archived_at, requested_at) DESC, id DESC LIMIT $3 OFFSET $4`, 
 	return out, rows.Err()
 }
 
-// QueueTaskArchive validates lifecycle and direct inheritance while holding the
-// task row. A failed archive can be explicitly retried through the same API.
+// QueueTaskArchive는 작업 행을 잡은 채로 생명주기와 직접 상속을 검사한다.
+// 실패한 보관은 같은 API로 명시적으로 다시 시도할 수 있다.
 func (d *DB) QueueTaskArchive(taskID int64) (*TaskArchive, error) {
 	tx, err := d.Begin()
 	if err != nil {
@@ -352,9 +351,9 @@ WHERE id=$1 RETURNING `+taskArchiveCols, id, DeleteQueued))
 	return item, tx.Commit()
 }
 
-// RecoverTaskArchiveJobs keeps restore/delete resumable after an unclean shutdown.
-// An interrupted archive requires an explicit retry: automatic startup retries can
-// otherwise form a crash loop when the prior process was killed by resource limits.
+// RecoverTaskArchiveJobs는 불완전하게 꺼진 뒤에도 복원·삭제를 이어서 할 수 있게 한다.
+// 끊긴 보관은 명시적 재시도가 필요하다. 시작 때 자동으로 다시 하면,
+// 자원 한도로 죽은 프로세스가 충돌 고리를 만들 수 있다.
 func (d *DB) RecoverTaskArchiveJobs() error {
 	_, err := d.Exec(`UPDATE task_archives SET
 	 state=CASE state WHEN 'archiving' THEN 'archive_failed'
@@ -366,8 +365,8 @@ func (d *DB) RecoverTaskArchiveJobs() error {
 	return err
 }
 
-// ClaimTaskArchiveJob claims one persistent FIFO item for the single archive
-// worker. It returns nil when the queue is empty.
+// ClaimTaskArchiveJob은 보관 워커 하나가 쓸 영구 FIFO 항목 하나를 집는다.
+// 대기열이 비어 있으면 nil을 돌려준다.
 func (d *DB) ClaimTaskArchiveJob(ctx context.Context) (*TaskArchive, error) {
 	tx, err := d.BeginTx(ctx, nil)
 	if err != nil {
@@ -439,10 +438,9 @@ func (d *DB) FailTaskArchiveJob(id int64, activeState string, cause error) error
 func queryArchiveRows(q interface {
 	Query(query string, args ...any) (*sql.Rows, error)
 }, inner string, args ...any) (json.RawMessage, int64, error) {
-	// Do not aggregate the result in PostgreSQL. A jsonb array has a hard limit
-	// of 256 MiB for its elements, which large LLM request/response histories can
-	// exceed even though every individual record is valid. Reading row JSON in
-	// order also avoids building a second copy of the full table in PostgreSQL.
+	// 결과를 PostgreSQL 안에서 모으지 않는다. jsonb 배열 원소에는 256 MiB 상한이 있다.
+	// LLM 요청·응답 이력이 크면, 각 기록은 맞아도 그 상한을 넘을 수 있다.
+	// 행 JSON을 순서대로 읽으면 PostgreSQL 안에 테이블 전체의 두 번째 사본도 만들지 않는다.
 	rows, err := q.Query(`SELECT row_to_json(row_data)::text FROM (`+inner+`) row_data`, args...)
 	if err != nil {
 		return nil, 0, err
@@ -536,16 +534,15 @@ UNION SELECT value::bigint FROM findings finding
       ) value WHERE finding.task_id=$1 AND value ~ '^[0-9]+$'`
 }
 
-// SnapshotTaskArchive reads one repeatable PostgreSQL snapshot. Task-owned Agent
-// writes are already quiescent at the server barrier; repeatable-read also keeps
-// the asset and accounting views mutually consistent during serialization.
+// SnapshotTaskArchive는 반복 가능한 PostgreSQL 스냅샷 하나를 읽는다.
+// 작업이 소유한 에이전트 쓰기는 서버 장벽에서 이미 멈춰 있다. repeatable-read는
+// 직렬화하는 동안 자산 보기와 계량 보기가 서로 맞게 유지한다.
 func (d *DB) SnapshotTaskArchive(taskID int64) (*TaskArchiveSnapshot, error) {
 	return d.snapshotTaskArchive(taskID, nil)
 }
 
-// SnapshotTaskArchiveWithLLMRecords streams the heavyweight record history to
-// llmRecords while all other task-owned data is read from the same repeatable
-// PostgreSQL snapshot.
+// SnapshotTaskArchiveWithLLMRecords는 무거운 기록 이력을 llmRecords로 흘려 보낸다.
+// 그 사이 작업이 소유한 나머지 데이터는 같은 반복 가능 PostgreSQL 스냅샷에서 읽는다.
 func (d *DB) SnapshotTaskArchiveWithLLMRecords(taskID int64, llmRecords io.Writer) (*TaskArchiveSnapshot, error) {
 	if llmRecords == nil {
 		return nil, errors.New("nil LLM record archive writer")
@@ -623,7 +620,7 @@ func (d *DB) snapshotTaskArchive(taskID int64, llmRecords io.Writer) (*TaskArchi
 	if err != nil {
 		return nil, err
 	}
-	_ = assetIDs // retained in the assets table payload; only exclusive ids need a side channel.
+	_ = assetIDs // assets 테이블 본문에 남긴다. 독점 id만 옆 통로가 필요하다.
 	var sources []int64
 	rows, err := tx.Query(`SELECT source_task_id FROM task_relations WHERE task_id=$1 ORDER BY created_at,source_task_id`, taskID)
 	if err != nil {

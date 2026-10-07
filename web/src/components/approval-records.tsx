@@ -302,7 +302,7 @@ export function ApprovalDetail({
   const [retry, setRetry] = React.useState(0);
   const [more, setMore] = React.useState(defaultExpanded);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: Status, refresh and retry invalidate details without closing the panel.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 상태, 새로고침, 다시 시도는 패널을 닫지 않고 상세만 무효로 합니다.
   React.useEffect(() => {
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -326,7 +326,7 @@ export function ApprovalDetail({
     };
   }, [row.id, row.status, revision, retry, onResolved]);
 
-  // Row updates are authoritative until the lazy detail has caught up.
+  // 느린 상세가 따라잡기 전에는 줄 데이터가 기준입니다.
   const current = detail?.status === row.status ? detail : row;
   const audit = detail?.audit;
   let execution = audit ? executionLabels[audit.execution_status] : "기록되지 않음";
@@ -515,8 +515,8 @@ export function ApprovalDetail({
   );
 }
 
-// Hidden cells do not occupy table columns. Keep the detail span in sync so
-// expansion cannot create empty columns and leave a gap in the selected row.
+// 숨긴 칸은 표의 열을 차지하지 않습니다. 상세가 차지하는 칸 수를 맞춰
+// 펼쳤을 때 빈 열이 생기거나 고른 줄에 구멍이 나지 않게 합니다.
 const approvalBreakpoints = ["(min-width: 40rem)", "(min-width: 48rem)", "(min-width: 64rem)", "(min-width: 80rem)"];
 function subscribeColumns(onChange: () => void) {
   const queries = approvalBreakpoints.map((query) => window.matchMedia(query));
@@ -665,9 +665,9 @@ export function ApprovalRecords({ taskId }: { taskId?: string }) {
   const filterID = React.useId();
   const filtered = Boolean(filter.status || filter.decision_source);
 
-  // A task can stay mounted while the user switches between task details.
-  // Reset the cursor so the new scope always starts at its newest records.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: taskId intentionally resets pagination when scope changes.
+  // 작업 화면은 그대로 둔 채 다른 작업 상세로 바꿀 수 있습니다.
+  // 기준 번호를 비워서, 새 범위는 항상 가장 최근 기록부터 시작합니다.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: taskId가 바뀌면 범위를 바꾸며 페이지를 일부러 처음으로 되돌립니다.
   React.useEffect(() => {
     setPage(1);
   }, [taskId]);
@@ -677,9 +677,9 @@ export function ApprovalRecords({ taskId }: { taskId?: string }) {
       const id = ++request.current;
       if (manual) setRefreshing(true);
       try {
-        // The approval queue is independent of the current history page and its
-        // filter. Older requests must remain actionable even when newer decisions
-        // fill the page or a filter would hide them.
+        // 승인 대기열은 지금 보는 기록 페이지와 그
+        // 필터와 별개입니다. 새 결정이 페이지를 채우거나 필터가 숨겨도
+        // 더 오래된 요청은 계속 처리할 수 있어야 합니다.
         const [history, pending] = await Promise.allSettled([
           taskId ? api.interceptTaskPage(taskId, page, pageSize, filter) : api.interceptHistoryPage(page, pageSize, filter),
           api.interceptPending(),
@@ -728,7 +728,7 @@ export function ApprovalRecords({ taskId }: { taskId?: string }) {
   };
 
   const changeFilter = (next: InterceptApprovalFilter) => {
-    // An in-flight response for the old filter must not repopulate the table.
+    // 이전 필터로 나가 있던 응답이 표를 다시 채우면 안 됩니다.
     request.current++;
     setFilter(next);
     setPage(1);
@@ -744,17 +744,17 @@ export function ApprovalRecords({ taskId }: { taskId?: string }) {
     setDeciding(true);
     try {
       await api.interceptDecide(id, decision);
-      // Invalidate a list request started before this decision.
+      // 이 결정보다 먼저 시작한 목록 요청은 무효로 합니다.
       request.current++;
-      // Optimistically drop the decided item from the independent pending queue
-      // for instant feedback; the re-fetch below reconciles with server truth.
+      // 방금 결정한 항목을 별도 대기열에서 먼저 빼
+      // 바로 반영합니다. 아래 다시 읽기가 서버 사실과 맞춥니다.
       setRows((prev) =>
         prev.map((row) => (row.id === id ? { ...row, status: decision, decided_at: new Date().toISOString() } : row)),
       );
       setPendingRows((prev) => prev.filter((row) => row.id !== id));
       setRevision((v) => v + 1);
       toast.success(decision === "allowed" ? "실행을 허용함" : "실행을 거부함");
-      // Re-fetch counts and rows: a decided item may no longer match the filter.
+      // 개수와 줄을 다시 읽습니다. 결정된 항목은 필터에 더 이상 안 맞을 수 있습니다.
       await latestLoad.current(true);
     } catch (e) {
       toast.error((e as Error).message);

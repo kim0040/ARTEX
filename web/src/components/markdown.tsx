@@ -4,8 +4,8 @@ import * as React from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-// Tailwind-styled element overrides (no typography plugin in this project, so we
-// style each element). `node` is stripped — it's not a valid DOM attribute.
+// Tailwind로 요소마다 스타일을 덮어씁니다(이 프로젝트에는 타이포그래피 플러그인이 없어
+// 요소마다 지정합니다). `node`는 빼는데, 올바른 DOM 속성이 아닙니다.
 const components: Components = {
   h1: ({ node, ...p }) => <div className="mt-2.5 text-base font-semibold" {...p} />,
   h2: ({ node, ...p }) => <div className="mt-2 text-sm font-semibold" {...p} />,

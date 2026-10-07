@@ -65,9 +65,9 @@ export interface FindingEdit {
 
 export type FindingReport = { status: "loading" | "done" | "error"; text: string };
 
-// Exploration node ids are only unique inside a task. Prefer the persisted
-// finding id and otherwise namespace the node id by task so editing one group
-// cannot update a similarly-named node in another expanded group.
+// 탐색 노드 id는 한 작업 안에서만 유일합니다. 저장된
+// 발견 id를 우선하고, 없으면 노드 id 앞에 작업 id를 붙여 한 묶음을 고쳐도
+// 펼쳐진 다른 묶음의 비슷한 이름 노드까지 바뀌지 않게 합니다.
 export function findingRowKey(finding: Finding): string {
   if (finding.finding_id) return `finding:${finding.finding_id}`;
   return `node:${finding.task_id ?? UNASSIGNED_TASK}:${finding.id}`;

@@ -13,9 +13,10 @@ import (
 	"strings"
 )
 
-// ArchiveSnapshot is the portable traffic subset embedded in one task archive.
-// Large content-addressed bodies are copied alongside this manifest rather than
-// base64-encoded, preserving deduplication and allowing the tar writer to stream.
+// ArchiveSnapshot 은 작업 아카이브 하나에 넣는, 들고 다닐 수 있는 트래픽 일부입니다.
+// 큰 본문은 이 목록에 base64 로 넣지 않고, 내용 주소 blob 으로 옆에 복사합니다.
+// 중복 제거를 유지하고 tar 를 쓰는 쪽이 스트리밍할 수 있습니다.
+// 초보: 작업을 묶어 옮길 때 기록 프록시(127.0.0.1:8788)에 남은 HTTP 를 같이 담는 스냅샷입니다.
 type ArchiveSnapshot struct {
 	Version   int               `json:"version"`
 	Exchanges []ArchiveExchange `json:"exchanges"`
@@ -41,9 +42,8 @@ type ArchiveExchange struct {
 	RespBlob    string `json:"resp_blob,omitempty"`
 }
 
-// ExportHosts writes an exact-host snapshot to dir. It holds the traffic writer
-// lock while reading SQLite and blobs, so each body and its index row come from
-// one consistent point in time.
+// ExportHosts 는 호스트가 정확히 맞는 스냅샷을 dir 에 씁니다. SQLite 와 blob 을 읽는 동안
+// 트래픽 쓰기 잠금을 잡으므로, 본문과 색인 행은 같은 시점의 것입니다.
 func (t *Traffic) ExportHosts(hosts []string, dir string) (int64, error) {
 	if t == nil || len(hosts) == 0 {
 		return 0, nil
@@ -127,8 +127,8 @@ FROM exchange_bodies WHERE id=?`, item.ID).Scan(&item.ReqHead, &item.ReqBody, &r
 	return int64(len(snapshot.Exchanges)), nil
 }
 
-// ImportArchive imports only missing exchange IDs. Current hot rows always win,
-// and repeated restore attempts are safe after a partial external failure.
+// ImportArchive 는 아직 없는 exchange id 만 가져옵니다. 지금 있는 행이 항상 이기고,
+// 밖에서 일부만 실패한 뒤 다시 복원해도 안전합니다.
 func (t *Traffic) ImportArchive(dir string) (int64, error) {
 	if t == nil {
 		return 0, nil

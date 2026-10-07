@@ -22,8 +22,8 @@ func TestInterceptDetailHTTP(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = d.Close() })
-	// Exercise the authenticated HTTP surface without starting unrelated task
-	// schedulers or mutating the process-global tool assembly used by other tests.
+	// 로그인한 HTTP 표면만 시험합니다. 관계없는 작업
+	// 스케줄러는 켜지 않고, 다른 테스트가 쓰는 전역 도구 조립도 바꾸지 않습니다.
 	m := &Manager{pg: d, interceptor: intercept.New(d)}
 	s := &Server{m: m, jwtKey: []byte("approval-http-test-signing-key")}
 	h := s.Handler()

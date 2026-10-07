@@ -111,18 +111,18 @@ func TestCancelIntentPreservesTokenMeteringWithoutDoubleCount(t *testing.T) {
 	fallbackDay := atUTCNoon(4)
 	trailingDay := atUTCNoon(2)
 
-	// Run 1 has an authoritative result; its preceding cumulative frame must not
-	// be counted a second time or move usage to the frame's earlier date.
+	// 실행 1에는 권위 있는 결과가 있다. 그 앞의 누적 프레임을
+	// 두 번 세거나, 사용량을 프레임의 더 이른 날짜로 옮기면 안 된다.
 	i, o, r, w := values(100, 100, 100, 100)
 	appendUsage("usage", atUTCNoon(7), i, o, r, w)
 	i, o, r, w = values(10, 11, 12, 13)
 	appendUsage("result", authoritativeDay, i, o, r, w)
-	// Run 2 models a legacy failed result that omitted usage. Its fallback belongs
-	// to the result's date, not the cumulative frame's date.
+	// 실행 2는 사용량을 뺀 예전 실패 결과다. 대체 값은
+	// 누적 프레임 날짜가 아니라 결과 날짜에 속한다.
 	i, o, r, w = values(20, 21, 22, 23)
 	appendUsage("usage", atUTCNoon(5), i, o, r, w)
 	appendUsage("result", fallbackDay, nil, nil, nil, nil)
-	// Run 3 was interrupted before a terminal result was persisted.
+	// 실행 3은 종료 결과가 저장되기 전에 끊겼다.
 	i, o, r, w = values(30, 31, 32, 33)
 	appendUsage("usage", trailingDay, i, o, r, w)
 

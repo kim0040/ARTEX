@@ -10,18 +10,19 @@ import (
 
 const findingIDGuidance = "\n\n**漏洞编号约定**：finding_id 是独立漏洞记录 ID；finding_node_id 是探索节点 ID。list_findings / list_task_findings / node_detail / get_task_node_detail 的 id 保留为探索节点 ID，应从同一返回的 finding_id 读取独立编号。get_finding_traffic / bind_finding_traffic 用独立 finding_id。旧 update_finding_report 的 finding_id 参数仍传 finding_node_id。不要把 report_finding 第一行的数字用于证据工具，也不要遇到编号错误后猜测其他数字。" // han-allow 업스트림 프롬프트·픽스처
 
-// The server supplies the persisted setting. A missing setting/host is off.
-// Consulted at assembly and again on writes so an already-running session
-// cannot keep binding after the user switches the feature off.
+// 서버가 저장된 설정을 넣습니다. 설정이나 호스트가 없으면 꺼진 것입니다.
+// 조립할 때와 다시 쓸 때 보므로, 이미 돌고 있는 세션도 사용자가 기능을 끄면
+// 계속 증거를 묶지 못합니다.
 var FindingTrafficBindingEnabled func() bool
 
 func findingTrafficBindingEnabled() bool {
 	return FindingTrafficBindingEnabled != nil && FindingTrafficBindingEnabled()
 }
 
-// Applied after ToolResolve: user descriptions and prompts remain intact, while
-// all actual reporters (including Planner and custom chat agents) see the same
-// API contract. Disabled/unbound tools are never reintroduced here.
+// ToolResolve 다음에 적용합니다. 사용자가 고친 설명과 프롬프트는 그대로 두고,
+// 실제로 보고하는 쪽(플래너와 사용자 대화 에이전트 포함)은 같은 API 계약을 봅니다.
+// 꺼졌거나 묶이지 않은 도구를 여기서 다시 넣지 않습니다.
+// 초보: 발견에 기록 프록시 트래픽을 묶는 스위치가 도구 목록과 안내 문장을 여기서 맞춥니다.
 func findingWorkflowTools(agentKey string, tools []actool.CoreTool) ([]actool.CoreTool, string) {
 	if !findingTrafficBindingEnabled() {
 		out := make([]actool.CoreTool, 0, len(tools))
@@ -34,7 +35,7 @@ func findingWorkflowTools(agentKey string, tools []actool.CoreTool) ([]actool.Co
 			}
 			switch tool.Name() {
 			case "report_finding", "add_hint", "add_task_hint":
-				// Work on a copy: toggling back on must restore the original schema.
+				// 복사본만 고칩니다. 다시 켜면 원래 schema 가 돌아와야 합니다.
 				raw, _ := json.Marshal(tool.InputSchema())
 				var schema map[string]any
 				if json.Unmarshal(raw, &schema) == nil {
@@ -102,7 +103,7 @@ func stripTrafficParameters(schema map[string]any) {
 	}
 }
 
-// HintTrafficSchema is shared by the task-local and cross-task hint tools.
+// HintTrafficSchema 는 작업 안 힌트 도구와 작업 사이 힌트 도구가 같이 씁니다.
 func HintTrafficSchema() map[string]any {
 	return map[string]any{"type": "array", "description": "可选：已核实且对应本提示中具体漏洞的流量引用，保留顺序；交接后 report_finding 可传 evidence_hint_id 携带这些引用。", "items": obj(map[string]any{"traffic_id": str("真实流量 ID"), "role": str("baseline / proof / verification / supporting"), "note": str("该流量支持什么结论")}, "traffic_id")} // han-allow 업스트림 프롬프트·픽스처
 }
@@ -111,7 +112,7 @@ func (t *ToolSet) findingRefsFromHint(hintID int64, explicit []db.TrafficRef) ([
 	if hintID <= 0 {
 		return db.NormalizeTrafficRefs(explicit)
 	}
-	n, err := t.ts.GetNode(hintID) // local store only: inherited hints cannot supply evidence
+	n, err := t.ts.GetNode(hintID) // 이 작업 저장소만 봅니다. 상속된 힌트는 증거가 될 수 없습니다
 	if err != nil {
 		return nil, err
 	}

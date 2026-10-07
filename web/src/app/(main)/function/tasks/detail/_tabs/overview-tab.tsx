@@ -341,7 +341,7 @@ export function OverviewTab({ taskId }: { taskId: string }) {
       await api.rerunBlocked(taskId);
       setIntents((prev) => prev.map((i) => (i.state === "blocked" ? { ...i, state: "open" } : i)));
     } catch {
-      // ignore
+      // 무시
     } finally {
       markRerun("__all__", false);
     }
@@ -378,18 +378,18 @@ export function OverviewTab({ taskId }: { taskId: string }) {
         setStats(statsResp);
         setIntents(intentsResp);
         setFindings(findingsResp);
-        // coverage is independent + may 503 when no asset store — fetch separately so
-        // its failure never blocks the others.
+        // 커버리지는 따로 계산되고, 자산 저장소가 없으면 503이 날 수 있습니다. 따로 불러서
+        // 이쪽 실패가 나머지를 막지 않게 합니다.
         api
           .taskCoverage(taskId)
           .then((c) => {
             if (!cancelled) setCoverage(c);
           })
           .catch(() => {
-            // A transient coverage failure is retried by the next poll.
+            // 커버리지를 잠깐 못 읽으면 다음 주기 조회에서 다시 시도합니다.
           });
       } catch {
-        // transient errors are ignored; the next poll will retry
+        // 잠깐 오류는 무시합니다. 다음 주기 조회가 다시 시도합니다
       } finally {
         loading = false;
       }
@@ -891,7 +891,7 @@ export function OverviewTab({ taskId }: { taskId: string }) {
           )}
         </CardContent>
       </Card>
-      {/* Heartbeat */}
+      {/* 심장박동 */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
@@ -937,7 +937,7 @@ export function OverviewTab({ taskId }: { taskId: string }) {
         </CardContent>
       </Card>
 
-      {/* Work set */}
+      {/* 작업 묶음 */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <Card>
           <CardHeader>
@@ -1040,7 +1040,7 @@ export function OverviewTab({ taskId }: { taskId: string }) {
         </Card>
       )}
 
-      {/* Stat cards */}
+      {/* 통계 카드 */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
         <StatCard label="미할당 의도" value={open.length} icon={ShieldCheckIcon} sub="프론티어" />
         <StatCard label="발견 확인" value={taskFindings.length} icon={BugIcon} sub="이 작업" />

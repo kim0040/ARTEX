@@ -27,7 +27,7 @@ func (s *Server) platformTools() []actool.CoreTool {
 	}
 }
 
-// platformToolKeys are the tool keys the Auto agent gets bound by default.
+// platformToolKeys는 Auto 에이전트에 기본으로 묶는 도구 키입니다.
 var platformToolKeys = []string{
 	"create_skill", "update_skill_file",
 	"create_custom_tool", "update_custom_tool",
@@ -35,9 +35,9 @@ var platformToolKeys = []string{
 	"delete_assets_by_host",
 }
 
-// ---- assets ----
+// ---- 자산 ----
 
-// toolDeleteAssetsByHost hard-deletes every asset tied to one host (exact match).
+// toolDeleteAssetsByHost는 호스트 하나(정확히 일치)에 묶인 자산을 모두 하드 삭제합니다.
 // 플랫폼 수준이다(작업별 도구가 아니다). 작업을 가로지르는 전역 자산 그래프를 다루며, 이 그래프는 탐색 그래프와 다른 PostgreSQL 그래프이고 UI가 이를 읽는다.
 func (s *Server) toolDeleteAssetsByHost() actool.CoreTool {
 	return wrTool("delete_assets_by_host",
@@ -76,7 +76,7 @@ func (s *Server) toolDeleteAssetsByHost() actool.CoreTool {
 		})
 }
 
-// ---- skills ----
+// ---- 스킬 ----
 
 func (s *Server) toolCreateSkill() actool.CoreTool {
 	return wrTool("create_skill",
@@ -157,7 +157,7 @@ func (s *Server) toolUpdateSkillFile() actool.CoreTool {
 		})
 }
 
-// ---- custom tools ----
+// ---- 사용자 정의 도구 ----
 
 type customToolToolInput struct {
 	Key         string          `json:"key"`

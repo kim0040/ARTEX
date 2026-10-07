@@ -24,7 +24,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { ApprovalDetail } from "@/components/approval-records";
 import type { Activity, InterceptPending } from "@/lib/types";
 
-// ---- per-agent lane color (planner + work#1/#2/#3 …) ---------------------------
+// ---- 에이전트별 레인 색(플래너 + work#1/#2/#3 …) ---------------------------
 const workerColors = [
   "bg-sky-600",
   "bg-violet-600",
@@ -33,7 +33,7 @@ const workerColors = [
   "bg-orange-600",
 ];
 function workerColor(name: string): string {
-  if (name === "planner") return "bg-amber-600"; // the intent generator, distinct
+  if (name === "planner") return "bg-amber-600"; // 의도를 만드는 쪽. 색을 다르게
   if (name === "mainagent") return "bg-primary";
   const m = /#(\d+)/.exec(name);
   const i = m ? (parseInt(m[1], 10) - 1) % workerColors.length : 0;
@@ -43,17 +43,17 @@ function workerColor(name: string): string {
 const chip = (worker: string) =>
   "mt-0.5 shrink-0 rounded px-1 text-[9px] font-medium text-white " + workerColor(worker);
 
-// useInView latches true when the ref'd element first comes within `rootMargin` of
-// the enclosing scroll viewport. Blocks that always show their full body (user
-// bubbles, answers) use it to defer fetching that body until they're about to be
-// seen — so opening a long thread doesn't fire a detail request for every off-
-// screen step. Observes the ScrollArea viewport (falls back to eager load when
-// IntersectionObserver is unavailable, e.g. SSR).
+// useInView는 ref 요소가 스크롤 영역 `rootMargin` 안에 처음 들어오면
+// 참을 고정합니다. 본문을 항상 다 보여 주는 블록(사용자
+// 말풍선, 답)은 곧 보이기 직전에 본문을 가져와
+// 긴 대화를 열 때 화면 밖 단계마다 상세를 요청하지 않습니다.
+// ScrollArea 뷰포트를 관찰합니다(IntersectionObserver가 없으면, 예를 들어 SSR,
+// 바로 불러옵니다).
 function useInView(rootMargin = "400px"): [React.RefObject<HTMLDivElement | null>, boolean] {
   const ref = React.useRef<HTMLDivElement | null>(null);
   const [inView, setInView] = React.useState(false);
   React.useEffect(() => {
-    if (inView) return; // latch: once seen, stop observing
+    if (inView) return; // 한 번 보면 관찰을 멈춥니다
     const el = ref.current;
     if (!el) return;
     if (typeof IntersectionObserver === "undefined") {
@@ -73,9 +73,9 @@ function useInView(rootMargin = "400px"): [React.RefObject<HTMLDivElement | null
   return [ref, inView];
 }
 
-// A tool group pairs a tool_use with its matching tool_result (by tool_use_id);
-// a run of consecutive conversational steps (text/thinking/result) from the same
-// agent is one "message".
+// 도구 묶음은 tool_use와 같은 tool_use_id의 tool_result를 짝짓습니다.
+// 같은 에이전트의 이어진 대화 단계(text/thinking/result)는
+// 하나의 "메시지"입니다.
 type Group =
   | { type: "user"; key: number; step: Activity; intent?: boolean }
   | { type: "answer"; key: number; step: Activity }
@@ -88,9 +88,9 @@ function groupSteps(steps: Activity[], chat: boolean): Group[] {
   const out: Group[] = [];
   const byToolId = new Map<string, Extract<Group, { type: "tool" }>>();
   for (const s of steps) {
-    if (s.kind === "usage") continue; // live token-usage marker — not a rendered step
+    if (s.kind === "usage") continue; // 실시간 토큰 사용 표시. 그리는 단계가 아님
     if (s.kind === "round") {
-      out.push({ type: "round", key: s.seq, label: s.summary || "새 라운드" }); // planner round boundary
+      out.push({ type: "round", key: s.seq, label: s.summary || "새 라운드" }); // 플래너 라운드 경계
       continue;
     }
     if (s.kind === "intercept_request") {
@@ -98,13 +98,13 @@ function groupSteps(steps: Activity[], chat: boolean): Group[] {
       continue;
     }
     if (s.kind === "user" || s.kind === "intent") {
-      // human turn OR the LLM-generated intent leading a worker session — both are
-      // right-aligned bubbles; `intent` swaps the avatar to a non-human icon.
+      // 사람 차례, 또는 워커 세션을 이끄는 모델이 만든 의도. 둘 다
+      // 오른쪽 말풍선입니다. `intent`면 사람 아이콘 대신 다른 아이콘을 씁니다.
       out.push({ type: "user", key: s.seq, step: s, intent: s.kind === "intent" });
       continue;
     }
-    // In a chat (main agent) the assistant's text/result IS the answer — render it
-    // full (markdown), never collapsed. thinking still folds into a compact block.
+    // 채팅(메인 에이전트)에서 조수의 text/result가 바로 답입니다. 접지 않고
+    // 마크다운으로 다 보여 줍니다. thinking은 여전히 작은 블록으로 접습니다.
     if (s.kind === "result" || (chat && s.kind === "text")) {
       out.push({ type: "answer", key: s.seq, step: s });
       continue;
@@ -116,10 +116,10 @@ function groupSteps(steps: Activity[], chat: boolean): Group[] {
       continue;
     }
     if (s.kind === "tool_result") {
-      // bind to its tool_use by id (NOT adjacency — tools can run in parallel)
+      // id로 tool_use에 묶습니다(이웃이 아님. 도구는 동시에 돌 수 있음)
       const g = s.tool_use_id ? byToolId.get(s.tool_use_id) : undefined;
       if (g && !g.result) g.result = s;
-      else out.push({ type: "tool", key: s.seq, worker: s.worker, result: s }); // orphan result
+      else out.push({ type: "tool", key: s.seq, worker: s.worker, result: s }); // 짝이 없는 결과
       continue;
     }
     const last = out[out.length - 1];
@@ -152,27 +152,27 @@ function ActivityTime({ ts }: { ts: string }) {
   );
 }
 
-// toolInputText renders a tool_use input for display. For Bash it pulls the shell
-// command out of the raw input JSON ({"command":…,"description":…}) so the UI shows
-// the command itself instead of JSON; other tools fall back to the raw text.
+// toolInputText는 tool_use 입력을 보여 줍니다. Bash는 원문 JSON에서
+// 셸 명령을 꺼냅니다({"command":…,"description":…}). 화면에는 JSON 대신
+// 명령 자체가 보입니다. 다른 도구는 원문으로 돌아갑니다.
 function toolInputText(tool: string, raw: string): string {
   if (tool !== "Bash") return raw;
-  // full input (expanded detail): parse and pull the command out.
+  // 펼친 상세의 전체 입력: 파싱해서 명령을 꺼냅니다.
   try {
     const o = JSON.parse(raw);
     if (o && typeof o.command === "string") return o.command;
   } catch {
-    // collapsed-row summaries are truncated to ~200 chars by the backend, so the
-    // JSON tail is cut off and JSON.parse fails — fall through and extract the
-    // "command" field by hand, tolerating the missing closing quote.
+    // 접힌 줄 요약은 백엔드가 약 200자로 자르므로
+    // JSON 끝이 잘려 JSON.parse가 실패합니다. 그때는 직접
+    // "command" 필드를 꺼내고, 닫는 따옴표가 없어도 참습니다.
   }
   const m = raw.match(/"command"\s*:\s*"((?:\\.|[^"\\])*)/);
   if (m) {
     try {
-      // re-wrap the captured body and parse to unescape \n, \", \\, etc.
+      // 잡은 본문을 다시 감싸 파싱해서 \n, \", \\ 등을 풉니다.
       return JSON.parse('"' + m[1] + '"');
     } catch {
-      // truncated mid-escape — unescape the common sequences best-effort.
+      // 이스케이프 중간에 잘림. 흔한 서열은 최선을 다해 풉니다.
       return m[1].replace(/\\(["\\/nrt])/g, (_s, c) =>
         c === "n" ? "\n" : c === "r" ? "\r" : c === "t" ? "\t" : c,
       );
@@ -181,9 +181,9 @@ function toolInputText(tool: string, raw: string): string {
   return raw;
 }
 
-// InterceptCard renders an inline intercept_request approval card. The pending_id
+// InterceptCard는 가로채기 승인 카드를 대화 안에 그립니다. pending_id는
 // summary에서 꺼냅니다(형식: "도구 X 승인 요청 (#N)"). 그래서 버튼은
-// available immediately without waiting for the detail load.
+// 상세를 기다리지 않아도 바로 쓸 수 있습니다.
 function InterceptCard({
   step,
   getDetail,
@@ -210,20 +210,20 @@ function InterceptCard({
   const [statusError, setStatusError] = React.useState("");
   const [retry, setRetry] = React.useState(0);
 
-  // Load persisted detail JSON + check the real current status from the backend
-  // so that a page refresh shows the already-decided state instead of re-offering buttons.
+  // 저장된 상세 JSON을 읽고, 백엔드의 실제 현재 상태도 확인해서
+  // 새로고침 뒤에는 이미 결정된 상태를 보여주고 버튼을 다시 주지 않습니다.
   React.useEffect(() => {
     let live = true;
     getDetail(step.seq)
       .then((raw) => {
         if (!live || !raw) return;
-        try { setDetail(JSON.parse(raw)); } catch { /* ignore */ }
+        try { setDetail(JSON.parse(raw)); } catch { /* 무시 */ }
       })
-      .catch(() => {/* ignore */});
+      .catch(() => {/* 무시 */});
     return () => { live = false; };
   }, [step.seq, getDetail]);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: Retry explicitly reloads the same approval after a failed request.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 다시 시도는 실패 뒤 같은 승인을 일부러 다시 읽습니다.
   React.useEffect(() => {
     if (!pendingId) return;
     let live = true;
@@ -348,9 +348,9 @@ function InterceptCard({
   );
 }
 
-// ToolBlock renders ONE tool call: the command and its result bound into a single
-// row (collapsed shows the command + a status/result preview; expand shows the
-// full input AND output together). Lazy-loads both details on expand.
+// ToolBlock은 도구 호출 하나를 그립니다. 명령과 결과를 한
+// 줄에 묶습니다(접히면 명령과 상태/결과 미리보기, 펼치면
+// 입력과 출력을 함께). 펼칠 때 두 상세를 나중에 불러옵니다.
 function ToolBlock({
   group,
   getDetail,
@@ -365,9 +365,9 @@ function ToolBlock({
   const [open, setOpen] = React.useState(focused);
   const targetRef = React.useRef<HTMLElement>(null);
   const [detail, setDetail] = React.useState<string | null>(null);
-  // what we last loaded, keyed by the underlying step seqs. When the tool result
-  // arrives after we expanded mid-run (command only), this key changes and the
-  // effect below re-fetches — so the output shows up instead of being cached out.
+  // 마지막으로 불러온 것. 키는 단계 seq입니다. 실행 중에 펼친 뒤(명령만)
+  // 도구 결과가 오면 이 키가 바뀌고 아래 효과가
+  // 다시 가져와, 출력이 캐시에 가려지지 않습니다.
   const loadedKey = React.useRef<string | null>(null);
   const { use, result } = group;
   const toolName = use?.tool || result?.tool || "도구";
@@ -385,7 +385,7 @@ function ToolBlock({
   // 상태만. 전체 결과는 펼침(【출력】) 뒤에 있고, 줄 안에서 미리 보지 않음
   const statusText = running ? "실행 중…" : ok ? "✓" : "✕ 실패";
 
-  // key over the seqs we'd load; changes when the result (or command) arrives.
+  // 불러올 seq들의 키. 결과(또는 명령)가 오면 바뀝니다.
   const detailKey = `${use?.seq ?? ""}:${result?.seq ?? ""}`;
   React.useEffect(() => {
     if (!open || loadedKey.current === detailKey) return;
@@ -429,8 +429,8 @@ function ToolBlock({
       const bounds = viewport.getBoundingClientRect();
       viewport.scrollTop += rect.top + rect.height / 2 - bounds.top - bounds.height / 2;
     };
-    // User bubbles load their full text lazily. Allow their initial layout to
-    // settle, but stop anchoring immediately if the user interacts or after 2s.
+    // 사용자 말풍선은 전체 글을 나중에 불러옵니다. 처음 배치는
+    // 자리 잡게 두되, 사용자가 건드리거나 2초가 지나면 맨 아래 고정을 바로 멈춥니다.
     const observer = new ResizeObserver(center);
     observer.observe(el.parentElement ?? el);
     observer.observe(viewport);
@@ -479,8 +479,8 @@ function ToolBlock({
   );
 }
 
-// MessageBlock renders a coalesced agent message (merged streaming text/thinking/
-// result fragments into one block) so the conversation reads as messages, not rows.
+// MessageBlock은 이어 붙인 에이전트 메시지를 그립니다(흐르는 text/thinking/
+// result 조각을 한 블록으로). 대화가 줄이 아니라 메시지로 읽히게 합니다.
 function MessageBlock({
   group,
   getDetail,
@@ -492,8 +492,8 @@ function MessageBlock({
 }) {
   const [open, setOpen] = React.useState(false);
   const [detail, setDetail] = React.useState<string | null>(null);
-  // like ToolBlock: keyed by the group's step seqs so streamed steps arriving
-  // after an early expand re-fetch instead of being cached out.
+  // ToolBlock처럼 묶음 단계 seq가 키라, 일찍 펼친 뒤 도착한
+  // 스트림 단계는 캐시에 가려지지 않고 다시 가져옵니다.
   const loadedKey = React.useRef<string | null>(null);
   const speak = group.steps.filter((s) => s.kind !== "thinking");
   const hasThinking = group.steps.some((s) => s.kind === "thinking");
@@ -548,12 +548,12 @@ function MessageBlock({
   );
 }
 
-// UserRow renders a right-aligned chat bubble: either a human turn (the message you
-// sent the main agent) or, in a worker session, the LLM-generated intent that leads
-// it (intent=true) — same bubble, but a target icon instead of the human avatar.
-// summary is a truncated first line, so the full message is pulled from the detail
-// and shown in full (bubble is whitespace-pre-wrap, so long/multi-line text wraps).
-// fmtBytes renders a human file size for attachment chips.
+// UserRow는 오른쪽 채팅 말풍선입니다. 사람이 메인 에이전트에게 보낸 차례이거나
+// 워커 세션을 이끄는, 모델이 만든 의도입니다
+// (intent=true). 같은 말풍선이지만 사람 아이콘 대신 과녁 아이콘입니다.
+// summary는 잘린 첫 줄이라, 전체 메시지는 상세에서 가져와
+// 다 보여 줍니다(말풍선은 whitespace-pre-wrap이라 긴 글도 줄바꿈됩니다).
+// fmtBytes는 첨부 칩에 사람이 읽기 쉬운 파일 크기를 그립니다.
 function fmtBytes(n: number): string {
   if (n >= 1 << 20) return `${(n / (1 << 20)).toFixed(1)} MB`;
   if (n >= 1 << 10) return `${(n / (1 << 10)).toFixed(1)} KB`;
@@ -562,9 +562,9 @@ function fmtBytes(n: number): string {
 
 type MsgAttachment = { name: string; path: string; size: number };
 
-// parseUserBody splits a user turn's body into text + attachments. The backend stores
-// Detail as JSON {text, attachments} when files were uploaded, else plain text — so we
-// parse defensively and fall back to treating the whole body as text.
+// parseUserBody는 사용자 차례 본문을 글과 첨부로 나눕니다. 백엔드는
+// 파일이 있으면 Detail을 JSON {text, attachments}로, 아니면 일반 글로 저장합니다. 그래서
+// 조심스럽게 파싱하고, 안 되면 본문 전체를 글로 봅니다.
 function parseUserBody(body: string): { text: string; attachments: MsgAttachment[] } {
   if (body.startsWith("{")) {
     try {
@@ -573,7 +573,7 @@ function parseUserBody(body: string): { text: string; attachments: MsgAttachment
         return { text: typeof p.text === "string" ? p.text : "", attachments: p.attachments };
       }
     } catch {
-      /* plain text that merely starts with "{" */
+      /* "{"로 시작할 뿐인 일반 글 */
     }
   }
   return { text: body, attachments: [] };
@@ -582,12 +582,12 @@ function parseUserBody(body: string): { text: string; attachments: MsgAttachment
 function UserRow({ step, intent, getDetail }: { step: Activity; intent?: boolean; getDetail: (seq: number) => Promise<string> }) {
   const Icon = intent ? CrosshairIcon : UserIcon;
   const [ref, inView] = useInView();
-  // Optimistic echoes carry their detail inline; persisted rows lazy-load it on scroll.
+  // 먼저 그린 메아리는 상세를 안에 갖고, 저장된 줄은 스크롤 때 나중에 불러옵니다.
   const inline = step.detail && step.detail.length > 0 ? step.detail : null;
   const [full, setFull] = React.useState<string | null>(inline);
   React.useEffect(() => {
-    if (inline) return; // already have the body (optimistic echo)
-    if (!inView) return; // fetch the full message only when the bubble nears view
+    if (inline) return; // 본문을 이미 갖고 있음(먼저 그린 메아리)
+    if (!inView) return; // 말풍선이 보이기 직전에만 전체 메시지를 가져옵니다
     let live = true;
     getDetail(step.seq)
       .then((d) => {
@@ -633,14 +633,14 @@ function UserRow({ step, intent, getDetail }: { step: Activity; intent?: boolean
   );
 }
 
-// AnswerBlock renders the agent's FINAL answer (kind="result") in full — never
-// collapsed. The summary is a truncated first line, so the full text is pulled
-// from the detail and shown inline.
+// AnswerBlock은 에이전트의 최종 답(kind="result")을 접지 않고
+// 다 그립니다. summary는 잘린 첫 줄이라, 전체 글은 상세에서 가져와
+// 그 자리에 보여 줍니다.
 function AnswerBlock({ step, getDetail }: { step: Activity; getDetail: (seq: number) => Promise<string> }) {
   const [ref, inView] = useInView();
   const [full, setFull] = React.useState<string | null>(null);
   React.useEffect(() => {
-    if (!inView) return; // fetch the full answer only when it nears view
+    if (!inView) return; // 답이 보이기 직전에만 전체 답을 가져옵니다
     let live = true;
     getDetail(step.seq)
       .then((d) => {
@@ -672,10 +672,10 @@ function AnswerBlock({ step, getDetail }: { step: Activity; getDetail: (seq: num
   );
 }
 
-// ExecView renders an agent execution replay (planner / worker / main agent) in
-// the compact, grouped, expand-to-detail format — thinking, tool calls/results,
-// and (for the main agent) the human turns. Worker lane chips show only when the
-// view actually mixes agents.
+// ExecView는 에이전트 실행 재생(플래너 / 워커 / 메인 에이전트)을
+// 압축해 묶고, 펼치면 상세가 나오는 형식으로 그립니다. 생각, 도구 호출/결과,
+// 그리고 메인 에이전트의 사람 차례. 워커 레인 칩은
+// 보기가 실제로 에이전트를 섞을 때만 나옵니다.
 function ExecView({
   activity,
   taskId,
@@ -690,8 +690,8 @@ function ExecView({
   focusedSeq?: number;
 }) {
   const showWorker = new Set(activity.map((a) => a.worker)).size > 1;
-  // default detail fetcher: the task-scoped activity endpoint. The chat page passes
-  // its own (conversation-scoped) fetcher instead.
+  // 기본 상세 조회: 작업 범위 활동 주소. 채팅 화면은
+  // 자기 대화 범위 조회를 대신 넘깁니다.
   const getDetail = React.useCallback(
     (seq: number) => (fetchDetail ? fetchDetail(seq) : api.activityDetail(seq, taskId).then((r) => r.detail ?? "")),
     [fetchDetail, taskId],
@@ -727,9 +727,9 @@ function ExecView({
   );
 }
 
-// Transcript renders a session's activity as a compact grouped execution replay:
-// human turns, thinking, tool calls (command+result paired), and messages — for
-// the main agent (interactive) and worker/planner (read-only) alike.
+// Transcript는 세션 활동을 압축해 묶은 실행 재생으로 그립니다.
+// 사람 차례, 생각, 도구 호출(명령+결과 짝), 메시지. 메인 에이전트(대화 가능)와
+// 워커/플래너(읽기 전용) 모두 같습니다.
 export function Transcript({
   activity,
   live,

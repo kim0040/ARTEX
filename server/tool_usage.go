@@ -15,9 +15,9 @@ type toolUsageRecorder interface {
 	InsertToolUsage(*db.ToolUsage) error
 }
 
-// meteredTool records one row immediately before a catalog tool is invoked. It
-// embeds the resolved tool so schema overrides, defaults and permission behavior
-// remain unchanged.
+// meteredTool은 카탈로그 도구를 부르기 직전에 행 하나를 기록합니다.
+// 해석이 끝난 도구를 안에 넣어, 스키마 덮어쓰기·기본값·권한 동작은
+// 그대로 둡니다.
 type meteredTool struct {
 	actool.CoreTool
 	recorder toolUsageRecorder

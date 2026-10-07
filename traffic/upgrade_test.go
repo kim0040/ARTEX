@@ -7,8 +7,8 @@ import (
 	"testing"
 )
 
-// openLegacyIndex builds the index exactly as the pre-reclamation Open did: a
-// plain-path DSN, pragmas via the pool, and auto_vacuum left at its default 0.
+// openLegacyIndex 는 회수 이전의 Open 이 만들던 색인을 그대로 만듭니다.
+// 맨 경로 DSN, 풀을 통한 pragma, auto_vacuum 은 기본 0 입니다.
 func openLegacyIndex(t *testing.T, dir string) *sql.DB {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Join(dir, "_index"), 0o755); err != nil {
@@ -29,11 +29,11 @@ func openLegacyIndex(t *testing.T, dir string) *sql.DB {
 	return old
 }
 
-// TestUpgradeFromOldInstall guards the upgrade path. Open now names the database
-// through a file: URI so per-connection pragmas can ride in the DSN, and a
-// driver that did not treat that as a URI would quietly open a file literally
-// named "file:/…" — an empty index, with every recorded exchange apparently
-// gone. The assertions below are what prove that does not happen.
+// TestUpgradeFromOldInstall 은 업그레이드 경로를 지킵니다. Open 은 이제
+// file: URI 로 데이터베이스를 부릅니다. 연결마다의 pragma 를 DSN 에 태우기
+// 위해서입니다. 드라이버가 그것을 URI 로 보지 않으면 "file:/…" 라는
+// 이름의 파일을 조용히 엽니다. 빈 색인이 되고, 기록된 교환이 사라진 것처럼
+// 보입니다. 아래 단언이 그것이 안 일어난다는 증거입니다.
 func TestUpgradeFromOldInstall(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "_index", "index.sqlite")
@@ -130,10 +130,10 @@ VALUES(?,'GET /x','','HTTP 200','老数据正文')`, row[0]); err != nil {
 	}
 }
 
-// TestDowngradeToOldBinary covers a rollback: a database created with
-// auto_vacuum=incremental must stay readable and writable by a build that knows
-// nothing about it. auto_vacuum only changes where SQLite tracks free pages, so
-// the old binary simply goes back to never returning them.
+// TestDowngradeToOldBinary 는 되돌리기입니다. auto_vacuum=incremental 로
+// 만든 데이터베이스는 그것을 모르는 빌드에서도 읽고 쓸 수 있어야 합니다.
+// auto_vacuum 은 SQLite 가 빈 페이지를 어디서 추적하는지만 바꾸므로,
+// 옛 바이너리는 그냥 그것들을 되돌리지 않는 상태로 돌아갑니다.
 func TestDowngradeToOldBinary(t *testing.T) {
 	dir := t.TempDir()
 	tr, err := Open(dir, "127.0.0.1:0")

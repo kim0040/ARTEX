@@ -37,9 +37,9 @@ const MaxRecentExchanges = 20
 
 var ErrContextBudget = errors.New("곁길 맥락을 압축한 뒤에도 모델 예산을 넘습니다. 질문 범위를 줄이거나 모델 맥락 설정을 조정하세요")
 
-// EstimateInputTokens follows norma's byte-based block estimate with its 4/3
-// safety factor. Include system/schema and framing costs too; JSON characters
-// are not tokens (and marshaling HTML can add many non-semantic escapes).
+// EstimateInputTokens는 norma의 바이트 기반 블록 추정과 4/3 안전 계수를 따릅니다.
+// 시스템·스키마·프레임 비용도 넣습니다. JSON 문자는 토큰이 아닙니다
+// (HTML을 직렬화하면 뜻 없는 이스케이프가 많이 늘 수 있습니다).
 func EstimateInputTokens(req llm.CompletionRequest) int {
 	tokens := compaction.EstimateTokens(req.Messages)*4/3 + 32 + len(req.Messages)*8
 	for _, text := range req.System {

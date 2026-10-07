@@ -24,9 +24,9 @@ func scanTaskInterceptRule(row interface{ Scan(...any) error }) (AssetInterceptR
 	return r, err
 }
 
-// ListTaskInterceptRules returns a task's rules (both block and allow) as
-// AssetInterceptRule (Builtin always false; Action carries block/allow). taskID
-// <= 0 returns nothing.
+// ListTaskInterceptRules는 작업의 가로채기 규칙(block과 allow 모두)을
+// AssetInterceptRule로 돌려준다. Builtin은 항상 false이고, Action이 block/allow를 담는다.
+// taskID가 0 이하면 아무것도 돌려주지 않는다.
 func (s *AssetStore) ListTaskInterceptRules(taskID int64) ([]AssetInterceptRule, error) {
 	if taskID <= 0 {
 		return nil, nil
@@ -47,8 +47,8 @@ func (s *AssetStore) ListTaskInterceptRules(taskID int64) ([]AssetInterceptRule,
 	return out, rows.Err()
 }
 
-// TaskInterceptRulesSplit loads a task's rules and splits them into block and
-// allow sets, for the enforcement gate.
+// TaskInterceptRulesSplit은 작업 규칙을 읽어 block과 allow로 나눈다.
+// 워커가 자산 그래프의 자산을 다루기 전, 가로채기 문에서 이 두 묶음을 쓴다.
 func (s *AssetStore) TaskInterceptRulesSplit(taskID int64) (block, allow []AssetInterceptRule, err error) {
 	rules, err := s.ListTaskInterceptRules(taskID)
 	if err != nil {
@@ -71,7 +71,7 @@ func normalizeRuleAction(action string) string {
 	return "block"
 }
 
-// CreateTaskInterceptRule inserts a rule under a task.
+// CreateTaskInterceptRule은 작업 아래에 규칙 하나를 넣는다.
 func (s *AssetStore) CreateTaskInterceptRule(taskID int64, action, kind, pattern, note string, enabled bool) (AssetInterceptRule, error) {
 	row := s.db.QueryRow(`
 INSERT INTO task_intercept_rules(task_id, enabled, action, kind, pattern, note)
@@ -81,8 +81,8 @@ RETURNING `+taskInterceptRuleCols,
 	return scanTaskInterceptRule(row)
 }
 
-// UpdateTaskInterceptRule replaces the editable fields of a task's rule (scoped
-// by task_id so a rule can only be edited through its owning task).
+// UpdateTaskInterceptRule은 작업 규칙에서 고칠 수 있는 필드를 바꾼다.
+// task_id로 범위를 묶어, 그 작업으로만 고칠 수 있다.
 func (s *AssetStore) UpdateTaskInterceptRule(taskID, ruleID int64, action, kind, pattern, note string, enabled bool) (AssetInterceptRule, error) {
 	row := s.db.QueryRow(`
 UPDATE task_intercept_rules
@@ -93,7 +93,7 @@ RETURNING `+taskInterceptRuleCols,
 	return scanTaskInterceptRule(row)
 }
 
-// DeleteTaskInterceptRule removes a task's rule. Returns false if not found.
+// DeleteTaskInterceptRule은 작업의 규칙을 지운다. 없으면 false를 돌려준다.
 func (s *AssetStore) DeleteTaskInterceptRule(taskID, ruleID int64) (bool, error) {
 	res, err := s.db.Exec(`DELETE FROM task_intercept_rules WHERE id=$1 AND task_id=$2`, ruleID, taskID)
 	if err != nil {
@@ -103,14 +103,14 @@ func (s *AssetStore) DeleteTaskInterceptRule(taskID, ruleID int64) (bool, error)
 	return n > 0, nil
 }
 
-// ToggleTaskInterceptRule flips the enabled state of a task's rule.
+// ToggleTaskInterceptRule은 작업 규칙의 켜짐/꺼짐을 바꾼다.
 func (s *AssetStore) ToggleTaskInterceptRule(taskID, ruleID int64, enabled bool) error {
 	_, err := s.db.Exec(`UPDATE task_intercept_rules SET enabled=$3 WHERE id=$1 AND task_id=$2`, ruleID, taskID, enabled)
 	return err
 }
 
-// insertTaskInterceptRules inserts task-level rules within the task-creation
-// transaction (mirrors insertTaskCompanies).
+// insertTaskInterceptRules는 작업을 만드는 트랜잭션 안에서 작업 단위 규칙을 넣는다
+// (insertTaskCompanies와 같은 자리다).
 func insertTaskInterceptRules(tx *sql.Tx, taskID int64, rules []TaskInterceptRuleInput) error {
 	for _, r := range rules {
 		if _, err := tx.Exec(`

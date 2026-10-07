@@ -11,25 +11,25 @@ import (
 	"golang.org/x/net/publicsuffix"
 )
 
-// ParsedScope is one parsed asset-scope entry. Its kind selects Domain, Net, or Value.
-// Used internally by the company scope parsers and CompanyStore.
+// ParsedScope는 파싱된 자산 범위 항목 하나다. kind가 Domain, Net, Value 중 무엇을 쓸지 정한다.
+// 기업 범위 파서와 CompanyStore가 내부에서 쓴다. 이 범위가 자산 그래프에 올릴 자산의 기업 경계를 정한다.
 type ParsedScope struct {
-	Kind   string // "domain" | "ip" | "cidr" | "icp" | "keyword"
-	Domain string // normalized registrable/root domain (kind=domain)
-	Net    string // normalized CIDR, single IP as /32 or /128 (kind=ip|cidr)
-	Value  string // normalized text (kind=icp|keyword)
-	Raw    string // original input line
+	Kind   string // "domain" | "ip" | "cidr" | "icp" | "keyword" (범위 종류)
+	Domain string // 정규화한 등록 가능/루트 도메인 (kind=domain)
+	Net    string // 정규화한 CIDR. IP 하나는 /32 또는 /128 (kind=ip|cidr)
+	Value  string // 정규화한 글 (kind=icp|keyword)
+	Raw    string // 원래 입력 줄
 }
 
-// ScopeInput is the structured API form for a company scope rule. Empty Kind
-// uses the same automatic classification as the single-textarea UI.
+// ScopeInput은 기업 범위 규칙의 구조화된 API 형태다. Kind가 비어 있으면
+// 글상자 하나짜리 UI와 같은 자동 분류를 쓴다.
 type ScopeInput struct {
 	Kind  string `json:"kind,omitempty"`
 	Value string `json:"value"`
 }
 
-// NormalizeICP removes every Unicode whitespace character and folds case. ICP
-// matching intentionally performs no fuzzy or punctuation normalization.
+// NormalizeICP는 유니코드 공백을 모두 지우고 대소문자를 접는다.
+// ICP 맞춤은 일부러 비슷한 글자나 문장 부호를 정규화하지 않는다.
 func NormalizeICP(value string) string {
 	return strings.ToLower(strings.Map(func(r rune) rune {
 		if unicode.IsSpace(r) {
@@ -49,8 +49,8 @@ func looksLikeIPAddress(value string) bool {
 		return false
 	}
 	if strings.Count(value, ":") >= 2 {
-		// Require an IPv6-looking prefix. This still catches malformed values such
-		// as 2001:db8::zz without treating ordinary colon-delimited keywords as IPs.
+		// IPv6처럼 보이는 접두가 있어야 한다. 2001:db8::zz 같은 잘못된 값은 잡고,
+		// 콜론으로 나뉜 평범한 키워드는 IP로 보지 않는다.
 		parts := strings.Split(value, ":")
 		validSegments := 0
 		for _, part := range parts {
@@ -86,8 +86,8 @@ func looksLikeIPAddress(value string) bool {
 	return true
 }
 
-// ParseScopeInput validates an explicitly typed rule. Legacy callers can omit
-// Kind and use the same automatic classification as the single-textarea UI.
+// ParseScopeInput은 종류를 명시한 규칙을 검사한다. 예전 호출자는
+// Kind를 빼고, 글상자 하나짜리 UI와 같은 자동 분류를 쓸 수 있다.
 func ParseScopeInput(input ScopeInput) (ParsedScope, error) {
 	kind := strings.ToLower(strings.TrimSpace(input.Kind))
 	raw := strings.TrimSpace(input.Value)
@@ -121,9 +121,9 @@ func ParseScopeInput(input ScopeInput) (ParsedScope, error) {
 	}
 }
 
-// ParseAutoScopeLine classifies one untyped textarea line. Network-looking and
-// domain-looking values remain strict so malformed ranges do not silently become
-// Agent keywords; all other non-empty text is a keyword.
+// ParseAutoScopeLine은 종류가 없는 글상자 한 줄을 분류한다.
+// 네트워크나 도메인처럼 보이는 값은 엄격하게 본다. 잘못된 범위가 조용히 키워드가 되지 않게 한다.
+// 그 밖의 비어 있지 않은 글은 키워드다.
 func ParseAutoScopeLine(line string) (ParsedScope, error) {
 	raw := strings.TrimSpace(line)
 	if raw == "" {
@@ -213,16 +213,16 @@ func scopeHostname(raw string) (string, error) {
 	return host, nil
 }
 
-// ParseScopeLine classifies and validates one scope line (root domain / IP /
-// CIDR). Guardrails reject bare TLDs and over-broad networks so a rule can never
-// swallow the internet. IP ranges must be expressed as CIDR.
+// ParseScopeLine은 범위 한 줄(루트 도메인 / IP / CIDR)을 분류하고 검사한다.
+// 가드레일은 맨 TLD와 너무 넓은 네트워크를 거절한다. 규칙 하나가 인터넷 전체를 삼키지 못하게 한다.
+// IP 범위는 CIDR로 적어야 한다.
 func ParseScopeLine(line string) (ParsedScope, error) {
 	raw := strings.TrimSpace(line)
 	r := ParsedScope{Raw: raw}
 	if raw == "" {
 		return r, fmt.Errorf("빈 줄")
 	}
-	// CIDR first because URL parsing treats its slash as a path separator.
+	// CIDR을 먼저 본다. URL 파서는 슬래시를 경로 구분자로 보기 때문이다.
 	if _, ipnet, err := net.ParseCIDR(raw); err == nil {
 		ones, bits := ipnet.Mask.Size()
 		if bits == 32 && ones < 16 {
@@ -234,7 +234,7 @@ func ParseScopeLine(line string) (ParsedScope, error) {
 		r.Kind, r.Net = "cidr", ipnet.String()
 		return r, nil
 	}
-	// Single IP.
+	// IP 하나.
 	if ip := net.ParseIP(raw); ip != nil {
 		r.Kind = "ip"
 		if ip.To4() != nil {
@@ -263,7 +263,7 @@ func ParseScopeLine(line string) (ParsedScope, error) {
 	if strings.Contains(raw, "-") && strings.Count(raw, ".") >= 6 {
 		return r, fmt.Errorf("IP 대역은 CIDR로 표기하세요(예: 1.2.3.0/24): %s", raw)
 	}
-	// Domain (registrable). Reject bare TLDs / public suffixes.
+	// 도메인(등록 가능). 맨 TLD와 공용 접미사는 거절한다.
 	d := DomainKey(host)
 	if suf, icann := publicsuffix.PublicSuffix(d); icann && suf == d {
 		return r, fmt.Errorf("맨 TLD는 범위로 사용할 수 없습니다: %s", raw)

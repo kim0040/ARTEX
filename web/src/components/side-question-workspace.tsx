@@ -61,7 +61,7 @@ function SidePanel({
   const viewport = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
   const tail = side.items.at(-1);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: New cumulative text scrolls only readers who remain at the bottom.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 새 누적 글은 맨 아래에 있는 사람만 따라 스크롤합니다.
   useEffect(() => {
     if (pinned.current && viewport.current) viewport.current.scrollTop = viewport.current.scrollHeight;
   }, [tail?.answer, tail?.id]);

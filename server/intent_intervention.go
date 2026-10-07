@@ -26,15 +26,16 @@ func validWorkerMessageRequestID(id string) bool {
 	return true
 }
 
-// sendWorkerMessage continues a paused Worker intent with a human-authored message.
-// The message is injected as the next turn's input through the same
-// resume-from-transcript path the worker uses on a normal resume (ExecuteWithMessage),
-// so this reuses the existing pause/resume machinery rather than a bespoke protocol.
-// The run happens in a dedicated goroutine outside the worker pool (runDetachedIntent),
-// so the message is picked up immediately even when every pool slot is busy — the same
-// way the main-agent chat handler starts its run directly. In-memory only: a process
-// restart re-runs the intent from its transcript without the message, which is
-// acceptable for this rare interrupt-then-continue action.
+// sendWorkerMessage는 일시정지된 워커 의도를, 사람이 쓴 말로 이어 갑니다.
+// 그 말은 다음 턴의 입력으로 들어갑니다. 워커가 보통 재개할 때 쓰는
+// 기록에서 이어 가기(ExecuteWithMessage)와 같은 경로입니다.
+// 그래서 따로 프로토콜을 만들지 않고, 있는 일시정지/재개를 재사용합니다.
+// 실행은 워커 풀 밖의 전용 고루틴입니다(runDetachedIntent).
+// 풀 자리가 모두 바빠도 말이 바로 집힙니다. 메인 에이전트 채팅 처리기가
+// 실행을 직접 시작하는 것과 같습니다. 메모리에만 있습니다. 프로세스가
+// 재시작하면 그 말 없이 기록부터 의도를 다시 돌립니다. 이 드문
+// 끊었다가 이어 가는 동작에는 그 정도로 충분합니다.
+// 초보용: 화면에서 멈춘 워커 의도에 사람이 쓴 말을 넣어, 엔진이 그 의도를 이어서 돌립니다.
 func (s *Server) sendWorkerMessage(w http.ResponseWriter, r *http.Request) {
 	t, ok := s.m.Task(r.PathValue("id"))
 	if !ok {
@@ -75,9 +76,9 @@ func (s *Server) sendWorkerMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Reject non-runnable task lifecycles up front so the caller gets a clear reason
-	// instead of a silent no-op. The intent itself must be paused: the UI flow is
-	// interrupt (pause) first, then send.
+	// 돌릴 수 없는 작업 생명주기는 앞에서 거절합니다. 호출자가 이유를 보게 하고,
+	// 조용히 아무 일도 안 하는 일을 막습니다. 의도 자체는 일시정지여야 합니다. 화면 흐름은
+	// 먼저 끼어들어 멈추고(일시정지), 그다음 보냅니다.
 	if s.engine.IsDeleting(t.ID) {
 		writeErr(w, http.StatusConflict, "작업을 삭제하는 중이라 워커에 메시지를 보낼 수 없습니다")
 		return
@@ -124,9 +125,9 @@ func (s *Server) sendWorkerMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// runDetachedIntent transitions paused->running, emits the user turn and starts a
-	// dedicated run. Root the run at s.ctx so a disconnected browser cannot strand it
-	// while task pause/delete/shutdown still stop it.
+	// runDetachedIntent는 일시정지를 실행 중으로 바꾸고, 사용자 턴을 낸 뒤 전용 실행을 시작합니다.
+	// 실행의 뿌리는 s.ctx입니다. 브라우저 연결이 끊겨도 실행이 허공에 남지 않게 하고,
+	// 작업 일시정지/삭제/종료는 여전히 멈출 수 있습니다.
 	if err := s.engine.runDetachedIntent(s.ctx, t, iid, requestID, message, agentMessage); err != nil {
 		switch {
 		case errors.Is(err, db.ErrIntentStateConflict):

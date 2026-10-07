@@ -364,9 +364,9 @@ func TestBlackboardToolsReadDirectSources(t *testing.T) {
 	}
 }
 
-// TestGetWorkerTraceStepIDsDegradeGracefully pins the over-cap behaviour: instead
-// of erroring, get_worker_trace returns the first 5 requested steps and tells the
-// model which ids it deferred, after de-duplicating and dropping invalid ids.
+// TestGetWorkerTraceStepIDsDegradeGracefully 는 상한을 넘긴 동작을 고정합니다.
+// 오류를 내지 않고, get_worker_trace 가 요청한 앞 5단계를 돌려주고
+// 미룬 id 를 모델에게 알립니다. 그 전에 중복을 없애고 잘못된 id 를 버립니다.
 func TestGetWorkerTraceStepIDsDegradeGracefully(t *testing.T) {
 	d := testDB(t)
 	defer d.Close()
@@ -397,8 +397,8 @@ func TestGetWorkerTraceStepIDsDegradeGracefully(t *testing.T) {
 	tools := NewToolSet(store, "worker")
 	tools.SetAssetStore(d.Assets(), d.Companies())
 
-	// Request 7 ids: a duplicate of the first, an invalid 0, then all 6 real ids.
-	// After dedup/cleanup that is 6 valid ids — one over the cap.
+	// id 7개를 요청합니다. 첫 번째의 중복, 잘못된 0, 그다음 진짜 id 6개입니다.
+	// 중복을 없애고 정리하면 유효 id 6개입니다. 상한보다 하나입니다.
 	requested := []int64{stepIDs[0], stepIDs[0], 0, stepIDs[1], stepIDs[2], stepIDs[3], stepIDs[4], stepIDs[5]}
 	input, _ := json.Marshal(map[string]any{"intent_id": intent, "step_ids": requested})
 	res := callReadJSON(t, tools.getWorkerTrace(), string(input)).(map[string]any)
@@ -407,7 +407,7 @@ func TestGetWorkerTraceStepIDsDegradeGracefully(t *testing.T) {
 	if len(returned) != 5 {
 		t.Fatalf("returned_step_ids=%v, want the first 5", res["returned_step_ids"])
 	}
-	// First 5 distinct valid ids, in request order.
+	// 서로 다른 유효 id 앞 5개입니다. 요청 순서입니다.
 	wantReturned := []int64{stepIDs[0], stepIDs[1], stepIDs[2], stepIDs[3], stepIDs[4]}
 	for i, raw := range returned {
 		if int64(raw.(float64)) != wantReturned[i] {
@@ -425,7 +425,7 @@ func TestGetWorkerTraceStepIDsDegradeGracefully(t *testing.T) {
 		t.Fatalf("steps=%d, want 5 detail rows", len(steps))
 	}
 
-	// At or under the cap: no notice, no omitted list.
+	// 상한 이하이면 notice 도, 뺀 목록도 없습니다.
 	okInput, _ := json.Marshal(map[string]any{"intent_id": intent, "step_ids": stepIDs[:3]})
 	okRes := callReadJSON(t, tools.getWorkerTrace(), string(okInput)).(map[string]any)
 	if _, hasNotice := okRes["notice"]; hasNotice {

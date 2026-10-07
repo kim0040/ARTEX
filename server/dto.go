@@ -10,17 +10,18 @@ import (
 	"github.com/Autumn-27/artex/traffic"
 )
 
-// DTO/serialization layer: each handler emits EXACTLY the frontend's spec shapes
-// (artex/web/src/lib/types.ts). These reshape db package structs so the
-// internal DB model never leaks over the API. The db structs and the frontend are
-// the canonical contracts; this file maps one onto the other.
+// DTO/직렬화 층입니다. 각 처리기는 화면 규격 모양을 그대로 내보냅니다
+// (artex/web/src/lib/types.ts). db 패키지 구조체를 다시 모양 잡아,
+// 내부 DB 모델이 API 밖으로 새지 않게 합니다. db 구조체와 화면이
+// 기준 계약이고, 이 파일이 둘을 잇습니다.
+// 초보용: 엔진과 그래프의 저장 모양을, 화면이 읽는 JSON으로 바꿉니다.
 
 func i64s(v int64) string { return strconv.FormatInt(v, 10) }
 
 func rfc3339(t time.Time) string { return t.Format(time.RFC3339) }
 
-// rawString stringifies a json.RawMessage, returning "" for empty/nil so omitempty
-// fields drop out.
+// rawString은 json.RawMessage를 문자열로 바꿉니다. 비었거나 nil이면 ""이라
+// omitempty 필드가 빠집니다.
 func rawString(raw json.RawMessage) string {
 	if len(raw) == 0 {
 		return ""
@@ -28,7 +29,7 @@ func rawString(raw json.RawMessage) string {
 	return string(raw)
 }
 
-// ---- Task (frontend "Task") ---- created_at as RFC3339, plus a derived status.
+// ---- 작업(화면의 Task) ---- created_at은 RFC3339, 상태는 계산해서 붙입니다.
 type TaskDTO struct {
 	ID                 string             `json:"id"`
 	ExplorationID      int64              `json:"exploration_id"`
@@ -39,20 +40,20 @@ type TaskDTO struct {
 	PinnedAt           string             `json:"pinned_at,omitempty"`
 	Description        string             `json:"description"`
 	Goal               string             `json:"goal"`
-	Status             string             `json:"status"` // created | running | paused | done | failed
+	Status             string             `json:"status"` // created=만듦 | running=실행 중 | paused=일시정지 | done=끝남 | failed=실패
 	CreatedAt          string             `json:"created_at"`
-	CreatedUnix        int64              `json:"created_unix"`       // created_at as unix seconds (for run-duration calc)
-	CompletedAt        string             `json:"completed_at"`       // RFC3339 finish time (done/failed); "" if unfinished
-	CompletedUnix      int64              `json:"completed_unix"`     // completed_at as unix seconds (0 if unfinished)
-	LastActivity       int64              `json:"last_activity_unix"` // unix seconds of the last activity (0 if none)
+	CreatedUnix        int64              `json:"created_unix"`       // created_at의 유닉스 초(실행 시간을 계산할 때)
+	CompletedAt        string             `json:"completed_at"`       // 끝난 시각(RFC3339, done/failed). 아직 안 끝났으면 ""
+	CompletedUnix      int64              `json:"completed_unix"`     // completed_at의 유닉스 초(아직이면 0)
+	LastActivity       int64              `json:"last_activity_unix"` // 마지막 활동의 유닉스 초(없으면 0)
 	Paused             bool               `json:"paused"`
 	Queued             bool               `json:"queued"`
-	Tokens             TokenTotalDTO      `json:"tokens"` // whole-task token consumption
+	Tokens             TokenTotalDTO      `json:"tokens"` // 작업 전체의 토큰 사용량
 	GoalsTotal         int                `json:"goals_total"`
 	GoalsMet           int                `json:"goals_met"`
 	InFlight           int                `json:"in_flight"`                // 실행 중인 워커 수(state=running 인 의도)
 	Findings           FindingSeverityDTO `json:"findings"`                 // 이 작업에 등록된 발견(finding) 수(findings 표, 심각도별 구간)
-	LLMProfileID       *int64             `json:"llm_profile_id,omitempty"` // LLM profile used for this task; nil = default
+	LLMProfileID       *int64             `json:"llm_profile_id,omitempty"` // 이 작업이 쓰는 LLM 설정. nil이면 기본
 	LLMProfileIDs      []int64            `json:"llm_profile_ids"`
 	ActiveLLMProfileID *int64             `json:"active_llm_profile_id,omitempty"`
 	LLMFailoverState   string             `json:"llm_failover_state"`
@@ -84,7 +85,7 @@ func applyTaskArchiveBlocker(dto *TaskDTO, blockers map[int64]int64) {
 	}
 }
 
-// TokenTotalDTO is a whole-task (all agents) token aggregate.
+// TokenTotalDTO는 작업 전체(모든 에이전트)의 토큰 합입니다.
 type TokenTotalDTO struct {
 	InputTokens      int `json:"input_tokens"`
 	OutputTokens     int `json:"output_tokens"`
@@ -137,7 +138,7 @@ func taskDTO(t *Task, status string) TaskDTO {
 	}
 }
 
-// completedRFC renders a unix completion time as RFC3339, or "" when unset (0).
+// completedRFC는 유닉스 완료 시각을 RFC3339로 바꿉니다. 없으면(0) ""입니다.
 func completedRFC(unix int64) string {
 	if unix == 0 {
 		return ""
@@ -145,7 +146,7 @@ func completedRFC(unix int64) string {
 	return rfc3339(time.Unix(unix, 0))
 }
 
-// ---- TrafficExchange (frontend "TrafficExchange") ---- ts as RFC3339.
+// ---- 트래픽 교환(화면의 TrafficExchange) ---- ts는 RFC3339입니다.
 type TrafficExchangeDTO struct {
 	ID          string `json:"id"`
 	TS          string `json:"ts"`
@@ -174,11 +175,11 @@ func trafficDTOs(ex []traffic.ExchangeMeta) []TrafficExchangeDTO {
 	return out
 }
 
-// ---- TaskNode (frontend "TaskNode") — frontier, intents, exploration graph nodes ----
+// ---- 작업 노드(화면의 TaskNode) — 프론티어, 의도, 탐색 그래프 노드 ----
 
 type TaskNodeDTO struct {
 	ID           string `json:"id"`
-	Type         string `json:"type"` // db Node.Kind
+	Type         string `json:"type"` // db의 Node.Kind — 노드 종류
 	Payload      string `json:"payload,omitempty"`
 	Priority     int    `json:"priority"`
 	State        string `json:"state"`
@@ -207,7 +208,7 @@ func taskNodeDTO(n *db.Node) TaskNodeDTO {
 	return d
 }
 
-// GoalDTO is a goal node with its payload unpacked into text/vulnclass — the shape
+// GoalDTO는 목표 노드입니다. payload를 text/vulnclass로 풀어 둔 모양입니다.
 // 개요「목표 관리」UI 가 쓰는 값이다(원시 payload JSON 을 담는 TaskNodeDTO 와 대비).
 type GoalDTO struct {
 	ID        string `json:"id"`
@@ -245,7 +246,7 @@ func goalDTOs(in []*db.Node) []GoalDTO {
 // ConstraintDTO 는 개요「제약 관리」UI 용 연산 제약 하나다 (allow/deny). 엔진의 가드가 이 허용·거부를 읽어 작업 실행을 가르고, 그 설정이 개요 UI에 그대로 나온다.
 type ConstraintDTO struct {
 	ID     string `json:"id"`
-	Kind   string `json:"kind"` // allow | deny
+	Kind   string `json:"kind"` // allow=허용 | deny=거부
 	Text   string `json:"text"`
 	Origin string `json:"origin,omitempty"`
 	TS     string `json:"ts,omitempty"`
@@ -259,7 +260,7 @@ func taskNodeDTOs(in []*db.Node) []TaskNodeDTO {
 	return out
 }
 
-// ---- Edge (frontend "Edge") — exploration edges and asset edges ----
+// ---- 간선(화면의 Edge) — 탐색 간선과 자산 간선 ----
 
 type EdgeDTO struct {
 	Src string `json:"src"`
@@ -279,7 +280,7 @@ func edgeDTOs(in []db.Edge) []EdgeDTO {
 	return out
 }
 
-// ---- Coverage asset references ----
+// ---- 커버리지가 가리키는 자산 ----
 
 type CoverageAssetRefDTO struct {
 	ID           int64  `json:"id"`
@@ -300,7 +301,7 @@ func coverageAssetRefDTO(ref db.AssetRef) CoverageAssetRefDTO {
 	return out
 }
 
-// ---- Finding (frontend "Finding") ----
+// ---- 발견(화면의 Finding) ----
 
 type FindingDTO struct {
 	TrafficCount          int                        `json:"traffic_count"`
@@ -310,11 +311,11 @@ type FindingDTO struct {
 	TrafficBindings       []db.FindingTrafficBinding `json:"traffic_bindings,omitempty"`
 
 	ID        string `json:"id"`
-	FindingID string `json:"finding_id,omitempty"` // standalone findings-table id — the handle for status updates
+	FindingID string `json:"finding_id,omitempty"` // 독립 발견 표의 id — 상태를 고칠 때 쓰는 손잡이
 	VulnClass string `json:"vulnclass"`
 	Name      string `json:"name,omitempty"` // 발견(finding) 이름; 비어 있으면 프론트엔드는 vulnclass 를 대신 보여 준다
-	Severity  string `json:"severity"`       // critical | high | medium | low
-	Status    string `json:"status"`         // pending | in_progress | confirmed | resolved | fixed | false_positive | ignored | duplicate | risk_accepted
+	Severity  string `json:"severity"`       // critical=치명 | high=높음 | medium=중간 | low=낮음
+	Status    string `json:"status"`         // pending=대기 | in_progress=진행 | confirmed=확인 | resolved=해결 | fixed=수정됨 | false_positive=오탐 | ignored=무시 | duplicate=중복 | risk_accepted=위험 수용
 	Summary   string `json:"summary"`
 	Evidence  string `json:"evidence"`
 	Report    string `json:"report,omitempty"` // 상세 보고서(Markdown); 상세 인터페이스만 반환하고, 목록에서는 비어 있다
@@ -329,14 +330,14 @@ type FindingDTO struct {
 	TS              string            `json:"ts"`
 }
 
-// FindingAssetDTO is one asset a finding is anchored to, pre-labelled for display.
+// FindingAssetDTO는 발견이 앵커로 묶인 자산 하나입니다. 화면에 보일 이름표를 미리 붙입니다.
 type FindingAssetDTO struct {
 	ID    string `json:"id"`
 	Type  string `json:"type"`
 	Label string `json:"label"`
 }
 
-// assetLabel renders an asset's most identifying field for compact display.
+// assetLabel은 짧게 보여 주려고, 자산을 가장 잘 가리키는 필드를 고릅니다.
 func assetLabel(a *db.Asset) string {
 	switch {
 	case a.URL != "":
@@ -367,8 +368,8 @@ func assetLabel(a *db.Asset) string {
 	}
 }
 
-// findingPayload mirrors the JSON written by the worker's report_finding tool
-// (agent/tools.go addFinding): {vulnclass, severity, summary, evidence:{by,poc}}.
+// findingPayload는 워커의 report_finding 도구가 쓴 JSON과 같은 모양입니다
+// (agent/tools.go의 addFinding): {vulnclass, severity, summary, evidence:{by,poc}}.
 type findingPayload struct {
 	VulnClass string          `json:"vulnclass"`
 	Name      string          `json:"name"`
@@ -397,12 +398,13 @@ func findingDTO(n *db.Node) FindingDTO {
 	return d
 }
 
-// findingDTOsForTask converts a task's finding nodes to DTOs, stamping each with
+// findingDTOsForTask는 한 작업의 발견 노드를 DTO로 바꿉니다. 각 항목에
 // 소속 작업의 id/설명이라, 전역 발견(finding) 페이지가 작업을 가로질러 묶을 수 있다.
-// meta maps node id → the standalone findings row (id + status + asset ids), so the
-// per-task view shows the same triage state and anchored assets as the global page;
-// nodes with no row keep the 'pending' default and no finding_id (not editable).
-// assets pre-resolves the anchored asset rows for label rendering.
+// meta는 노드 id에서 독립 발견 행(id, 상태, 자산 id)으로 가는 표입니다. 그래서
+// 작업 안 보기도 전역 페이지와 같은 분류 상태와 앵커 자산을 보여 줍니다.
+// 행이 없는 노드는 기본값 pending이고 finding_id가 없습니다(고칠 수 없음).
+// assets는 이름표를 그리려고 앵커 자산 행을 미리 풀어 둔 것입니다.
+// 초보용: 탐색 그래프의 발견 노드를, 화면의 발견 목록과 같은 모양으로 바꿉니다.
 func findingDTOsForTask(t *Task, in []*db.Node, meta map[int64]db.FindingMeta, assets map[int64]*db.Asset) []FindingDTO {
 	return findingDTOsForOwner(t.ID, t.Description, in, meta, assets)
 }
@@ -424,8 +426,8 @@ func findingDTOsForOwner(taskID, description string, in []*db.Node, meta map[int
 	return out
 }
 
-// findingAssetDTOs maps anchored asset ids to display DTOs, skipping ids whose
-// asset row is missing (e.g. deleted).
+// findingAssetDTOs는 앵커 자산 id를 화면 DTO로 바꿉니다. 자산 행이
+// 없는 id(예를 들어 삭제됨)는 건너뜁니다.
 func findingAssetDTOs(ids []int64, assets map[int64]*db.Asset) []FindingAssetDTO {
 	var out []FindingAssetDTO
 	for _, aid := range ids {
@@ -436,8 +438,8 @@ func findingAssetDTOs(ids []int64, assets map[int64]*db.Asset) []FindingAssetDTO
 	return out
 }
 
-// findingFromDB converts a standalone DBFinding row to a FindingDTO. task_id and
-// task_description are empty when the originating task has been deleted (NULL).
+// findingFromDB는 독립 DBFinding 행을 FindingDTO로 바꿉니다. 원래 작업이
+// 삭제돼 NULL이면 task_id와 task_description은 비웁니다.
 func findingFromDB(f *db.DBFinding, assets map[int64]*db.Asset) FindingDTO {
 	status := f.Status
 	if status == "" {
@@ -463,18 +465,18 @@ func findingFromDB(f *db.DBFinding, assets map[int64]*db.Asset) FindingDTO {
 		d.TaskDescription = f.TaskDescription
 	}
 	if f.NodeID != nil {
-		d.IntentID = "" // node_id is the finding node, not the intent; keep IntentID empty
+		d.IntentID = "" // node_id는 의도 노드가 아니라 발견 노드입니다. IntentID는 비워 둡니다.
 	}
 	return d
 }
 
-// ---- Activity (frontend "Activity") ----
+// ---- 활동(화면의 Activity) ----
 
 type ActivityDTO struct {
-	Seq          int64           `json:"seq"`                 // db Activity.ID
-	IntentID     string          `json:"intent_id,omitempty"` // db NodeID
+	Seq          int64           `json:"seq"`                 // db의 Activity.ID
+	IntentID     string          `json:"intent_id,omitempty"` // db의 NodeID
 	Worker       string          `json:"worker"`
-	TS           string          `json:"ts"` // db CreatedAt
+	TS           string          `json:"ts"` // db의 CreatedAt
 	Kind         string          `json:"kind"`
 	Tool         string          `json:"tool,omitempty"`
 	ToolUseID    string          `json:"tool_use_id,omitempty"`
@@ -484,8 +486,8 @@ type ActivityDTO struct {
 	Metadata     json.RawMessage `json:"metadata,omitempty"`
 	SourceTaskID string          `json:"source_task_id,omitempty"`
 	Inherited    bool            `json:"inherited,omitempty"`
-	MainSeg      *int            `json:"main_seg,omitempty"` // main-agent conversation segment (nil for non-mainagent rows)
-	// token usage (set only on kind='result'); used for per-session token totals.
+	MainSeg      *int            `json:"main_seg,omitempty"` // 메인 에이전트 대화 구간(메인 에이전트가 아닌 행은 nil)
+	// 토큰 사용량(kind가 result일 때만). 세션별 토큰 합에 씁니다.
 	InputTokens      *int `json:"input_tokens,omitempty"`
 	OutputTokens     *int `json:"output_tokens,omitempty"`
 	CacheReadTokens  *int `json:"cache_read_tokens,omitempty"`
@@ -507,7 +509,7 @@ func activityDTO(a db.Activity) ActivityDTO {
 		ToolUseID:        a.ToolUseID,
 		IsError:          a.IsError,
 		Summary:          a.Summary,
-		Detail:           a.Detail, // list endpoint leaves this empty (lazy)
+		Detail:           a.Detail, // 목록 API는 여기를 비워 둡니다(나중에 읽음).
 		Metadata:         a.Metadata,
 		InputTokens:      a.InputTokens,
 		OutputTokens:     a.OutputTokens,
@@ -530,7 +532,7 @@ func activityDTOs(in []db.Activity) []ActivityDTO {
 	return out
 }
 
-// ---- Agent (frontend "Agent") — string id ----
+// ---- 에이전트(화면의 Agent) — id는 문자열 ----
 
 type AgentDTO struct {
 	ID               string `json:"id"`
@@ -549,7 +551,7 @@ type AgentDTO struct {
 	TriggerRunMode     string `json:"trigger_run_mode"`
 	TriggerMergeMode   string `json:"trigger_merge_mode"`
 	TriggerMaxParallel int    `json:"trigger_max_parallel"`
-	// binding counts (populated only by the list endpoint) — shown on agent cards.
+	// 바인딩 개수(목록 API만 채움). 에이전트 카드에 보입니다.
 	McpCount   int `json:"mcp_count"`
 	SkillCount int `json:"skill_count"`
 	ToolCount  int `json:"tool_count"`
@@ -583,7 +585,7 @@ func agentDTOs(in []*db.Agent) []AgentDTO {
 	return out
 }
 
-// ---- LLMProfile (frontend "LLMProfile") — string id ----
+// ---- LLM 설정(화면의 LLMProfile) — id는 문자열 ----
 
 type LLMProfileDTO struct {
 	ID              string  `json:"id"`
@@ -652,7 +654,7 @@ func llmProfileDTOs(in []*db.LLMProfile) []LLMProfileDTO {
 	return out
 }
 
-// idStrings formats a slice of int64 ids as strings (for visibility agent ids).
+// idStrings는 int64 id 목록을 문자열로 바꿉니다(보임 대상 에이전트 id용).
 func idStrings(in []int64) []string {
 	out := make([]string, 0, len(in))
 	for _, v := range in {

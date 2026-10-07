@@ -5,8 +5,8 @@ import (
 	"time"
 )
 
-// A configured soft-trip threshold replaces the default: two transient failures
-// are enough, and the fixed cooldown replaces the 1/5/30min ladder.
+// 설정된 일시 트립 문턱이 기본값을 바꿉니다. 일시적 실패 두 번이면 충분하고,
+// 고정 쉬는 시간이 1/5/30분 사다리를 대신합니다.
 func TestSetPolicyOverridesThresholdAndCooldown(t *testing.T) {
 	reg := NewRegistry(nil, nil)
 	reg.SetPolicy(2, 90*time.Second)
@@ -20,7 +20,7 @@ func TestSetPolicyOverridesThresholdAndCooldown(t *testing.T) {
 	if d := time.Until(st.OpenUntil); d < 80*time.Second || d > 90*time.Second {
 		t.Fatalf("cooldown=%v, want ~90s", d)
 	}
-	// Every later trip keeps the same fixed window instead of climbing the ladder.
+	// 이후 트립도 사다리를 오르지 않고 같은 고정 창을 유지합니다.
 	reg.Trip(1, "429", true)
 	st = reg.Get(1)
 	if d := time.Until(st.OpenUntil); d < 80*time.Second || d > 90*time.Second {
@@ -28,8 +28,8 @@ func TestSetPolicyOverridesThresholdAndCooldown(t *testing.T) {
 	}
 }
 
-// A negative threshold turns off soft tripping entirely: transient failures never
-// open the breaker, deterministic ones still do immediately.
+// 음수 문턱은 일시 트립을 완전히 끕니다. 일시적 실패는 차단기를 열지 않고,
+// 원인이 분명한 실패는 여전히 바로 엽니다.
 func TestSetPolicyDisablesSoftTrip(t *testing.T) {
 	reg := NewRegistry(nil, nil)
 	reg.SetPolicy(-1, 0)
@@ -49,7 +49,7 @@ func TestSetPolicyDisablesSoftTrip(t *testing.T) {
 	}
 }
 
-// The zero policy is the historical behaviour: 3 transient failures, ladder cooldown.
+// 0 정책은 예전 동작입니다. 일시적 실패 3번, 사다리 쉬는 시간.
 func TestZeroPolicyKeepsDefaults(t *testing.T) {
 	reg := NewRegistry(nil, nil)
 	reg.SetPolicy(0, 0)

@@ -14,10 +14,11 @@ import (
 
 const maxTaskTemplateRequestBytes = 512 << 10
 
-// taskTemplateRequest uses pointers so PATCH can distinguish omitted fields from
-// explicit empty values. Empty values are still rejected by the DB validator.
-// category_id / intercept_rules presence is detected via the raw key set (see
-// decodeTaskTemplateRequest) so a PATCH can clear category to null.
+// taskTemplateRequest는 포인터를 써서, PATCH가 필드를 뺀 것과
+// 빈 값을 명시한 것을 구분합니다. 빈 값도 DB 검사가 거절합니다.
+// category_id / intercept_rules 가 있는지는 원본 키 집합으로 봅니다
+// (decodeTaskTemplateRequest). 그래서 PATCH가 분류를 null로 지울 수 있습니다.
+// 초보용: 화면에서 작업 템플릿을 고칠 때 보내는 본문입니다. intercept_rules는 그 템플릿의 가로채기 규칙입니다.
 type taskTemplateRequest struct {
 	Name           *string                `json:"name"`
 	Description    *string                `json:"description"`
@@ -26,8 +27,8 @@ type taskTemplateRequest struct {
 	InterceptRules []taskInterceptRuleReq `json:"intercept_rules"`
 }
 
-// decodeTaskTemplateRequest decodes the body into req and returns the set of
-// top-level keys present in the JSON (for PATCH presence detection).
+// decodeTaskTemplateRequest는 본문을 req로 풀고, JSON에 실제로 있던
+// 최상위 키 집합을 돌려줍니다(PATCH에서 키가 있었는지 볼 때).
 func decodeTaskTemplateRequest(w http.ResponseWriter, r *http.Request, req *taskTemplateRequest) (map[string]struct{}, bool) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxTaskTemplateRequestBytes)
 	body, err := io.ReadAll(r.Body)

@@ -84,7 +84,7 @@ func (c feishuChannel) Send(ctx context.Context, cfg map[string]any, m Message) 
 //
 // 여기서 틀리기 쉽습니다. 공식 예제는
 //
-//	hmac.new(string_to_sign.encode(), digestmod=sha256)
+//	파이썬 예: hmac.new(string_to_sign.encode(), digestmod=sha256)
 //
 // 즉 **key = timestamp + "\n" + secret, message는 빈 값**입니다. 직관적인
 // 「key=secret, message=stringToSign」이 아닙니다. 그건 딩톡 알고리즘입니다.

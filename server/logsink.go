@@ -12,47 +12,48 @@ import (
 	"github.com/Autumn-27/artex/db"
 )
 
-// LogLine is one captured backend log entry exposed by the /api/logs endpoints.
+// LogLine은 /api/logs가 보여주는, 잡은 백엔드 로그 한 줄입니다.
 type LogLine struct {
 	Seq   int64  `json:"seq"`
-	DBID  int64  `json:"db_id,omitempty"` // server_logs.id; 0 for pre-persistence entries
+	DBID  int64  `json:"db_id,omitempty"` // server_logs.id. 저장 전 항목은 0
 	TS    string `json:"ts"`
-	Level string `json:"level"` // info | warn | error
-	Tag   string `json:"tag"`   // the leading [tag] (pg / planner / activity / …), if any
+	Level string `json:"level"` // info=정보 | warn=경고 | error=오류
+	Tag   string `json:"tag"`   // 앞의 [tag]입니다(pg / planner / activity / …). 없으면 비움
 	Text  string `json:"text"`
 }
 
-// dbWriteReq carries a log line to the async DB writer.
+// dbWriteReq는 로그 한 줄을 비동기 DB 기록기에 넘깁니다.
 type dbWriteReq struct {
 	seq int64
 	ll  LogLine
 }
 
-// logSinkT tees the standard logger into an in-memory ring buffer and fans new
-// lines out to SSE subscribers, so the UI can show a live backend log stream.
-// It still passes everything through to stderr (the terminal keeps working).
+// logSinkT는 표준 로거를 메모리 링 버퍼로 보내고, 새
+// 줄을 SSE 구독자에게 퍼뜨립니다. 화면이 백엔드 로그를 실시간으로 보게 합니다.
+// 그래도 전부 stderr로도 보냅니다(터미널은 그대로 됩니다).
+// 초보용: 엔진이 찍은 로그를 화면의 실시간 로그에 보냅니다.
 type logSinkT struct {
 	mu   sync.Mutex
 	ring []LogLine
 	cap  int
 	seq  int64
 	subs map[chan LogLine]struct{}
-	out  io.Writer // passthrough (stderr)
+	out  io.Writer // 통과(stderr)
 
 	dbOnce sync.Once
-	dbCh   chan dbWriteReq // buffered async channel; nil until SetDB is called
+	dbCh   chan dbWriteReq // 버퍼 있는 비동기 채널. SetDB 전에는 nil
 }
 
 var logSink = &logSinkT{cap: 3000, subs: map[chan LogLine]struct{}{}, out: os.Stderr}
 
-// StartLogCapture redirects the standard log package through the in-memory sink
-// (still writing to stderr). Call once at startup, as early as possible.
+// StartLogCapture는 표준 log 패키지를 메모리 싱크로 돌립니다
+// (stderr에도 계속 씀). 시작 때 가능한 한 이르게, 한 번만 부릅니다.
 func StartLogCapture() { log.SetOutput(logSink) }
 
-// SetDB wires a postgres DB into the sink once (idempotent). It:
-//  1. Restores the last 100 log rows from DB into the ring so the /logs page
-//     shows history immediately after restart.
-//  2. Starts an async goroutine that persists every subsequent log line to DB.
+// SetDB는 postgres DB를 싱크에 한 번 연결합니다(여러 번 해도 한 번).
+//  1. DB의 최근 로그 100줄을 링에 복구해, /logs 페이지가
+//     재시작 직후에도 이전 기록을 바로 보여 주게 합니다.
+//  2. 그 뒤의 로그 줄을 DB에 비동기로 저장하는 고루틴을 시작합니다.
 func (s *logSinkT) SetDB(ctx context.Context, pg *db.DB) {
 	if pg == nil {
 		return
@@ -63,7 +64,7 @@ func (s *logSinkT) SetDB(ctx context.Context, pg *db.DB) {
 		s.dbCh = ch
 		s.mu.Unlock()
 
-		// Restore last 100 rows from DB → prepend to ring as history context.
+		// DB의 최근 100줄을 링 앞에 이전 맥락으로 붙입니다.
 		if logs, err := pg.RecentLogs(100); err == nil && len(logs) > 0 {
 			s.mu.Lock()
 			restored := make([]LogLine, 0, len(logs))
@@ -78,7 +79,7 @@ func (s *logSinkT) SetDB(ctx context.Context, pg *db.DB) {
 					Text:  l.Text,
 				})
 			}
-			// Prepend history before any in-memory startup logs already in ring.
+			// 링에 이미 있는 시작 로그보다 앞에 이전 기록을 붙입니다.
 			s.ring = append(restored, s.ring...)
 			if len(s.ring) > s.cap {
 				s.ring = s.ring[len(s.ring)-s.cap:]
@@ -86,8 +87,8 @@ func (s *logSinkT) SetDB(ctx context.Context, pg *db.DB) {
 			s.mu.Unlock()
 		}
 
-		// Async writer: picks from channel and inserts into server_logs.
-		// Uses os.Stderr directly to report errors and avoids recursive log calls.
+		// 비동기 기록기: 채널에서 집어 server_logs에 넣습니다.
+		// 오류는 os.Stderr에 직접 써서, 로그가 다시 호출되지 않게 합니다.
 		go func() {
 			for {
 				select {
@@ -100,7 +101,7 @@ func (s *logSinkT) SetDB(ctx context.Context, pg *db.DB) {
 						_, _ = os.Stderr.Write([]byte("[logsink] db write: " + err.Error() + "\n"))
 						continue
 					}
-					// Stamp DBID back into the ring entry so history pagination works.
+					// DBID를 링 항목에 다시 찍어, 이전 기록 페이지가 되게 합니다.
 					s.mu.Lock()
 					for i := range s.ring {
 						if s.ring[i].Seq == req.seq {
@@ -117,9 +118,9 @@ func (s *logSinkT) SetDB(ctx context.Context, pg *db.DB) {
 	})
 }
 
-// Write implements io.Writer for the log package: one call per log.Printf line.
+// Write는 log 패키지용 io.Writer입니다. log.Printf 한 줄마다 한 번 불립니다.
 func (s *logSinkT) Write(p []byte) (int, error) {
-	_, _ = s.out.Write(p) // keep the terminal output
+	_, _ = s.out.Write(p) // 터미널 출력은 유지합니다.
 	line := strings.TrimRight(string(p), "\n")
 	if strings.TrimSpace(line) != "" {
 		s.add(parseLog(line))
@@ -142,7 +143,7 @@ func (s *logSinkT) add(l LogLine) {
 	}
 	s.mu.Unlock()
 
-	// Async DB write (non-blocking; drops if channel is full under extreme load).
+	// 비동기 DB 쓰기(막지 않음. 극단적 부하로 채널이 가득 차면 버림).
 	if ch != nil {
 		select {
 		case ch <- dbWriteReq{seq: l.Seq, ll: l}:
@@ -158,7 +159,7 @@ func (s *logSinkT) add(l LogLine) {
 	}
 }
 
-// recent returns ring lines with Seq > since (capped to limit), and the latest seq.
+// recent는 Seq가 since보다 큰 링 줄을 돌려줍니다(limit까지). 최신 seq도 함께.
 func (s *logSinkT) recent(since int64, limit int) (lines []LogLine, cursor int64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -193,11 +194,11 @@ func (s *logSinkT) subscribe() (<-chan LogLine, func()) {
 	}
 }
 
-// parseLog pulls a level + [tag] out of a standard-logger line; the timestamp is
-// the capture time (RFC3339).
+// parseLog는 표준 로거 줄에서 수준과 [tag]를 뽑습니다. 시각은
+// 잡은 시각입니다(RFC3339).
 func parseLog(line string) LogLine {
 	msg := line
-	// strip the "2006/01/02 15:04:05" LstdFlags prefix if present
+	// 있으면 "2006/01/02 15:04:05" LstdFlags 접두사를 떼어 냅니다.
 	if len(msg) >= 20 && msg[4] == '/' && msg[7] == '/' && msg[10] == ' ' {
 		msg = strings.TrimSpace(msg[19:])
 	}

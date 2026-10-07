@@ -88,18 +88,18 @@ export default function LoginPage() {
 
   return (
     <div className="flex h-dvh">
-      {/* Left panel */}
+      {/* 왼쪽 패널 */}
       <div className="hidden flex-col items-center justify-center bg-primary p-12 text-center lg:flex lg:w-1/3">
         <div className="relative flex items-center justify-center">
           <div className="absolute size-80 rounded-full border border-primary-foreground/10" />
           <div className="absolute size-60 rounded-full border border-primary-foreground/15" />
           <div className="absolute size-40 rounded-full border border-primary-foreground/20" />
-          {/* eslint-disable-next-line @next/next/no-img-element */}
+          {/* eslint-disable-next-line @next/next/no-img-element -- 일반 이미지 태그 예외 */}
           <img src="/logo.png" alt="ARTEX" width={160} height={160} className="relative brightness-0 invert" />
         </div>
       </div>
 
-      {/* Right panel */}
+      {/* 오른쪽 패널 */}
       <div className="flex w-full items-center justify-center bg-background p-8 lg:w-2/3">
         <div className="w-full max-w-md space-y-10 py-24 lg:py-32">
           <div className="space-y-4 text-center">

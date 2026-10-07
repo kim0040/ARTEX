@@ -152,7 +152,7 @@ func (s *Server) deleteConstraint(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 
-// normalizeConstraintKind lowercases + validates the kind; "" on invalid.
+// normalizeConstraintKind는 kind를 소문자로 맞추고 검사합니다. 잘못되면 ""입니다.
 func normalizeConstraintKind(k string) string {
 	k = strings.TrimSpace(strings.ToLower(k))
 	if k == "allow" || k == "deny" {
@@ -161,7 +161,7 @@ func normalizeConstraintKind(k string) string {
 	return ""
 }
 
-// constraintDTOs converts db rows to the frontend shape.
+// constraintDTOs는 DB 행을 화면이 그리는 모양으로 바꿉니다.
 func constraintDTOs(in []db.Constraint) []ConstraintDTO {
 	out := make([]ConstraintDTO, 0, len(in))
 	for _, c := range in {

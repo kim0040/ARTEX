@@ -30,8 +30,8 @@ func TestTaskArchiveAPIQueueListAndLimits(t *testing.T) {
 		_ = m.pg.DeleteTask(taskID)
 	}()
 
-	// Start with an already-cancelled context so the background archive worker
-	// exits before these route-contract assertions enqueue work.
+	// 이미 취소된 컨텍스트로 시작합니다. 백그라운드 보관 워커가
+	// 이 경로 계약 확인이 일을 넣기 전에 끝나게 하려고요.
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	dataDir := t.TempDir()

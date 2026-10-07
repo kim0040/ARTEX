@@ -20,8 +20,8 @@ var (
 	ErrEvidenceNotFound = errors.New("트래픽 증거가 존재하지 않습니다")
 )
 
-// This lock covers the evidence filesystem as well as its SQL references. All
-// processes sharing the database use it, including readers, exports and GC.
+// 이 잠금은 증거 파일과 그 SQL 참조를 함께 덮는다.
+// 데이터베이스를 공유하는 모든 프로세스가 쓴다. 읽기, 내보내기, GC도 포함한다.
 const findingEvidenceLockKey int64 = 7337741004
 
 func (d *DB) WithEvidenceTx(ctx context.Context, fn func(*sql.Tx) error) error {
@@ -111,12 +111,10 @@ type PreparedTrafficEvidence struct {
 	Snapshot TrafficEvidenceSnapshot
 }
 
-// Normalize makes the snapshot's text columns safe for PostgreSQL. URL and the
-// head blocks come straight off the wire, so a target answering with a non-UTF-8
-// header (a GBK `Content-Disposition: filename=…`, a NUL byte) would otherwise
-// abort the INSERT and roll back the whole finding — losing a confirmed finding
-// over a malformed response header. Applied before hashing so the ID always
-// matches the bytes that actually land in the table.
+// Normalize는 스냅샷의 글 열을 PostgreSQL에 안전하게 만든다. URL과 머리 블록은
+// 회선에서 그대로 온다. 대상이 UTF-8이 아닌 헤더(GBK `Content-Disposition: filename=…`, NUL 바이트)로
+// 답하면 INSERT가 멈추고 발견 전체가 롤백될 수 있다. 헤더가 잘못됐다는 이유로
+// 확인된 발견을 잃는 일이다. 해시하기 전에 적용해서, ID가 테이블에 실제로 들어가는 바이트와 항상 같게 한다.
 func (s TrafficEvidenceSnapshot) Normalize() TrafficEvidenceSnapshot {
 	s.SourceTrafficID = utf8Clean(s.SourceTrafficID)
 	s.URL = utf8Clean(s.URL)
@@ -136,8 +134,8 @@ func TrafficSnapshotID(snapshot TrafficEvidenceSnapshot) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// LockTaskEvidenceTx serializes writes with archive queueing (which locks the
-// same task row). Once queued, its snapshot must not acquire new evidence.
+// LockTaskEvidenceTx는 쓰기를 보관 대기열과 직렬화한다. 대기열도 같은 작업 행을 잠근다.
+// 대기열에 들어간 뒤에는 그 스냅샷이 새 증거를 받으면 안 된다.
 func LockTaskEvidenceTx(tx *sql.Tx, taskID int64) error {
 	if taskID == 0 {
 		return nil
@@ -188,7 +186,7 @@ func InsertEvidenceSnapshotTx(tx *sql.Tx, s TrafficEvidenceSnapshot) error {
 	if s.ID != TrafficSnapshotID(s) {
 		return errors.New("증거 스냅샷 메타데이터 해시가 일치하지 않습니다")
 	}
-	// The ID was computed over the normalized form; store those same bytes.
+	// ID는 정규화한 형태로 계산했다. 그 같은 바이트를 저장한다.
 	id := s.ID
 	s = s.Normalize()
 	s.ID = id
@@ -407,7 +405,7 @@ VALUES(NULLIF($1,0),$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`, in.TaskID, out.NodeI
 	return out, err
 }
 
-// RecordFinding is the atomic legacy/no-recorder path used by tools and tests.
+// RecordFinding은 도구와 테스트가 쓰는, 한 번에 처리하는 예전/기록기 없는 경로다.
 func (s *ExplorationStore) RecordFinding(ctx context.Context, in RecordFindingInput) (out *RecordedFinding, err error) {
 	in.ExplorationID = s.expID
 	err = s.db.WithEvidenceTx(ctx, func(tx *sql.Tx) error { var e error; out, e = RecordFindingTx(ctx, tx, in, nil); return e })
@@ -419,8 +417,8 @@ func (d *DB) FindingIDByNodeID(nodeID int64) (id int64, err error) {
 	return
 }
 
-// PopulateFindingTrafficIDs only enriches already-visible nodes. It performs no
-// discovery or ID guessing, and leaves the legacy node ID unchanged.
+// PopulateFindingTrafficIDs는 이미 보이는 노드에만 정보를 더한다.
+// 새로 찾거나 ID를 추측하지 않고, 예전 노드 ID는 그대로 둔다.
 func (s *ExplorationStore) PopulateFindingTrafficIDs(nodes []*Node) error {
 	byID := map[int64]*Node{}
 	var args []any

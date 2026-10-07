@@ -14,7 +14,7 @@ import (
 	"github.com/Autumn-27/artex/db"
 )
 
-// Input bundles what the report needs.
+// Input 은 보고서를 만드는 데 필요한 묶음입니다. 발견은 탐색 그래프에서, 자산 수는 자산 그래프에서 옵니다.
 type Input struct {
 	Title       string
 	Goal        string
@@ -47,14 +47,14 @@ func parseFinding(n *db.Node) findingView {
 
 var sevRank = map[string]int{"critical": 0, "high": 1, "medium": 2, "low": 3, "": 4}
 
-// Markdown renders the report.
+// Markdown 은 사람이 읽는 보고서 본문을 만듭니다.
 func Markdown(in Input) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# 침투 테스트 보고서 — %s\n\n", nz(in.Title, "이름 없는 작업"))
 	fmt.Fprintf(&b, "- **작업 목표**: %s\n", nz(in.Goal, "(지정되지 않음)"))
 	fmt.Fprintf(&b, "- **생성 시각**: %s\n\n", in.GeneratedAt.Format("2006-01-02 15:04:05"))
 
-	// summary
+	// 요약
 	fmt.Fprintf(&b, "## 요약\n\n")
 	fmt.Fprintf(&b, "- 확인된 발견: **%d**개\n", len(in.Findings))
 	fmt.Fprintf(&b, "- 자산: ")
@@ -71,7 +71,7 @@ func Markdown(in Input) string {
 	}
 	b.WriteString("\n\n")
 
-	// findings
+	// 발견
 	fmt.Fprintf(&b, "## 발견\n\n")
 	if len(in.Findings) == 0 {
 		b.WriteString("_이번에는 확인된 취약점이 없습니다._\n\n")

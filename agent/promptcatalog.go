@@ -7,11 +7,10 @@ package agent
 // 주입합니다(worker.go 의 workerTrafficBlock/artifactSpec). 저장소에 넣지 않고 편집할 수 없으므로
 // 씨앗에 없습니다. 씨앗 텍스트는 Go 템플릿 자리표시({{.Goal}} 등)를 쓰고, 렌더할 때 실행 중 변수로 채웁니다.
 
-// autoDefaultTmpl is the built-in "Auto" platform-operator agent's prompt. Auto
-// runs via the chat page and drives the platform through tools: task ops
-// (spawn/list/pause/hint + read graph/findings/traces) and platform management
-// (create/modify skill, custom tool, MCP). It seeds into agent_prompts like the
-// other built-ins.
+// autoDefaultTmpl 은 내장 "Auto" 플랫폼 조작 에이전트의 프롬프트입니다. Auto 는
+// 대화 화면에서 돌며 도구로 플랫폼을 다룹니다. 작업 조작(만들기/목록/일시정지/힌트와
+// 탐색 그래프·발견·실행 기록 읽기)과 플랫폼 관리(스킬, 사용자 도구, MCP 만들기/고치기)입니다.
+// 다른 내장 프롬프트처럼 agent_prompts 에 심습니다.
 const autoDefaultTmpl = `你是 **Auto**，这个渗透测试平台的「操作助手」。你不亲自渗透，而是**用工具操作平台**、按用户指令把事情办好。
 
 你能做的（取决于给你开放了哪些工具）：
@@ -24,10 +23,10 @@ const autoDefaultTmpl = `你是 **Auto**，这个渗透测试平台的「操作�
 - 用人话简洁汇报你做了什么、结果如何；只根据工具真实返回作答，不臆造。
 - 只在授权范围内操作。`
 
-// pentestDefaultTmpl is the built-in "침투 테스트" (solo pentest) agent's prompt. Unlike
-// the orchestration roles (goals/planner/worker), it runs standalone via the chat page
-// and is its own planner + executor + auditor. Default tools: list_assets / insert_assets
-// / report_finding / list_findings (bound in toolcatalog + seedPentestDefaultBindings).
+// pentestDefaultTmpl 은 내장 "침투 테스트"(혼자 하는 침투) 에이전트의 프롬프트입니다.
+// 조율 역할(goals/플래너/워커)과 달리 대화 화면에서 혼자 돌며, 스스로 플래너이자
+// 실행자이자 검토자입니다. 기본 도구는 list_assets / insert_assets / report_finding /
+// list_findings 입니다(toolcatalog 와 seedPentestDefaultBindings 에서 묶습니다).
 const pentestDefaultTmpl = `你是一个授权渗透测试系统的"独立渗透 agent"。你**一个人从头打到尾**：侦察 → 找攻击面 → 深入利用 → 验证 → 收尾。你同时是自己的规划者和执行者——没有别人给你派活，也没有别人替你把关，所有判断和动手都由你完成。正因如此，你要**主动切换视角**：该拓宽时像规划者一样铺开多条路线，该动手时像执行者一样把一条路走透，该验证时像审计者一样怀疑自己的结论。
 
 
@@ -63,16 +62,15 @@ const pentestDefaultTmpl = `你是一个授权渗透测试系统的"独立渗透
 
 务实、克制、彻底。宁可把一条路走透并验证，也不要浅尝辄止地铺一堆没验证的"疑似"。`
 
-// DefaultAssistantPrompt is the starter/fallback body for CUSTOM conversational
-// agents — they have no per-key in-code default. It is seeded into agent_prompts
-// when a custom agent is created (so the editor isn't blank) and used as the
-// render fallback in RunChat when the DB prompt is somehow missing.
+// DefaultAssistantPrompt 는 사용자 정의 대화 에이전트의 시작/폴백 본문입니다.
+// 키마다의 코드 기본값이 없습니다. 사용자 에이전트를 만들 때 agent_prompts 에 심어
+// 편집기가 비지 않게 하고, RunChat 에서 DB 프롬프트가 없을 때의 렌더 폴백으로 씁니다.
 const DefaultAssistantPrompt = `你是一个乐于助人的 AI 助手。请用简洁、准确的中文回答用户的问题；在需要时使用可用的工具来完成任务。只做用户要求的事，不臆造信息。`
 
-// ReporterDefaultPrompt is the seeded prompt for the "보고서 작성"(reporter) custom
-// agent — triggered when report_finding fires. It gathers the finding's full
-// evidence + how it was found, writes a Markdown vulnerability report, and saves
-// it via update_finding_report.
+// ReporterDefaultPrompt 는 "보고서 작성"(reporter) 사용자 에이전트에 심는 프롬프트입니다.
+// report_finding 이 일어나면 깨어납니다. 발견의 증거와 찾은 과정을 모아
+// Markdown 보고서를 쓰고 update_finding_report 로 저장합니다.
+// 초보: 탐색 그래프에 발견이 올라오면, 이 프롬프트가 보고서 초안을 쓰게 합니다.
 const ReporterDefaultPrompt = `你是一个授权渗透测试系统里的**漏洞报告撰写 agent**。你不亲自渗透、不做利用——你的唯一职责是：为**刚刚被确认登记的某一个漏洞**撰写一份专业、可复现、面向修复的**详细报告(Markdown)**，并保存回该漏洞。
 
 ━━ 你是怎么被唤起的 ━━
@@ -106,10 +104,10 @@ const ReporterDefaultPrompt = `你是一个授权渗透测试系统里的**漏�
 - **精炼**：不写套话废话、不复述模板本身。
 - 全程**中文**。做完（已成功调用 update_finding_report）就结束，用一两句话说明你为哪个漏洞写了报告即可。`
 
-// BuiltinPromptSeeds returns each built-in agent's default EDITABLE prompt body
-// keyed by agent key. The server seeds these into agent_prompts on startup (only
-// when an agent has no prompt yet), so the DB becomes the authoritative, editable
-// source while the same string stays as the in-code render fallback.
+// BuiltinPromptSeeds 는 내장 에이전트마다 고칠 수 있는 기본 프롬프트 본문을
+// 에이전트 key 로 돌려줍니다. 서버는 시작 때 아직 프롬프트가 없는 에이전트에만
+// agent_prompts 에 심습니다. DB 가 고칠 수 있는 기준이 되고, 같은 문자열은
+// 코드 안 렌더 폴백으로 남습니다.
 func BuiltinPromptSeeds() map[string]string {
 	return map[string]string{
 		"goals":     goalsDefaultTmpl,

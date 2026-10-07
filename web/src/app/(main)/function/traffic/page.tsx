@@ -1,5 +1,7 @@
 "use client";
 
+// 기록 프록시가 잡아 둔 HTTP 왕래를 표로 봅니다.
+
 import * as React from "react";
 
 import {
@@ -58,8 +60,8 @@ function fmtTime(ts: string) {
 
 function fmtBytes(n: number) {
   if (n <= 0) return "0 B";
-  // GB matters for the reclaimed-space figure a full purge reports; a capture-heavy
-  // instance can hand back several.
+  // 전체 삭제가 보고하는 되찾은 공간에는 GB가 중요합니다. 캡처가 많은
+  // 경우 몇 GB를 돌려줄 수 있습니다.
   const units = ["B", "KB", "MB", "GB"];
   const i = Math.min(Math.floor(Math.log(n) / Math.log(1024)), units.length - 1);
   const v = n / 1024 ** i;
@@ -78,16 +80,16 @@ function MethodBadge({ method }: { method: string }) {
   return <Badge className="shrink-0 font-mono">{method}</Badge>;
 }
 
-// Older captures may predate Host persistence because net/http keeps Host
-// outside Request.Header. Fill it for display while newly recorded traffic is
-// fixed at the recorder layer as well.
+// 예전 캡처는 Host를 저장하기 전일 수 있습니다. net/http는 Host를
+// Request.Header 밖에 둡니다. 보여 줄 때는 채우고, 새로 기록되는 트래픽은
+// 기록 층에서도 같이 고칩니다.
 function requestWithHost(raw: string, exchange: TrafficExchange): string {
   if (!raw.trim() || /^host\s*:/im.test(raw)) return raw;
   let host = exchange.host;
   try {
     host = new URL(exchange.url).host || host;
   } catch {
-    // Relative or legacy URLs fall back to the indexed host.
+    // 상대 주소나 예전 주소는 색인된 호스트로 돌아갑니다.
   }
   const newline = raw.includes("\r\n") ? "\r\n" : "\n";
   const firstLineEnd = raw.indexOf(newline);
@@ -95,20 +97,20 @@ function requestWithHost(raw: string, exchange: TrafficExchange): string {
   return `${raw.slice(0, firstLineEnd + newline.length)}Host: ${host}${newline}${raw.slice(firstLineEnd + newline.length)}`;
 }
 
-// Fixed method set (server filters exact-match); avoids deriving options from a
-// single page, which would only ever list the methods on that page.
+// 고정된 메서드 목록(서버는 정확히 일치하는 것만 거름). 한 페이지에서
+// 선택지를 만들면 그 페이지의 메서드만 나오므로 그렇게 하지 않습니다.
 const METHODS = ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"];
 const PAGE_SIZES = [25, 50, 100, 200];
 type HostCountSortDirection = "asc" | "desc";
 
-// Server-sortable columns. The list is sent to the backend verbatim as `sort`,
-// which whitelists these same names, so keep them in sync with traffic.Page.
+// 서버가 정렬하는 열. 목록은 `sort`로 백엔드에 그대로 보내지고,
+// 백엔드가 같은 이름만 허용하므로 traffic.Page와 맞추세요.
 const SORT_FIELDS = ["ts", "status", "resp_len"] as const;
 type SortField = (typeof SORT_FIELDS)[number];
 const SORT_STORAGE_KEY = "traffic-sort";
 
-// Status-class buckets for the filter dropdown; the value is sent as `status`,
-// which the backend reads as either an exact code or an "Nxx" class band.
+// 필터 드롭다운의 상태 등급 묶음. 값은 `status`로 보내고,
+// 백엔드는 정확한 코드 또는 "Nxx" 등급으로 읽습니다.
 const STATUS_BUCKETS = ["2xx", "3xx", "4xx", "5xx"];
 
 export default function TrafficPage() {
@@ -116,15 +118,15 @@ export default function TrafficPage() {
   const [linking, setLinking] = React.useState(false);
   const [page, setPage] = React.useState(0);
   const [size, setSize] = React.useState(50);
-  const [host, setHost] = React.useState(""); // raw host input
-  const [hostQ, setHostQ] = React.useState(""); // debounced → server
-  const [query, setQuery] = React.useState(""); // raw free-text input
-  const [queryQ, setQueryQ] = React.useState(""); // debounced → server
+  const [host, setHost] = React.useState(""); // 호스트 원문 입력
+  const [hostQ, setHostQ] = React.useState(""); // 잠깐 기다린 뒤 서버로
+  const [query, setQuery] = React.useState(""); // 자유 검색 원문 입력
+  const [queryQ, setQueryQ] = React.useState(""); // 잠깐 기다린 뒤 서버로
   const [method, setMethod] = React.useState("all");
 
-  // Advanced filters (issue #177): response-body content, path, status class and
-  // response-size range. Text inputs are debounced like host/query; the status
-  // select applies immediately.
+  // 고급 필터(이슈 177): 응답 본문, 경로, 상태 등급,
+  // 응답 크기 범위. 글 입력은 호스트/검색처럼 잠깐 기다리고, 상태
+  // 선택은 바로 적용됩니다.
   const [body, setBody] = React.useState("");
   const [bodyQ, setBodyQ] = React.useState("");
   const [path, setPath] = React.useState("");
@@ -141,16 +143,16 @@ export default function TrafficPage() {
   const [detail, setDetail] = React.useState<TrafficDetail | null>(null);
   const [detailLoading, setDetailLoading] = React.useState(false);
 
-  const [hosts, setHosts] = React.useState<TrafficHost[]>([]); // target picker
-  const [selectedHosts, setSelectedHosts] = React.useState<string[]>([]); // checked in picker
+  const [hosts, setHosts] = React.useState<TrafficHost[]>([]); // 대상 고르기
+  const [selectedHosts, setSelectedHosts] = React.useState<string[]>([]); // 고르기에서 체크한 항목
   const [pickerOpen, setPickerOpen] = React.useState(false);
   const [hostCountSortDirection, setHostCountSortDirection] = React.useState<HostCountSortDirection>("desc");
 
-  const [deleteMode, setDeleteMode] = React.useState<"filter" | "selected" | "all" | null>(null); // null = dialog closed
+  const [deleteMode, setDeleteMode] = React.useState<"filter" | "selected" | "all" | null>(null); // null이면 대화창이 닫힘
   const [deleting, setDeleting] = React.useState(false);
-  const [reloadTick, setReloadTick] = React.useState(0); // manual refetch trigger
+  const [reloadTick, setReloadTick] = React.useState(0); // 사람이 누른 다시 불러오기 신호
 
-  // Debounce both filters so we don't refetch on every keystroke.
+  // 두 필터 모두 잠깐 기다려, 글자마다 다시 불러오지 않습니다.
   React.useEffect(() => {
     const t = setTimeout(() => setHostQ(host.trim()), 300);
     return () => clearTimeout(t);
@@ -189,15 +191,15 @@ export default function TrafficPage() {
     setRespMaxQ("");
   };
 
-  // Any filter/size/sort change resets to the first page.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: these values intentionally trigger a page reset.
+  // 필터, 크기, 정렬이 바뀌면 첫 페이지로 돌아갑니다.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 이 값들은 페이지를 일부러 처음으로 되돌립니다.
   React.useEffect(() => {
     setPage(0);
   }, [hostQ, queryQ, method, size, bodyQ, pathQ, statusFilter, respMinQ, respMaxQ, sort]);
 
-  // Load the current page. Auto-refresh only on page 0 (newest) so paging back
-  // through history isn't yanked out from under the user.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: reloadTick is an explicit manual-refetch trigger.
+  // 현재 페이지를 불러옵니다. 자동 새로고침은 0페이지(최신)만 해서, 이전
+  // 기록을 보는 중에 화면이 튀지 않게 합니다.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reloadTick은 사람이 누른 다시 불러오기 신호입니다.
   React.useEffect(() => {
     let alive = true;
     const load = () => {
@@ -215,7 +217,7 @@ export default function TrafficPage() {
           if (alive) setTraffic(r);
         })
         .catch(() => {
-          // Keep the last successful snapshot during transient refresh failures.
+          // 잠깐 새로고침이 실패해도 마지막으로 성공한 데이터를 유지합니다.
         });
       api
         .trafficHosts()
@@ -223,12 +225,12 @@ export default function TrafficPage() {
           if (alive) setHosts(r.hosts ?? []);
         })
         .catch(() => {
-          // Keep the last successful host list during transient refresh failures.
+          // 잠깐 새로고침이 실패해도 마지막으로 성공한 호스트 목록을 유지합니다.
         });
     };
     load();
     const t = setInterval(() => {
-      if (page !== 0) return; // only auto-refresh the newest page
+      if (page !== 0) return; // 최신 페이지만 자동으로 새로고칩니다
       load();
     }, 5000);
     return () => {
@@ -237,8 +239,8 @@ export default function TrafficPage() {
     };
   }, [page, size, hostQ, method, queryQ, bodyQ, pathQ, statusFilter, respMinQ, respMaxQ, sort, reloadTick]);
 
-  // Delete traffic for the current host filter (substring) or the checked
-  // hosts (exact batch), then refetch.
+  // 지금 호스트 필터(부분 일치) 또는 체크한
+  // 호스트(정확히 여러 개)의 트래픽을 지운 뒤 다시 불러옵니다.
   const allSelected = hosts.length > 0 && hosts.every((h) => selectedHosts.includes(h.host));
   const sortedHosts = React.useMemo(
     () =>
@@ -250,7 +252,7 @@ export default function TrafficPage() {
   );
 
   // 필터 없는 전체 비우기는 "비우기", 호스트 범위는 "삭제" — 대화상자의
-  // title and its confirm button both follow from which is in play.
+  // 제목과 확인 버튼은 지금 어떤 삭제인지에 따라 바뀝니다.
   const deleteVerb = deleteMode === "all" ? "비우기" : "삭제";
   const deleteTitle = deleteMode
     ? {
@@ -260,8 +262,8 @@ export default function TrafficPage() {
       }[deleteMode]
     : "";
 
-  // `reclaimed` only comes back from the full purge; the host-scoped deletions
-  // report the row count alone.
+  // `reclaimed`는 전체 삭제에서만 옵니다. 호스트만 지울 때는
+  // 줄 개수만 보고합니다.
   const requestDelete = (mode: "filter" | "selected" | "all"): Promise<{ deleted: number; reclaimed?: number }> => {
     if (mode === "all") return api.trafficDeleteAll();
     if (mode === "selected") return api.trafficDeleteHosts(selectedHosts);
@@ -282,7 +284,7 @@ export default function TrafficPage() {
           setPickerOpen(false);
         }
         if (mode === "all") {
-          // Reclaimed space is the whole point of compacting an emptied index, so say so.
+          // 빈 인덱스를 압축하는 이유는 되찾은 공간이므로, 그 점을 말합니다.
           const reclaimed = r.reclaimed ?? 0;
           const freed = reclaimed > 0 ? `, 해제 ${fmtBytes(reclaimed)} 저장` : "";
           toast.success(`비움 ${r.deleted} 건의 트래픽${freed}`);
@@ -291,13 +293,13 @@ export default function TrafficPage() {
         setReloadTick((t) => t + 1);
       })
       .catch((e) => {
-        // Keep the confirmation open so the user can retry a failed deletion.
+        // 확인창을 열어 두어, 실패한 삭제를 다시 시도할 수 있게 합니다.
         if (mode === "all") toast.error(`비우기 실패:${(e as Error).message}`);
       })
       .finally(() => setDeleting(false));
   };
 
-  // Lazy-load the raw request/response for the selected exchange.
+  // 고른 왕래의 원문 요청/응답을 나중에 불러옵니다.
   React.useEffect(() => {
     if (!selected) {
       setDetail(null);
@@ -322,8 +324,8 @@ export default function TrafficPage() {
     };
   }, [selected]);
 
-  // Toggle direction when re-clicking the active column, else sort the new column
-  // newest/largest-first.
+  // 활성 열을 다시 누르면 방향을 바꾸고, 아니면 새 열을
+  // 최신/큰 것부터 정렬합니다.
   const toggleSort = (field: SortField) =>
     setSort((prev) =>
       prev.field === field
@@ -363,7 +365,7 @@ export default function TrafficPage() {
         </div>
       </div>
 
-      {/* Toolbar */}
+      {/* 도구 막대 */}
       <div className="flex flex-wrap items-center gap-2">
         <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
           <PopoverTrigger asChild>
@@ -542,7 +544,7 @@ export default function TrafficPage() {
         </div>
       </div>
 
-      {/* Advanced filters (issue #177): narrow 660k+ exchanges down to the one packet. */}
+      {/* 고급 필터(이슈 177): 수십만 왕래 중에서 패킷 하나로 좁힙니다. */}
       <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/30 px-2 py-1.5">
         <span className="pl-1 text-xs font-medium text-muted-foreground">고급 필터</span>
         <div className="relative w-56">
@@ -613,7 +615,7 @@ export default function TrafficPage() {
           </Button>
         ) : null}
       </div>
-      {/* History table */}
+      {/* 기록 표 */}
       <div className="flex h-[calc(100vh-15rem)] min-h-0 flex-col">
         <Card className="flex min-h-0 flex-1 flex-col overflow-hidden py-0">
           <div className="min-h-0 flex-1 overflow-auto">

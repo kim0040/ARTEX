@@ -6,9 +6,9 @@ import { ExplorationGraph } from "@/components/exploration-graph";
 import { api } from "@/lib/api";
 import type { Edge, TaskNode } from "@/lib/types";
 
-// FindingLineageView renders the exploration sub-graph from the task's initial
+// FindingLineageView는 탐색 그래프에서 작업의 시작부터
 // 노드에서 이 발견의 노드까지 내려감 — 작업 그래프와 같은 공격 경로 그림 캔버스, （탐색 그래프는 작업이 어디까지 이어졌는지 보여주는 그림입니다）
-// scoped to just this finding's lineage.
+// 이 발견이 나온 경로만 잘라 보여 줍니다.
 export function FindingLineageView({ findingId }: { findingId: string }) {
   const [nodes, setNodes] = React.useState<TaskNode[]>([]);
   const [edges, setEdges] = React.useState<Edge[]>([]);

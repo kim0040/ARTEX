@@ -51,8 +51,8 @@ func TestApplySchemaRetriesOnlyDeadlocks(t *testing.T) {
 	}
 }
 
-// testDSN returns the configured DSN, skipping the test when neither the env var
-// nor a config file supplies one (DSN no longer has a built-in default).
+// testDSN은 설정된 DSN을 돌려준다. 환경 변수와
+// 설정 파일 둘 다 없으면 테스트를 건너뛴다(DSN에 내장 기본값은 없다).
 func testDSN(t *testing.T) string {
 	t.Helper()
 	dsn, _, err := DSN()
@@ -62,8 +62,8 @@ func testDSN(t *testing.T) string {
 	return dsn
 }
 
-// TestOpenSeed opens the live dev PG, applies schema, seeds, and verifies the
-// builtin agents + their variable catalog exist. Skips if PG is unreachable.
+// TestOpenSeed는 개발 PG를 열고 스키마를 적용하고 심은 뒤
+// 내장 에이전트와 변수 카탈로그가 있는지 확인한다. PG에 못 닿으면 건너뛴다.
 func TestOpenSeed(t *testing.T) {
 	d, err := Open(testDSN(t))
 	if err != nil {
@@ -80,7 +80,7 @@ func TestOpenSeed(t *testing.T) {
 		t.Fatalf("want %d builtin agents, got %d", wantAgents, agents)
 	}
 
-	// planner should have at least its seeded catalog vars
+	// 플래너에는 적어도 심은 카탈로그 변수가 있어야 한다
 	wantPlannerVars := 0
 	for _, a := range builtinAgents {
 		if a.key == "planner" {
@@ -99,7 +99,7 @@ WHERE a.key = 'planner'`).Scan(&plannerVars); err != nil {
 		t.Fatalf("want at least %d planner vars, got %d", wantPlannerVars, plannerVars)
 	}
 
-	// re-open must be idempotent (no duplicate agents)
+	// 다시 열어도 결과가 같아야 한다(에이전트 중복 없음)
 	d2, err := Open(testDSN(t))
 	if err != nil {
 		t.Fatal(err)

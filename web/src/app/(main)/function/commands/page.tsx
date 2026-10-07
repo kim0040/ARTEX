@@ -26,22 +26,22 @@ function fmtTime(ts: string) {
   });
 }
 
-// toolInput renders a tool's raw input for display. Bash's {"command":"..."} is
-// unwrapped to the bare command; other tools show their pretty-printed JSON args.
+// toolInput은 도구에 들어간 원문을 보여 줍니다. Bash의 {"command":"..."}는
+// 명령만 꺼내 보여주고, 다른 도구는 JSON 인자를 보기 좋게 찍습니다.
 function toolInput(raw: string): string {
   try {
     const obj = JSON.parse(raw);
     if (obj && typeof obj.command === "string") return obj.command;
     return JSON.stringify(obj, null, 2);
   } catch {
-    /* not JSON */
+    /* JSON이 아님 */
   }
   return raw;
 }
 
-// truncate clips a string to maxLen characters.
+// truncate는 문자열을 maxLen 글자에서 자릅니다.
 function truncate(s: string, maxLen: number): string {
-  const first = s.split("\n")[0]; // single-line preview
+  const first = s.split("\n")[0]; // 한 줄 미리보기
   if (first.length <= maxLen) return first;
   return first.slice(0, maxLen) + "…";
 }
@@ -65,22 +65,22 @@ export default function CommandsPage() {
   const [stats, setStats] = React.useState<ToolStat[]>([]);
   const [statsLoading, setStatsLoading] = React.useState(false);
 
-  // Selected execution is rendered in a right-side detail sheet.
+  // 고른 실행 내용은 오른쪽 상세 패널에 그립니다.
   const [selected, setSelected] = React.useState<CommandRecord | null>(null);
 
-  // Debounce search input.
+  // 검색어는 잠깐 기다렸다가 적용합니다.
   React.useEffect(() => {
     const t = setTimeout(() => setQueryQ(query.trim()), 300);
     return () => clearTimeout(t);
   }, [query]);
 
-  // Reset page on filter change.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: every filter change intentionally resets pagination.
+  // 필터가 바뀌면 페이지를 처음으로 되돌립니다.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 필터가 바뀔 때마다 페이지를 일부러 처음으로 되돌립니다.
   React.useEffect(() => {
     setPage(0);
   }, [queryQ, taskFilter, size]);
 
-  // Load data.
+  // 데이터를 불러옵니다.
   React.useEffect(() => {
     let alive = true;
     setLoading(true);
@@ -126,7 +126,7 @@ export default function CommandsPage() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4">
-      {/* Header */}
+      {/* 머리 */}
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-2">
           <TerminalIcon className="h-5 w-5 text-muted-foreground" />
@@ -135,7 +135,7 @@ export default function CommandsPage() {
         </div>
       </div>
 
-      {/* Toolbar */}
+      {/* 도구 막대 */}
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative max-w-sm flex-1">
           <SearchIcon className="absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -198,7 +198,7 @@ export default function CommandsPage() {
         </div>
       </div>
 
-      {/* History table */}
+      {/* 기록 표 */}
       <div className="flex h-[calc(100vh-13rem)] min-h-0 flex-col">
         <Card className="flex min-h-0 flex-1 flex-col overflow-hidden py-0">
           <div className="min-h-0 flex-1 overflow-auto">

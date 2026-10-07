@@ -114,8 +114,8 @@ func TestSetTasksCategoryBatch(t *testing.T) {
 		ids = append(ids, task.ID)
 	}
 
-	// A deleted id must not abort the move for the surviving tasks; it is simply
-	// absent from the returned slice so the caller can report it.
+	// 지워진 id가 남아 있는 작업의 이동을 중단시키면 안 된다. 그 id는
+	// 반환 조각에 없어서 호출자가 알릴 수 있다.
 	missing := int64(1 << 62)
 	updated, moved, err := d.SetTasksCategory(append(append([]int64{}, ids...), missing), &category.ID)
 	if err != nil {
@@ -134,7 +134,7 @@ func TestSetTasksCategoryBatch(t *testing.T) {
 		}
 	}
 
-	// A nil category clears the assignment for the whole batch.
+	// nil 범주는 묶음 전체의 배정을 지운다.
 	updated, moved, err = d.SetTasksCategory(ids, nil)
 	if err != nil || len(updated) != len(ids) || moved != nil {
 		t.Fatalf("clear updated=%v category=%+v err=%v", updated, moved, err)
@@ -175,7 +175,7 @@ func TestSetTasksCategoryRejectsBadInputAtomically(t *testing.T) {
 	if _, _, err := d.SetTasksCategory(oversized, nil); !errors.Is(err, ErrTaskCategoryInvalid) {
 		t.Fatalf("oversized error=%v, want %v", err, ErrTaskCategoryInvalid)
 	}
-	// The rejected calls must leave the task untouched.
+	// 거부된 호출은 작업을 건드리지 않은 채 둬야 한다.
 	loaded, _ := d.GetTask(task.ID)
 	if loaded.CategoryID != nil {
 		t.Fatalf("rejected batch mutated task: %+v", loaded)

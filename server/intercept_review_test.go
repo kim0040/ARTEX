@@ -24,7 +24,7 @@ func (p *reviewCaptureProvider) Complete(ctx context.Context, req llm.Completion
 	return accumulateStreamForTest(ctx, p.Stream, req)
 }
 
-// Assert the actual model request, rather than merely the envelope helper.
+// 봉투 도우미가 아니라, 실제로 모델에 간 요청을 확인합니다.
 func TestReviewCompletionSendsCurrentCallWithoutHistory(t *testing.T) {
 	ctx := intercept.WithReviewContext(t.Context(), "/tmp/review-fixture", intercept.ReviewBackground{Source: intercept.BackgroundUserMessage, Text: "이번 테스트 파일 정리"})
 	ctx, trace := intercept.WithTrace(ctx, "GLOBAL_OVERVIEW_SENTINEL", []db.InterceptContextEntry{

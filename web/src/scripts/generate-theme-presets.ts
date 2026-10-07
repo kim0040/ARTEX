@@ -1,18 +1,18 @@
 /**
- * Script: generate-theme-presets.ts
+ * 스크립트: generate-theme-presets.ts
  *
- * This script scans the /styles/presets directory for CSS files containing theme definitions.
- * It extracts `label:`, `value:`, and primary color definitions (`--primary`) for both light and dark modes.
- * These primary colors are used to visually represent each theme in the UI (e.g., colored dots or theme previews).
- * Default theme colors are fetched from /app/globals.css.
- * All extracted metadata is injected into a marked section of the /lib/preferences/theme.ts file.
+ * /styles/presets 안의 CSS에서 테마 정의를 찾습니다.
+ * `label:`, `value:`와 라이트/다크의 기본색(`--primary`)을 꺼냅니다.
+ * 이 기본색은 화면에서 테마를 색 점이나 미리보기로 보여 줄 때 씁니다.
+ * 기본 테마 색은 /app/globals.css에서 가져옵니다.
+ * 꺼낸 정보는 /lib/preferences/theme.ts의 표시된 구간에 넣습니다.
  *
- * Usage:
- * - During local development, run manually after adding any new theme preset:
- *     npm run generate:presets
- * - Ensure that each new CSS preset includes `label:` and `value:` comments.
- * - This generation step is currently automated using a Husky pre-push hook.
- * - You may optionally integrate it directly into a build step if preferred.
+ * 사용법:
+ * - 로컬에서 테마 프리셋을 추가한 뒤 직접 실행합니다:
+ *     npm run generate:presets  테마 프리셋을 만듭니다
+ * - 새 CSS 프리셋에는 `label:`과 `value:` 주석이 있어야 합니다.
+ * - 지금은 Husky의 push 전 훅이 이 생성을 자동으로 실행합니다.
+ * - 원하면 빌드 단계에 직접 넣어도 됩니다.
  */
 
 import { execFileSync } from "node:child_process";

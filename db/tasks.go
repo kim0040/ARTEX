@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// Task is a row in the task registry (1:1 with an exploration).
+// Task는 작업 등록부의 한 줄이다(탐색과 1:1). 탐색 그래프는 이 작업 안에 있다.
 type Task struct {
 	ID            int64      `json:"id"`
 	Name          string     `json:"name"` // 선택적 작업 이름; 비어 있음=이름 없음
@@ -26,8 +26,8 @@ type Task struct {
 	QueuedAt      *time.Time `json:"queued_at,omitempty"`
 	QueueMode     string     `json:"queue_mode,omitempty"`
 	LLMProfileID  *int64     `json:"llm_profile_id,omitempty"`
-	// Task-level ordered LLM chain. LLMProfileID remains the compatibility alias
-	// for ActiveLLMProfileID while older API clients still send one profile id.
+	// 작업 단위로 순서가 있는 LLM 사슬. 옛 API 클라이언트가 프로파일 id 하나만
+	// 보내는 동안 LLMProfileID는 ActiveLLMProfileID의 호환 별칭으로 남는다.
 	LLMProfileIDs      []int64    `json:"llm_profile_ids,omitempty"`
 	ActiveLLMProfileID *int64     `json:"active_llm_profile_id,omitempty"`
 	LLMChainRevision   int64      `json:"-"`
@@ -52,8 +52,8 @@ type Task struct {
 	CoverageEnabled bool `json:"coverage_enabled"`
 }
 
-// TaskDeleteResult reports optional related-data cleanup performed in the same
-// transaction as the task/exploration delete.
+// TaskDeleteResult는 작업·탐색 삭제와 같은 트랜잭션에서 한
+// 선택적 관련 데이터 정리를 보고한다.
 type TaskDeleteResult struct {
 	AssetsDeleted     int64
 	AssetsDetached    int64
@@ -61,36 +61,35 @@ type TaskDeleteResult struct {
 	LLMRecordsDeleted int64
 }
 
-// TaskDeletePreparation is produced inside the PostgreSQL deletion transaction
-// after asset and anchor writers have been excluded. Prepare callbacks may use
-// TrafficHosts to stage an external traffic deletion before PostgreSQL commits.
+// TaskDeletePreparation은 PostgreSQL 삭제 트랜잭션 안에서,
+// 자산·앵커를 쓰는 쪽을 막은 뒤에 만든다. Prepare 콜백은
+// PostgreSQL이 커밋하기 전에 TrafficHosts로 바깥 트래픽 삭제를 준비할 수 있다.
 type TaskDeletePreparation struct {
 	ExplorationID int64
 	TrafficHosts  []string
 }
 
-// IsTerminal reports whether a task status is a terminal (finished) state.
+// IsTerminal은 작업 상태가 끝난 상태인지 알려 준다.
 // 유일한 기준이며, 곳곳에 흩어진 done/failed 하드코딩 판정을 대체한다.
 func IsTerminal(status string) bool {
 	return status == "done" || status == "failed" || status == "timeout"
 }
 
-// CreateTask creates an exploration + task in one transaction and returns the task.
-// timeoutSeconds is the task-level wall-clock budget (0 = 시간 제한 없음); deadline_at is
-// stamped later at first real run (see engine), not here.
+// CreateTask는 탐색과 작업을 한 트랜잭션에 만들고 작업을 돌려준다.
+// timeoutSeconds는 작업 단위 벽시계 예산이다(0 = 시간 제한 없음). deadline_at은
+// 여기서가 아니라 처음 실제 실행 때 찍힌다(엔진을 본다).
 // MinPlanHeartbeatSeconds는 planner 하트비트 간격의 하한 = 기본값 = 10min이다.
 // 그보다 낮으면(기본 누락 0 / 음수 / 잘못 설정된 작은 값 포함) 모두 10min으로 올려 planner가 과부하되지 않게 한다.
 const MinPlanHeartbeatSeconds = 600
 
-// MaxTaskSourceCount bounds the amount of live inherited context one task can
-// pull into every planner/main-agent prompt. Inheritance is intentionally direct
-// only; keeping the fan-in bounded also prevents a single create request from
-// multiplying graph and asset-context queries without limit.
+// MaxTaskSourceCount는 작업 하나가 플래너·메인 에이전트 프롬프트마다 끌어오는
+// 살아있는 상속 맥락의 상한이다. 상속은 일부러 직접 연결만 한다.
+// 들어오는 수를 묶어, 생성 요청 하나가 탐색 그래프와 자산 맥락 조회를 끝없이 곱하지 않게 한다.
 const MaxTaskSourceCount = 8
 
-// MaxTaskCompanyCount bounds the number of company asset scopes attached to a
-// task. Company scopes are prompt context, and their currently attributed
-// assets are snapshotted into the task at creation time.
+// MaxTaskCompanyCount는 작업에 붙는 기업 자산 범위 수의 상한이다.
+// 기업 범위는 프롬프트 맥락이고, 지금 귀속된
+// 자산은 작업을 만들 때 스냅샷으로 작업에 넣는다.
 const MaxTaskCompanyCount = 32
 
 const taskCompanyAssetSource = "company"
@@ -100,8 +99,7 @@ var (
 	ErrTaskCompanyNotFound   = errors.New("작업의 기업을 찾을 수 없습니다")
 )
 
-// NormalizeTaskCompanyIDs validates IDs and removes duplicates while retaining
-// the user's first-seen order.
+// NormalizeTaskCompanyIDs는 ID를 검사하고 중복을 빼되, 사용자가 처음 본 순서는 남긴다.
 func NormalizeTaskCompanyIDs(ids []int64) ([]int64, error) {
 	if len(ids) == 0 {
 		return nil, nil
@@ -141,8 +139,7 @@ func (d *DB) CreateTask(description, goal string, llmProfileID *int64, timeoutSe
 	})
 }
 
-// TaskCreateOptions contains the task data that must be committed atomically
-// with the task/exploration row.
+// TaskCreateOptions는 작업·탐색 행과 한 번에 커밋해야 하는 작업 데이터다.
 type TaskCreateOptions struct {
 	Name                 string // 선택적 작업 이름; 비어 있음=이름 없음
 	CategoryID           *int64
@@ -158,8 +155,8 @@ type TaskCreateOptions struct {
 	InterceptRules []TaskInterceptRuleInput
 }
 
-// CreateTaskWithOptions creates an exploration, task, direct source relations,
-// and the ordered task LLM chain in one transaction.
+// CreateTaskWithOptions는 탐색, 작업, 직접 원본 관계,
+// 순서가 있는 작업 LLM 사슬을 한 트랜잭션에 만든다.
 func (d *DB) CreateTaskWithOptions(description, goal string, opts TaskCreateOptions) (*Task, error) {
 	if len(opts.SourceTaskIDs) > MaxTaskSourceCount {
 		return nil, fmt.Errorf("원본 작업이 너무 많습니다. %d개인데 최대는 %d개입니다", len(opts.SourceTaskIDs), MaxTaskSourceCount)
@@ -178,11 +175,11 @@ func (d *DB) CreateTaskWithOptions(description, goal string, opts TaskCreateOpti
 	if err := tx.QueryRow(`INSERT INTO explorations(description, goal) VALUES ($1,$2) RETURNING id`, description, goal).Scan(&expID); err != nil {
 		return nil, err
 	}
-	// origin fact: the exploration graph's root, a KindFact node (state='origin')
-	// holding the original task description. Goals/intents/findings descend from
-	// it, and the seeded target asset is anchored to it as lineage (the asset graph
-	// is global and shared, not isolated per task). Being a fact (not a special 'begin' kind) lets every
-	// intent uniformly connect to a fact node, including the first ones.
+	// 기원 사실: 탐색 그래프의 뿌리다. KindFact 노드(state='origin')이고
+	// 원래 작업 설명을 담는다. 목표·의도·발견은 여기에서 내려오고,
+	// 심은 대상 자산은 계보로 여기에 앵커된다(자산 그래프는
+	// 전역으로 공유되고, 작업마다 갈라지지 않는다). 특별한 'begin' 종류가 아니라 사실이라, 첫 의도를 포함해
+	// 모든 의도가 사실 노드에 같이 연결된다.
 	originPayload, _ := json.Marshal(map[string]any{
 		"summary":     "작업 시작점:" + description + "；목표:" + goal,
 		"description": description,
@@ -255,8 +252,8 @@ func insertTaskCompanies(tx *sql.Tx, taskID int64, companyIDs []int64) error {
 	if len(companyIDs) == 0 {
 		return nil
 	}
-	// Company scope edits rebuild assets.company_id. Serialize the creation-time
-	// snapshot with those edits so the task sees one committed attribution state.
+	// 기업 범위를 고치면 assets.company_id를 다시 계산한다. 만들 때의
+	// 스냅샷을 그 수정과 직렬화해서, 작업이 커밋된 귀속 상태 하나만 보게 한다.
 	if err := lockCompanyScopeMutation(tx); err != nil {
 		return err
 	}
@@ -281,9 +278,9 @@ SELECT count(*) FROM inserted`, taskID, companyIDs).Scan(&inserted)
 		return fmt.Errorf("%w: one or more companies do not exist", ErrTaskCompanyNotFound)
 	}
 
-	// Updating task_ids fires sync_task_asset_links, which first creates generic
-	// source rows. The provenance upsert must therefore run afterwards so the
-	// company name and creation-time reason remain visible to operators.
+	// task_ids를 고치면 sync_task_asset_links가 먼저 일반
+	// 출처 행을 만든다. 그래서 출처 upsert는 그 뒤에 돌아야
+	// 기업 이름과 생성 당시 이유가 운영자에게 남는다.
 	if _, err := tx.Exec(`
 UPDATE assets
 SET task_ids=CASE
@@ -361,7 +358,7 @@ func (d *DB) SetParentRef(id int64, parentRef string) error {
 	return err
 }
 
-// ListTasks returns alive tasks with pinned tasks first, then newest ids.
+// ListTasks는 살아있는 작업을 돌려준다. 고정한 작업이 먼저, 그다음 최신 id다.
 func (d *DB) ListTasks() ([]*Task, error) {
 	// id는 BIGSERIAL이며, 같은 시각에 생성된 작업도 안정적이고 유일한 순서를 가집니다.
 	rows, err := d.Query(`SELECT ` + taskCols + ` FROM tasks WHERE deleted_at IS NULL
@@ -388,14 +385,14 @@ ORDER BY (pinned_at IS NOT NULL) DESC, pinned_at DESC NULLS LAST, id DESC`)
 	return out, nil
 }
 
-// TaskPatch updates task list metadata without changing execution state.
+// TaskPatch는 실행 상태를 바꾸지 않고 작업 목록 메타데이터만 고친다.
 type TaskPatch struct {
 	Name   *string
 	Pinned *bool
 }
 
-// UpdateTask applies a partial task name/pin mutation and returns the updated row.
-// Re-pinning an already pinned task preserves its original position.
+// UpdateTask는 작업 이름·고정을 일부만 고치고, 고친 행을 돌려준다.
+// 이미 고정한 작업을 다시 고정해도 원래 위치는 남긴다.
 func (d *DB) UpdateTask(id int64, patch TaskPatch) (*Task, error) {
 	task, err := scanTask(d.QueryRow(`UPDATE tasks SET
 	name = CASE WHEN $2::boolean THEN $3 ELSE name END,
@@ -415,7 +412,7 @@ RETURNING `+taskCols, id, patch.Name != nil, patch.Name, patch.Pinned))
 	return task, nil
 }
 
-// GetTask returns one alive task (nil if not found/deleted).
+// GetTask는 살아있는 작업 하나를 돌려준다. 없거나 지워졌으면 nil이다.
 func (d *DB) GetTask(id int64) (*Task, error) {
 	t, err := scanTask(d.QueryRow(`SELECT `+taskCols+` FROM tasks WHERE id=$1 AND deleted_at IS NULL`, id))
 	if err != nil {
@@ -430,14 +427,14 @@ func (d *DB) GetTask(id int64) (*Task, error) {
 	return t, nil
 }
 
-// SetPaused persists a task's paused flag.
+// SetPaused는 작업의 일시 정지 표시를 저장한다.
 func (d *DB) SetPaused(id int64, paused bool) error {
 	_, err := d.Exec(`UPDATE tasks SET paused=$1 WHERE id=$2`, paused, id)
 	return err
 }
 
-// Enqueue places a task at the tail of the persistent admission queue. Repeating
-// the operation while it is already queued keeps its original FIFO position.
+// Enqueue는 작업을 영구 입장 대기열의 끝에 넣는다. 이미 대기 중일 때
+// 다시 해도 원래 FIFO 위치는 유지한다.
 func (d *DB) Enqueue(id int64, mode string) error {
 	if mode != "bootstrap" && mode != "resume" {
 		return fmt.Errorf("invalid queue mode %q", mode)
@@ -453,8 +450,8 @@ WHERE id=$1`, id, mode)
 	return err
 }
 
-// Dequeue removes the concurrency hold. clearMode is false when a user pauses a
-// queued task, preserving whether its next admission must bootstrap or resume.
+// Dequeue는 동시 실행 보류를 푼다. 사용자가 대기 중인 작업을 일시 정지하면
+// clearMode는 false다. 다음 입장이 첫 기동인지 이어 하기인지는 남긴다.
 func (d *DB) Dequeue(id int64, clearMode bool) error {
 	_, err := d.Exec(`UPDATE tasks
 SET queued=false,
@@ -464,8 +461,8 @@ WHERE id=$1`, id, clearMode)
 	return err
 }
 
-// SetQueued is the compatibility helper used by older callers and tests. New
-// scheduling code should use Enqueue/Dequeue so FIFO metadata is explicit.
+// SetQueued는 옛 호출자와 테스트가 쓰는 호환 도우미다. 새
+// 스케줄 코드는 Enqueue/Dequeue를 써서 FIFO 메타데이터를 분명히 한다.
 func (d *DB) SetQueued(id int64, queued bool) error {
 	if queued {
 		return d.Enqueue(id, "bootstrap")
@@ -473,10 +470,9 @@ func (d *DB) SetQueued(id int64, queued bool) error {
 	return d.Dequeue(id, true)
 }
 
-// SetStatus updates a task's lifecycle status. Entering a terminal state
-// (done/failed/timeout) stamps completed_at once (COALESCE keeps the first stamp
-// stable); moving back to a non-terminal state clears it, so a re-run has no stale
-// finish time.
+// SetStatus는 작업의 생명주기 상태를 고친다. 끝난 상태
+// (done/failed/timeout)에 들어가면 completed_at을 한 번 찍는다(COALESCE가 첫 도장을 유지한다).
+// 끝나지 않은 상태로 돌아가면 지운다. 그래서 다시 실행할 때 낡은 종료 시각이 없다.
 func (d *DB) SetStatus(id int64, status string) error {
 	_, err := d.Exec(`
 UPDATE tasks
@@ -486,10 +482,10 @@ UPDATE tasks
 	return err
 }
 
-// SetTerminalStatusGuarded sets a terminal status only when the task is NOT already
-// terminal, so a completed↔timeout race resolves to the first writer (won=true).
-// Returns won=false (no error) when another terminal status already stuck — the
-// caller then leaves it alone. Non-terminal transitions / re-run still use SetStatus.
+// SetTerminalStatusGuarded는 작업이 아직 끝나지 않았을 때만 끝난 상태를 넣는다.
+// 그래서 완료와 시간 초과가 겨루면 먼저 쓴 쪽이 이긴다(won=true).
+// 다른 끝난 상태가 이미 붙어 있으면 won=false를 돌려준다(오류는 아님).
+// 호출자는 그때 그대로 둔다. 끝나지 않은 전환과 다시 실행은 여전히 SetStatus를 쓴다.
 func (d *DB) SetTerminalStatusGuarded(id int64, status string) (won bool, err error) {
 	res, err := d.Exec(`
 UPDATE tasks
@@ -521,32 +517,30 @@ UPDATE tasks
 	return deadline, err
 }
 
-// DeleteTask preserves the historical behavior: remove the task and its
-// exploration subgraph while retaining global assets.
+// DeleteTask는 예전 동작을 유지한다. 작업과 그
+// 탐색 부분 그래프를 지우고, 전역 자산은 남긴다.
 func (d *DB) DeleteTask(id int64) error {
 	_, err := d.DeleteTaskCascade(id, false, false)
 	return err
 }
 
-// DeleteTaskCascade hard-deletes a task and its exploration subgraph
-// (nodes/edges/activity via ON DELETE CASCADE). Optional standalone findings and
-// assets owned only by this task are deleted in the same transaction; shared
-// assets are retained and only have this task id detached. deleteLLMRecords is
-// optional to preserve callers of the original two-option API.
+// DeleteTaskCascade는 작업과 그 탐색 부분 그래프를 완전히 지운다
+// (노드·간선·활동은 ON DELETE CASCADE). 선택적으로, 이 작업만 소유한 독립 발견과
+// 자산도 같은 트랜잭션에서 지운다. 공유
+// 자산은 남기고 이 작업 id만 뗀다. deleteLLMRecords는
+// 선택이다. 원래 옵션 두 개 API의 호출자를 지키기 위해서다.
 func (d *DB) DeleteTaskCascade(id int64, deleteAssets, deleteFindings bool, deleteLLMRecords ...bool) (TaskDeleteResult, error) {
 	deleteRecords := len(deleteLLMRecords) > 0 && deleteLLMRecords[0]
 	return d.DeleteTaskCascadePrepared(id, deleteAssets, deleteFindings, deleteRecords, nil)
 }
 
-// DeleteTaskCascadePrepared coordinates reversible external deletion with the
-// PostgreSQL cascade. When prepare is non-nil, host ownership is resolved and
-// prepare is invoked inside this transaction while asset and anchor writers are
-// excluded. The locks remain held through commit, closing the window where a
-// host could become shared after its traffic had already been staged.
+// DeleteTaskCascadePrepared는 되돌릴 수 있는 바깥 삭제를 PostgreSQL 연쇄 삭제와 맞춘다.
+// prepare가 nil이 아니면 호스트 소유를 정하고, 자산·앵커를 쓰는 쪽을 막은 채
+// 이 트랜잭션 안에서 prepare를 부른다. 잠금은 커밋까지 유지되어,
+// 트래픽을 준비한 뒤에 호스트가 공유로 바뀌는 틈을 닫는다.
 //
-// prepare must only stage reversible work. Any returned error or later database
-// error rolls PostgreSQL back; the caller remains responsible for rolling back
-// external work that its callback staged successfully.
+// prepare는 되돌릴 수 있는 일만 준비해야 한다. 돌려준 오류나 이후 데이터베이스
+// 오류는 PostgreSQL을 롤백한다. 콜백이 성공시킨 바깥 작업을 되돌리는 책임은 호출자에게 있다.
 func (d *DB) DeleteTaskCascadePrepared(
 	id int64,
 	deleteAssets, deleteFindings, deleteLLMRecords bool,
@@ -561,15 +555,15 @@ func (d *DB) DeleteTaskCascadePrepared(
 	var expID int64
 	if err := tx.QueryRow(`SELECT exploration_id FROM tasks WHERE id=$1 FOR UPDATE`, id).Scan(&expID); err != nil {
 		if err == sql.ErrNoRows {
-			return result, nil // already gone
+			return result, nil // 이미 없다
 		}
 		return result, err
 	}
 
-	// SHARE ROW EXCLUSIVE conflicts with every INSERT/UPDATE/DELETE on these
-	// tables and with another coordinated deletion. Taking both in one fixed order
-	// prevents phantoms (a distinct asset row for the same host) as well as new
-	// ownership/anchor references until the deletion transaction commits.
+	// SHARE ROW EXCLUSIVE는 이 테이블의 모든 INSERT/UPDATE/DELETE와
+	// 다른 조율된 삭제와 충돌한다. 둘을 고정된 순서로 잡으면
+	// 유령 행(같은 호스트의 다른 자산 행)과 새
+	// 소유·앵커 참조를 삭제 트랜잭션이 커밋할 때까지 막는다.
 	if deleteAssets || prepare != nil {
 		if _, err := tx.Exec(`LOCK TABLE assets, exploration_anchors IN SHARE ROW EXCLUSIVE MODE`); err != nil {
 			return result, err
@@ -588,10 +582,10 @@ func (d *DB) DeleteTaskCascadePrepared(
 		}
 	}
 	if deleteAssets {
-		// Ownership is the union of explicit task_ids and this exploration's anchors.
-		// An asset is deletable only when no other live task references it through
-		// either mechanism. This covers legacy anchor-only seeds without destroying
-		// evidence anchored by another task.
+		// 소유는 명시적 task_ids와 이 탐색의 앵커를 합친 것이다.
+		// 자산은 다른 살아있는 작업이 어느 쪽으로도 참조하지 않을 때만 지울 수 있다.
+		// 앵커만 있던 옛 씨앗도 덮고, 다른 작업이 앵커한
+		// 증거를 지우지는 않는다.
 		res, err := tx.Exec(`
 WITH candidate_assets AS (
   SELECT id FROM assets WHERE $1 = ANY(task_ids)
@@ -642,8 +636,8 @@ DELETE FROM assets a USING deletable d WHERE a.id=d.id`, id, expID)
 		}
 		result.LLMRecordsDeleted, _ = res.RowsAffected()
 	}
-	// llm_usage (the token metering ledger) is intentionally NOT deleted with the
-	// task — it is kept as historical accounting even after the task is gone.
+	// llm_usage(토큰 계량 장부)는 작업과 함께 일부러 지우지 않는다.
+	// 작업이 없어진 뒤에도 과거 계량으로 남긴다.
 	if _, err := tx.Exec(`DELETE FROM tasks WHERE id=$1`, id); err != nil {
 		return result, err
 	}

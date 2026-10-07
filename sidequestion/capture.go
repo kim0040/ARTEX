@@ -34,7 +34,7 @@ func (p Parent) Key() string {
 	return fmt.Sprintf("task-%d-exp-%d-main", p.TaskID, p.ExplorationID)
 }
 
-// Model contains only configuration identity, never credentials or proxy URLs.
+// Model은 설정 신원만 담습니다. 자격 증명이나 프록시 URL은 없습니다.
 type Model struct {
 	ProfileID    int64  `json:"profile_id"`
 	Name         string `json:"name"`
@@ -82,8 +82,8 @@ type Capture struct {
 	last    *Snapshot
 }
 
-// Attach uses QueryDeps rather than a global provider hook so compaction and
-// other auxiliary completions cannot replace the main conversation checkpoint.
+// Attach는 전역 프로바이더 갈고리 대신 QueryDeps를 씁니다. 그래서 압축과
+// 다른 보조 완료가 본 대화 체크포인트를 바꾸지 못합니다.
 func Attach(ctx context.Context, parent Parent, deps harness.QueryDeps, provider llm.Provider) (context.Context, harness.QueryDeps) {
 	publish, _ := ctx.Value(publisherKey{}).(Publisher)
 	if publish == nil {
@@ -110,7 +110,7 @@ func (c *Capture) save(req llm.CompletionRequest, model Model) {
 	copy, err := CloneRequest(req)
 	if err != nil {
 		return
-	} // Observability must not break the main run.
+	} // 관측이 본 실행을 깨면 안 됩니다.
 	c.mu.Lock()
 	c.version++
 	s := Snapshot{Parent: c.parent, RunID: c.runID, Version: c.version, CapturedAt: time.Now().UTC(), Model: model, Request: copy}
@@ -119,8 +119,8 @@ func (c *Capture) save(req llm.CompletionRequest, model Model) {
 	c.publish(s)
 }
 
-// Finish adds tool results that landed after the final model request. Norma's
-// first API message is its host reminder, absent from Terminal.Messages.
+// Finish는 마지막 모델 요청 뒤에 도착한 도구 결과를 더합니다. norma의
+// 첫 API 메시지는 호스트 알림이라 Terminal.Messages에는 없습니다.
 func Finish(ctx context.Context, messages []llm.Message) {
 	c, _ := ctx.Value(captureKey{}).(*Capture)
 	if c == nil {
@@ -146,7 +146,7 @@ type boundProvider struct {
 	model Model
 }
 
-// Bind belongs immediately around a concrete provider, inside any routing pool.
+// Bind는 라우팅 풀 안쪽, 구체적인 프로바이더 바로 앞에 둡니다.
 func Bind(inner llm.Provider, model Model) llm.Provider { return &boundProvider{inner, model} }
 
 func (p *boundProvider) Stream(ctx context.Context, req llm.CompletionRequest) iter.Seq2[llm.StreamEvent, error] {

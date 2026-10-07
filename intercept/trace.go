@@ -33,9 +33,10 @@ type tracedCall struct {
 	complete  completion
 }
 
-// Trace belongs to ONE Prompt invocation. SDK v0.3.6 hooks omit the tool ID;
-// correlate only when exactly one outstanding event has matching input. Never
-// guess between simultaneous identical requests, even when results arrive FIFO.
+// Trace 는 Prompt 호출 하나에만 속합니다. SDK v0.3.6 훅은 도구 ID 를 주지 않습니다.
+// 입력이 같은, 아직 끝나지 않은 이벤트가 정확히 하나일 때만 연결합니다.
+// 같은 요청이 동시에 둘이면, 결과가 들어온 순서여도 어느 쪽인지 추측하지 않습니다.
+// 초보: 승인 기록과 도구 결과를 잇는 감사 추적입니다. 가드 판정 자체는 아닙니다.
 type Trace struct {
 	mu      sync.Mutex
 	runID   string
@@ -84,8 +85,8 @@ func (t *Trace) Start(id, tool string, input []byte) {
 	t.append(db.InterceptContextEntry{Kind: "tool_use", Tool: tool, ToolUseID: id, Text: string(input)})
 }
 
-// WithCall claims the event before model review starts, so subsequent tools
-// cannot change this approval's context while the judge is running.
+// WithCall 은 모델 심사가 시작되기 전에 이 이벤트를 자기 것으로 표시합니다.
+// 그래서 판정이 도는 동안, 뒤에 나온 도구가 이 승인의 맥락을 바꾸지 못합니다.
 func WithCall(ctx context.Context, tool string, input []byte) context.Context {
 	t, _ := ctx.Value(traceKey{}).(*Trace)
 	a := db.InterceptAudit{Correlation: "unavailable", InputDigest: digestInput(input), CapturedAt: time.Now().UTC()}
@@ -138,8 +139,8 @@ func (t *Trace) Complete(id, output string, isError bool) {
 	c.complete(status, out, cut)
 }
 
-// Finish marks missing results unknown, never successful. The tool may have
-// been interrupted or its final event lost; this is distinct from a tool error.
+// Finish 는 빠진 결과를 성공이 아니라 unknown 으로 표시합니다.
+// 도구가 중간에 끊겼거나 마지막 이벤트를 잃은 경우이며, 도구가 오류를 낸 것과는 다릅니다.
 func (t *Trace) Finish() {
 	t.mu.Lock()
 	calls := t.calls
@@ -167,9 +168,9 @@ func auditFor(ctx context.Context, dec Decision, input []byte, status string) *d
 		if a.Correlation != "exact" {
 			a.ExecutionStatus = "unknown"
 		}
-		// Keep the exact model input for EVERY model verdict, including automatic
-		// allows. Raw audit history is not model input. Preserve the existing
-		// lightweight allow-retention policy; render the saved input directly.
+		// 자동 allow 를 포함한 모든 모델 판정에, 모델이 본 입력을 그대로 남깁니다.
+		// 원본 감사 이력은 모델 입력이 아닙니다.
+		// 기존의 가벼운 allow 보관 방식은 유지하고, 저장된 입력은 그대로 보여 줍니다.
 		a.UserMessage, a.UserTruncated = "", false
 		a.Context, a.ContextTruncated = nil, false
 	}

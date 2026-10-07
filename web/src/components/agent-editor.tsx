@@ -29,12 +29,12 @@ import { cn } from "@/lib/utils";
 import type { Agent, AgentDetail, AgentTrigger, MCPServer, PromptVar, PromptVersion, Settings, SkillItem, Tool } from "@/lib/types";
 
 // 트래픽 도구는 전역 트래픽 캡처 스위치로 막는 호스트 도구입니다. 연결할 수는 있지만, （기록 프록시는 오가는 트래픽을 잡아 두는 중간 서버입니다）
-// only usable when capture is on. Keep this list in sync with traffic.SeedToolMetas.
+// 캡처가 켜져 있을 때만 쓸 수 있습니다. 이 목록을 traffic.SeedToolMetas와 맞추세요.
 const TRAFFIC_TOOL_KEYS = new Set(["traffic_search", "traffic_get"]);
 
-// AgentEditor is the tabbed editor for one agent, used inside the agents-page
+// AgentEditor는 에이전트 하나의 탭 편집기입니다. 에이전트 화면의
 // 서랍(딥 링크에서는 전체 페이지로 재사용). Tabs: 설정과 프롬프트 / MCP / Skill /
-// Tools. Config + prompt save as before; visibility + tool bindings toggle live.
+// 도구. 설정과 프롬프트는 예전처럼 저장하고, 보이기와 도구 연결은 바로 바뀝니다.
 export function AgentEditor({ agentKey, onSaved }: { agentKey: string; onSaved?: () => void }) {
   const [detail, setDetail] = React.useState<AgentDetail | null>(null);
   const [versions, setVersions] = React.useState<PromptVersion[]>([]);
@@ -196,8 +196,8 @@ export function AgentEditor({ agentKey, onSaved }: { agentKey: string; onSaved?:
       toast.error("저장 실패:" + (e as Error).message);
     }
   }
-  // applyVis optimistically updates, persists, and toasts success/failure. On
-  // failure it reverts to the prior selection so the UI never lies about state.
+  // applyVis는 먼저 반영하고, 저장하고, 성공/실패를 토스트로 알립니다.
+  // 실패하면 이전 선택으로 되돌려, 화면이 상태와 다르게 말하지 않게 합니다.
   async function applyVis(nextMcp: number[], nextSkill: string[], okMsg: string) {
     const prevMcp = mcpVisible;
     const prevSkill = skillVisible;
@@ -206,7 +206,7 @@ export function AgentEditor({ agentKey, onSaved }: { agentKey: string; onSaved?:
     try {
       await api.setAgentVisibility(agentKey, nextMcp, nextSkill);
       toast.success(okMsg);
-      onSaved?.(); // refresh the list so the card's MCP/Skill counts stay in sync
+      onSaved?.(); // 목록을 새로고침해서 카드의 MCP/스킬 개수를 맞춥니다
     } catch (e) {
       setMcpVisible(prevMcp);
       setSkillVisible(prevSkill);
@@ -233,7 +233,7 @@ export function AgentEditor({ agentKey, onSaved }: { agentKey: string; onSaved?:
   async function toggleTool(t: Tool) {
     const on = t.agents.includes(agentKey);
     const nextAgents = on ? t.agents.filter((k) => k !== agentKey) : [...t.agents, agentKey];
-    // optimistic update
+    // 먼저 화면에 반영
     setTools((ts) => ts.map((x) => (x.key === t.key ? { ...x, agents: nextAgents } : x)));
     try {
       await api.saveTool(t.key, {
@@ -254,17 +254,17 @@ export function AgentEditor({ agentKey, onSaved }: { agentKey: string; onSaved?:
   if (loaded && !detail) {
     return <div className="text-muted-foreground p-6 text-center text-sm">Agent를 찾지 못했습니다:{agentKey}</div>;
   }
-  // config is meaningless for the conversational main agent and the fixed-budget
-  // goals decomposer; every other agent (workers, custom assistants) honors it.
+  // 대화형 메인 에이전트와 고정 예산
+  // 목표 분해에는 이 설정이 의미 없습니다. 다른 에이전트(워커, 사용자 조수)는 따릅니다.
   const showConfig = agentKey !== "mainagent" && agentKey !== "goals";
-  // web search applies to every conversational/executing agent except the one-shot
-  // goals decomposer; it's gated by the global master switch.
+  // 웹 검색은 한 번만 도는 목표 분해를 뺀, 대화하거나 실행하는 에이전트에 적용됩니다.
+  // 전역 마스터 스위치로 막습니다.
   const showWebSearch = agentKey !== "goals";
   // interactive shell(오래 유지되는 PTY 세션 도구 모음)도 goals를 제외한 agent에 열려 있습니다. 전역 게이트는 없습니다.
   const showInteractiveShell = agentKey !== "goals";
   // 각 agent(goals/mainagent 포함)는 어떤 LLM 위에서 돌므로, 「기본 모델」 연결은 모든 agent에 열려 있습니다.
   const showLLM = true;
-  // triggers (P3) only attach to custom agents.
+  // 트리거(P3)는 사용자 에이전트에만 붙습니다.
   const isCustom = !!detail && !detail.agent?.builtin;
 
   return (
@@ -672,7 +672,7 @@ export function AgentEditor({ agentKey, onSaved }: { agentKey: string; onSaved?:
   );
 }
 
-// ---------- Diff helpers ----------
+// ---------- 차이 도우미 ----------
 
 type DiffLine = { type: "same" | "add" | "del"; text: string };
 
@@ -726,9 +726,9 @@ function DiffView({ oldText, newText }: { oldText: string; newText: string }) {
   );
 }
 
-// AgentTriggersTab manages a custom agent's P3 triggers: list + add + delete.
+// AgentTriggersTab은 사용자 에이전트의 P3 트리거를 관리합니다. 목록, 추가, 삭제.
 // 각 트리거는 (예약/발견 finding/목표 달성/작업 시간 초과/도구 호출, 여러 개 선택 가능) → 새 대화가 실행됨
-// in parallel with the base user message + auto context appended by the backend.
+// 기본 사용자 메시지와 백엔드가 붙인 자동 맥락과 함께 병렬로 돕니다.
 function AgentTriggersTab({ agentKey, agent }: { agentKey: string; agent?: Agent }) {
   const [triggers, setTriggers] = React.useState<AgentTrigger[]>([]);
   const [tools, setTools] = React.useState<Tool[]>([]);
@@ -1021,7 +1021,7 @@ function AgentTriggersTab({ agentKey, agent }: { agentKey: string; agent?: Agent
           )}
         </div>
 
-        {/* finding */}
+        {/* 발견 */}
         <div className="grid gap-1.5">
           <label className="flex items-center gap-2 text-sm">
             <Checkbox checked={onFinding} onCheckedChange={(v) => setOnFinding(!!v)} /> finding이 나올 때 실행

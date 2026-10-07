@@ -22,17 +22,17 @@ var (
 	ErrTaskAssetAssetNotFound = errors.New("자산을 찾을 수 없습니다")
 )
 
-// TaskAssetMutation summarizes one attach request. Attached counts newly added
-// associations; Existing counts requested assets that were already on the task.
+// TaskAssetMutation은 붙이기 요청 하나의 요약이다. Attached는 새로 더한 연결 수이고,
+// Existing은 요청한 자산 중 이미 작업에 있던 수다.
 type TaskAssetMutation struct {
 	Requested int `json:"requested"`
 	Attached  int `json:"attached"`
 	Existing  int `json:"existing"`
 }
 
-// TaskAssetScopeMutation summarizes one free-form scope registration. Domain
-// and IP entries create or reuse global assets; every entry also becomes an
-// idempotent task_scope row.
+// TaskAssetScopeMutation은 자유 형식 범위 등록 하나의 요약이다.
+// 도메인과 IP 항목은 전역 자산을 만들거나 다시 쓴다. 모든 항목은
+// 같은 요청을 다시 해도 되는 task_scope 행이 된다.
 type TaskAssetScopeMutation struct {
 	Requested      int `json:"requested"`
 	AssetsLinked   int `json:"assets_linked"`
@@ -41,7 +41,7 @@ type TaskAssetScopeMutation struct {
 	ScopesExisting int `json:"scopes_existing"`
 }
 
-// IntentAsset describes an asset explicitly anchored to a worker intent.
+// IntentAsset은 워커 의도에 명시적으로 앵커된 자산이다. 탐색 그래프의 의도와 자산 그래프의 자산을 잇는다.
 type IntentAsset struct {
 	IntentID      int64  `json:"intent_id"`
 	AssetID       int64  `json:"asset_id"`
@@ -88,8 +88,8 @@ func normalizeTaskAssetSource(source, summary string) (string, string, error) {
 	return source, summary, nil
 }
 
-// SetTaskAssetSource improves the generic trigger-created provenance for one
-// existing task association. It never creates or deletes an asset.
+// SetTaskAssetSource는 이미 있는 작업 연결의, 트리거가 만든 일반 출처를 더 구체적으로 고친다.
+// 자산을 만들거나 지우지는 않는다.
 func (s *AssetStore) SetTaskAssetSource(taskID, assetID int64, source, summary string, sourceNodeID *int64) error {
 	if taskID <= 0 || assetID <= 0 {
 		return fmt.Errorf("%w: task and asset ids must be positive", ErrTaskAssetInvalid)
@@ -127,9 +127,9 @@ SET source=EXCLUDED.source,
 	return nil
 }
 
-// RegisterTaskAssetScopes accepts the same structured scope rules as enterprise
-// assets. The entire request is atomic: invalid input or any storage failure
-// leaves both global assets and task scope unchanged.
+// RegisterTaskAssetScopes는 기업 자산과 같은 구조화 범위 규칙을 받는다.
+// 요청 전체가 한 번에 적용된다. 입력이 잘못되거나 저장이 실패하면
+// 전역 자산과 작업 범위 모두 그대로다.
 func (s *AssetStore) RegisterTaskAssetScopes(taskID int64, inputs []ScopeInput) (TaskAssetScopeMutation, error) {
 	mutation := TaskAssetScopeMutation{Requested: len(inputs)}
 	if taskID <= 0 {
@@ -250,8 +250,8 @@ func (s *AssetStore) RegisterTaskAssetScopes(taskID int64, inputs []ScopeInput) 
 	return mutation, nil
 }
 
-// AttachAssetsToTask associates existing global assets with one live task and
-// records an operator-authored source summary. Global asset rows are retained.
+// AttachAssetsToTask는 이미 있는 전역 자산을 살아있는 작업 하나에 연결하고,
+// 운영자가 적은 출처 요약을 남긴다. 전역 자산 행은 그대로 둔다.
 func (s *AssetStore) AttachAssetsToTask(taskID int64, assetIDs []int64, sourceSummary string) (TaskAssetMutation, error) {
 	var mutation TaskAssetMutation
 	assetIDs, err := normalizeTaskAssetIDs(assetIDs)
@@ -288,10 +288,9 @@ FROM assets WHERE id=ANY($2::bigint[])`, taskID, assetIDs).Scan(&found, &existin
 	if found != len(assetIDs) {
 		return mutation, ErrTaskAssetAssetNotFound
 	}
-	// Order matters: this UPDATE fires trg_assets_task_links, which creates the
-	// link rows with the generic source='system'. The INSERT below must stay
-	// after it so the operator-authored 'manual' provenance wins; swapping the
-	// two statements silently degrades every manual attach back to 'system'.
+	// 순서가 중요하다. 이 UPDATE가 trg_assets_task_links를 일으켜
+	// source='system'인 일반 연결 행을 만든다. 아래 INSERT는 그 뒤에 있어야
+	// 운영자가 적은 'manual' 출처가 이긴다. 두 문을 바꾸면 수동 연결이 조용히 'system'으로 내려간다.
 	if _, err := tx.Exec(`
 UPDATE assets
 SET task_ids=CASE WHEN $1=ANY(task_ids) THEN task_ids ELSE array_append(task_ids,$1) END
@@ -311,8 +310,8 @@ SET source='manual', source_summary=EXCLUDED.source_summary, source_node_id=NULL
 	return mutation, tx.Commit()
 }
 
-// DetachAssetFromTask removes only the task association. The global asset and
-// exploration anchors remain available for historical blackboard auditing.
+// DetachAssetFromTask는 작업 연결만 지운다. 전역 자산과
+// 탐색 앵커는 남겨, 과거 칠판 감사를 계속할 수 있다.
 func (s *AssetStore) DetachAssetFromTask(taskID, assetID int64) (bool, error) {
 	if taskID <= 0 || assetID <= 0 {
 		return false, fmt.Errorf("%w: task and asset ids must be positive", ErrTaskAssetInvalid)
@@ -368,9 +367,8 @@ WHERE task_id=$1 AND asset_id=ANY($2::bigint[])`, taskID, ids)
 	return rows.Err()
 }
 
-// IntentAssets returns all local worker targets plus immutable targets from the
-// task's direct sources. Inherited non-terminal intents remain hidden, matching
-// the existing source-aware session contract.
+// IntentAssets는 로컬 워커 대상과, 작업의 직접 원본에서 온 고칠 수 없는 대상을 돌려준다.
+// 끝나지 않은 물려받은 의도는 숨긴다. 원본을 아는 기존 세션 계약과 같다.
 func (s *AssetStore) IntentAssets(taskID int64) ([]IntentAsset, error) {
 	rows, err := s.db.Query(`
 WITH context AS (

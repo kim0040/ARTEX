@@ -6,11 +6,11 @@ import (
 	"github.com/Autumn-27/artex/db"
 )
 
-// constraintBlock renders this task's operation constraints (task_constraints) as a
-// high-priority block appended to the planner/worker system prompt. allow/deny are
-// grouped; empty string when there are no constraints (or ts is nil). The framing
-// deliberately puts these ABOVE the exploration/expansion heuristics so a declared
-// boundary wins the tug-of-war against "chase another entry surface".
+// constraintBlock 은 이 작업의 조작 제약(task_constraints)을 우선순위가 높은 블록으로 만들어
+// 플래너와 워커의 시스템 프롬프트 뒤에 붙입니다. allow 와 deny 로 나누고, 제약이 없거나
+// ts 가 nil 이면 빈 문자열입니다. 이 문장을 일부러 탐색 휴리스틱보다 위에 두어,
+// 적힌 경계가 "다른 입구를 더 쫓자"는 유혹을 이기게 합니다.
+// 초보: 탐색 그래프에 저장된 조작 제약이 플래너와 워커가 읽는 프롬프트에 여기서 들어갑니다.
 func constraintBlock(ts *db.ExplorationStore) string {
 	if ts == nil {
 		return ""

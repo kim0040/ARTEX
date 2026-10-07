@@ -5,10 +5,10 @@ import (
 	"time"
 )
 
-// A profile's retry override must survive a full round trip through the real
-// column list — this is what catches a mis-ordered scan/insert after adding six
-// columns at once. Also pins the "empty api key on update keeps the row usable"
-// path, since that UPDATE has its own parameter numbering.
+// 프로필의 재시도 덮어쓰기는 실제
+// 열 목록을 왕복해야 한다. 열 여섯 개를 더한 뒤 scan/insert 순서가 어긋나면 여기서 잡힌다.
+// 빈 api 키로 수정해도 행을 쓸 수 있다는 경로도 고정한다.
+// 그 UPDATE는 매개변수 번호가 따로다.
 func TestProfileRetryRoundTrip(t *testing.T) {
 	d, err := Open(testDSN(t))
 	if err != nil {
@@ -36,7 +36,7 @@ func TestProfileRetryRoundTrip(t *testing.T) {
 	if got.Retry != want {
 		t.Fatalf("retry=%+v, want %+v", got.Retry, want)
 	}
-	// Keyless update path (the UI sends no key when the user didn't retype it).
+	// 키 없는 수정 경로(사용자가 키를 다시 치지 않으면 UI가 키를 보내지 않는다).
 	got.APIKey = ""
 	got.Retry.Stream = RetryRule{Attempts: 3, IntervalMS: 700}
 	if _, err := d.SaveProfile(got); err != nil {
@@ -52,7 +52,7 @@ func TestProfileRetryRoundTrip(t *testing.T) {
 	if after.Retry.Connect != want.Connect || after.Retry.Empty != want.Empty {
 		t.Fatalf("untouched rules changed: %+v", after.Retry)
 	}
-	// The listing query reads a different column list — it must agree.
+	// 목록 쿼리는 다른 열 목록을 읽는다. 서로 맞아야 한다.
 	profiles, err := d.ListProfiles()
 	if err != nil {
 		t.Fatal(err)
@@ -64,8 +64,8 @@ func TestProfileRetryRoundTrip(t *testing.T) {
 	}
 }
 
-// Out-of-range values are clamped on the way in, so the DB CHECK constraint is
-// never what the user hears about.
+// 범위를 넘는 값은 넣을 때 잘라 둔다. 그래서 DB CHECK 제약이
+// 사용자에게 들리는 오류가 되지 않는다.
 func TestProfileRetryClampedOnSave(t *testing.T) {
 	d, err := Open(testDSN(t))
 	if err != nil {
@@ -90,8 +90,8 @@ func TestProfileRetryClampedOnSave(t *testing.T) {
 	}
 }
 
-// The global policy round-trips through settings, and an unset key reads back as
-// "everything on its built-in default".
+// 전역 정책은 settings를 왕복하고, 설정되지 않은 키는
+// "전부 내장 기본값"으로 다시 읽힌다.
 func TestLLMRetryPolicyRoundTrip(t *testing.T) {
 	d, err := Open(testDSN(t))
 	if err != nil {

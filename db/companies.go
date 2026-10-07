@@ -15,7 +15,7 @@ import (
 // 이 계층의 기업 범위가 자산 그래프에 올릴 root_domain, subdomain, ip의 경계를 정한다.
 // =====================================================================
 
-// Company is a row in the companies table.
+// Company는 companies 테이블의 한 줄이다. 기업 범위가 자산 그래프에 올릴 자산의 경계를 정한다.
 type Company struct {
 	ID        int64   `json:"id"`
 	Name      string  `json:"name"`
@@ -25,14 +25,14 @@ type Company struct {
 	UpdatedAt string  `json:"updated_at"`
 }
 
-// CompanyWithScope extends Company with its scope rules and asset count.
+// CompanyWithScope는 Company에 범위 규칙과 자산 수를 더한다.
 type CompanyWithScope struct {
 	Company
 	Scope      []ScopeRule `json:"scope"`
 	AssetCount int         `json:"asset_count"`
 }
 
-// ScopeRule is one company_scope row.
+// ScopeRule은 company_scope 한 줄이다.
 type ScopeRule struct {
 	ID        int64  `json:"id"`
 	CompanyID int64  `json:"company_id"`
@@ -44,7 +44,7 @@ type ScopeRule struct {
 	Reason    string `json:"reason,omitempty"`
 }
 
-// CompanyStore operates on the companies + company_scope tables.
+// CompanyStore는 companies와 company_scope 테이블을 다룬다.
 type CompanyStore struct{ db *DB }
 
 var (
@@ -56,14 +56,14 @@ const (
 	// 기업 범위는 규칙 개수를 제한하지 않는다. IP / 도메인을 하나씩 넣는 범위는 금방 수천 건이 되고, 상한은 사용자를
 	// 여러 기업으로 쪼개게 할 뿐이다. 요청 본문 크기(server 측 maxCompanyMutationBodyBytes)가 여전히 최종 한도다.
 	//
-	// Raw and normalized textual scope payloads are bounded by Unicode rune
-	// count so multi-byte input is treated consistently by the API and DB layer.
+	// 원문과 정규화한 범위 글은 유니코드 글자 수로 상한을 둔다.
+	// 그래서 여러 바이트 입력을 API와 DB가 같이 다룬다.
 	MaxCompanyScopeRawRunes   = 1024
 	MaxCompanyScopeValueRunes = 1024
 )
 
-// CompanyScopeValidationError identifies a client-correctable scope error.
-// Storage and transaction failures are returned as ordinary errors instead.
+// CompanyScopeValidationError는 클라이언트가 고칠 수 있는 범위 오류다.
+// 저장과 트랜잭션 실패는 그 대신 일반 오류로 돌려준다.
 type CompanyScopeValidationError struct{ Message string }
 
 func (e *CompanyScopeValidationError) Error() string { return e.Message }
@@ -82,22 +82,21 @@ func ValidateCompanyScopeInputBounds(inputs []ScopeInput) error {
 	return nil
 }
 
-// Scope writes rebuild derived asset ownership globally, so serialize them to
-// ensure the committed attribution always reflects the latest committed rules.
-// This key is reserved for company mutations; 7337741001 is the schema lock and
-// 7337741002 is the cross-package test-suite lock.
+// 범위 쓰기는 계산된 자산 소유를 전역으로 다시 만든다. 그래서 직렬화해서
+// 커밋된 귀속이 항상 가장 최근에 커밋된 규칙을 반영하게 한다.
+// 이 키는 기업 변경용으로 남겨 둔다. 7337741001은 스키마 잠금이고
+// 7337741002는 패키지를 가로지르는 테스트 잠금이다.
 const companyScopeMutationLock int64 = 7337741003
 
-// Companies returns the company store.
+// Companies는 기업 저장소를 돌려준다.
 func (d *DB) Companies() *CompanyStore { return &CompanyStore{db: d} }
 
-// companyNKey normalises a company name: lowercase + trim + collapse whitespace.
+// companyNKey는 기업 이름을 정규화한다. 소문자, 앞뒤 공백 제거, 연속 공백을 하나로.
 func companyNKey(name string) string {
 	return strings.Join(strings.Fields(strings.ToLower(name)), " ")
 }
 
-// UpsertCompany creates or updates a company by name. Returns the id and whether
-// a new row was created.
+// UpsertCompany는 이름으로 기업을 만들거나 고친다. id와 새 행인지 여부를 돌려준다.
 func (s *CompanyStore) UpsertCompany(name, logo string) (id int64, created bool, err error) {
 	nkey := companyNKey(name)
 	var logoVal any
@@ -115,10 +114,10 @@ RETURNING id, (xmax = 0)`, name, nkey, logoVal).Scan(&id, &created)
 	return
 }
 
-// CreateCompanyWithScope creates a company without updating an existing row.
-// The company, its valid initial scope rules, and derived asset attribution are
-// committed atomically. Invalid inputs retain the legacy partial-validation
-// contract and are reported without preventing valid rules from being stored.
+// CreateCompanyWithScope는 이미 있는 행을 고치지 않고 기업을 만든다.
+// 기업, 유효한 처음 범위 규칙, 계산된 자산 귀속을
+// 한 번에 커밋한다. 잘못된 입력은 예전 부분 검사
+// 계약을 유지하고, 유효한 규칙 저장을 막지 않은 채 보고한다.
 func (s *CompanyStore) CreateCompanyWithScope(name, logo string, inputs []ScopeInput, reason string) (
 	id int64, added, skipped, invalid int, validationErrors []string, err error,
 ) {
@@ -171,7 +170,7 @@ RETURNING id`, name, nkey, logoVal).Scan(&id); err != nil {
 	return id, added, skipped, invalid, validationErrors, nil
 }
 
-// GetCompany returns one company by id (nil if not found).
+// GetCompany는 id로 기업 하나를 돌려준다. 없으면 nil이다.
 func (s *CompanyStore) GetCompany(id int64) (*Company, error) {
 	c := &Company{}
 	err := s.db.QueryRow(`
@@ -184,7 +183,7 @@ FROM companies WHERE id = $1`, id).Scan(
 	return c, err
 }
 
-// GetCompanyByName returns one company by normalized name (nil if not found).
+// GetCompanyByName은 정규화한 이름으로 기업 하나를 돌려준다. 없으면 nil이다.
 func (s *CompanyStore) GetCompanyByName(name string) (*Company, error) {
 	nkey := companyNKey(name)
 	c := &Company{}
@@ -198,22 +197,22 @@ FROM companies WHERE nkey = $1`, nkey).Scan(
 	return c, err
 }
 
-// UpsertByName creates the company if it doesn't exist, then returns its id.
+// UpsertByName은 기업이 없으면 만든 뒤 id를 돌려준다.
 func (s *CompanyStore) UpsertByName(name string) (int64, error) {
 	id, _, err := s.UpsertCompany(name, "")
 	return id, err
 }
 
-// DeleteCompany deletes a company and re-evaluates automatic ownership against
-// the remaining companies in the same transaction. Explicitly-owned assets are
-// detached by the FK and may then fall back to a remaining scope match.
+// DeleteCompany는 기업을 지우고, 같은 트랜잭션에서 남은 기업을 기준으로
+// 자동 소유를 다시 계산한다. 명시적으로 소유한 자산은
+// 외래 키가 떼고, 그다음 남은 범위 맞춤으로 내려갈 수 있다.
 func (s *CompanyStore) DeleteCompany(id int64) error {
 	_, err := s.DeleteCompanyWithAssets(id, false)
 	return err
 }
 
-// DeleteCompanyWithAssets deletes a company and optionally all of its assets in
-// one transaction, then re-evaluates ownership against the remaining companies.
+// DeleteCompanyWithAssets는 기업과, 선택하면 그 자산을 모두
+// 한 트랜잭션에서 지운 뒤, 남은 기업을 기준으로 소유를 다시 계산한다.
 func (s *CompanyStore) DeleteCompanyWithAssets(id int64, deleteAssets bool) (assetsDeleted int64, err error) {
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -244,8 +243,8 @@ func (s *CompanyStore) DeleteCompanyWithAssets(id int64, deleteAssets bool) (ass
 	if deleted == 0 {
 		return 0, ErrCompanyNotFound
 	}
-	// This path has no per-request warning channel, so the log is the only place
-	// the operator can learn about unparseable ip rows here.
+	// 이 경로에는 요청별 경고 통로가 없다. 그래서 해석할 수 없는 ip 행은
+	// 로그만이 운영자에게 알린다.
 	warning, err := recomputeAttributionTx(tx)
 	if err != nil {
 		return 0, err
@@ -257,7 +256,7 @@ func (s *CompanyStore) DeleteCompanyWithAssets(id int64, deleteAssets bool) (ass
 	return assetsDeleted, nil
 }
 
-// ListCompanies returns all companies with scope and asset count.
+// ListCompanies는 모든 기업을 범위와 자산 수와 함께 돌려준다.
 func (s *CompanyStore) ListCompanies() ([]*CompanyWithScope, error) {
 	rows, err := s.db.Query(`
 SELECT c.id, c.name, c.nkey, c.logo, c.created_at::text, c.updated_at::text,
@@ -284,7 +283,7 @@ ORDER BY c.name`)
 		return nil, err
 	}
 
-	// fetch scope rules for each company
+	// 기업마다 범위 규칙을 가져온다
 	for _, cws := range out {
 		cws.Scope, err = s.GetScope(cws.ID)
 		if err != nil {
@@ -294,7 +293,7 @@ ORDER BY c.name`)
 	return out, nil
 }
 
-// GetScope returns all scope rules for a company.
+// GetScope는 기업의 범위 규칙을 모두 돌려준다.
 func (s *CompanyStore) GetScope(companyID int64) ([]ScopeRule, error) {
 	rows, err := s.db.Query(`
 SELECT id, company_id, kind,
@@ -317,8 +316,8 @@ ORDER BY id`, companyID)
 	return out, rows.Err()
 }
 
-// AddScope parses and inserts scope lines for a company, then reattributes assets.
-// Returns counts of added, skipped, and invalid lines.
+// AddScope는 기업의 범위 줄을 파싱해 넣고, 자산 귀속을 다시 계산한다.
+// 추가·건너뜀·잘못된 줄의 수를 돌려준다.
 func (s *CompanyStore) AddScope(companyID int64, lines []string, reason string) (added, skipped, invalid int, errors []string) {
 	inputs := make([]ScopeInput, 0, len(lines))
 	for _, line := range lines {
@@ -327,8 +326,8 @@ func (s *CompanyStore) AddScope(companyID int64, lines []string, reason string) 
 	return s.AddScopeInputs(companyID, inputs, reason)
 }
 
-// AddScopeInputs inserts structured scope rules. Empty kinds use the automatic
-// CIDR/IP/ICP/domain/keyword classification used by AddScope.
+// AddScopeInputs는 구조화한 범위 규칙을 넣는다. kind가 비어 있으면
+// AddScope와 같은 CIDR/IP/ICP/도메인/키워드 자동 분류를 쓴다.
 func (s *CompanyStore) AddScopeInputs(companyID int64, inputs []ScopeInput, reason string) (added, skipped, invalid int, errors []string) {
 	added, skipped, invalid, validationErrors, err := s.AddScopeInputsChecked(companyID, inputs, reason)
 	if err != nil {
@@ -337,8 +336,8 @@ func (s *CompanyStore) AddScopeInputs(companyID int64, inputs []ScopeInput, reas
 	return added, skipped, invalid, validationErrors
 }
 
-// AddScopeInputsChecked inserts structured scope rules while keeping input
-// validation separate from storage and transaction errors.
+// AddScopeInputsChecked는 구조화한 범위 규칙을 넣되, 입력
+// 검사를 저장·트랜잭션 오류와 분리한다.
 func (s *CompanyStore) AddScopeInputsChecked(companyID int64, inputs []ScopeInput, reason string) (
 	added, skipped, invalid int, validationErrors []string, err error,
 ) {
@@ -447,8 +446,8 @@ func insertScopeRulesTx(tx *sql.Tx, companyID int64, rules []ParsedScope, reason
 	return added, skipped, needsAttribution, nil
 }
 
-// insertScopeRuleTx inserts a scope rule. inserted=false means a duplicate was
-// ignored by ON CONFLICT, not an error.
+// insertScopeRuleTx는 범위 규칙을 넣는다. inserted=false는 중복을
+// ON CONFLICT가 무시한 것이지 오류가 아니다.
 func insertScopeRuleTx(tx *sql.Tx, companyID int64, rule ParsedScope, reason string) (inserted bool, err error) {
 	var res interface{ RowsAffected() (int64, error) }
 	switch rule.Kind {
@@ -480,9 +479,9 @@ ON CONFLICT (company_id, kind, value) WHERE kind IN ('icp','keyword') DO NOTHING
 	return n > 0, nil
 }
 
-// RecomputeAttribution rebuilds only scope-derived ownership. Explicit company
-// links are immutable under scope edits. Precedence is domain, IP/CIDR, then
-// normalized exact ICP; keyword rules never attribute assets.
+// RecomputeAttribution은 범위에서 계산된 소유만 다시 만든다. 명시적 기업
+// 연결은 범위를 고쳐도 바뀌지 않는다. 우선순위는 도메인, IP/CIDR, 그다음
+// 정규화한 정확한 ICP다. 키워드 규칙은 자산을 귀속하지 않는다.
 func (s *CompanyStore) RecomputeAttribution() error {
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -500,13 +499,13 @@ func (s *CompanyStore) RecomputeAttribution() error {
 	return tx.Commit()
 }
 
-// recomputeAttributionTx rebuilds scope-derived ownership. It returns a warning
-// for assets whose ip column cannot be parsed: try_inet skips them instead of
-// aborting the statement, so without this they would silently never receive a
-// network-based company. Callers surface the warning and it is always logged.
+// recomputeAttributionTx는 범위에서 계산된 소유를 다시 만든다. ip 열을
+// 해석할 수 없는 자산은 경고로 돌려준다. try_inet은 문을 멈추지 않고 그 행을 건너뛴다.
+// 이 경고가 없으면 그 자산은 네트워크 기업을 조용히 영원히 못 받는다.
+// 호출자가 경고를 보여 주고, 항상 로그에도 남긴다.
 func recomputeAttributionTx(tx *sql.Tx) (string, error) {
-	// Only derived rows are cleared. Historical rows migrated without provenance
-	// are marked explicit by schema.sql, which is the non-destructive default.
+	// 계산된 행만 지운다. 출처 없이 옮겨 온 옛 행은
+	// schema.sql이 explicit로 표시한다. 지우지 않는 쪽이 기본이다.
 	if _, err := tx.Exec(`
 UPDATE assets
 SET company_id = NULL, company_source = 'scope'
@@ -514,7 +513,7 @@ WHERE company_source = 'scope'`); err != nil {
 		return "", err
 	}
 
-	// Domain-based attribution (root_domain exact match).
+	// 도메인 기준 귀속(root_domain 정확히 맞춤).
 	if _, err := tx.Exec(`
 WITH matched AS (
     SELECT DISTINCT ON (a.id) a.id AS asset_id, cs.company_id
@@ -532,7 +531,7 @@ WHERE a.id = matched.asset_id`); err != nil {
 		return "", err
 	}
 
-	// IP/CIDR attribution for still-unowned assets.
+	// 아직 소유자가 없는 자산의 IP/CIDR 귀속.
 	if _, err := tx.Exec(`
 WITH matched AS (
     SELECT DISTINCT ON (a.id) a.id AS asset_id, cs.company_id
@@ -550,7 +549,7 @@ WHERE a.id = matched.asset_id`); err != nil {
 		return "", err
 	}
 
-	// Exact normalized ICP attribution after domain/network precedence.
+	// 도메인·네트워크 우선순위 다음의, 정규화한 ICP 정확 맞춤.
 	if _, err := tx.Exec(`
 WITH matched AS (
     SELECT DISTINCT ON (a.id) a.id AS asset_id, cs.company_id
@@ -573,37 +572,35 @@ WHERE a.id = matched.asset_id`); err != nil {
 	return malformedIPAssetWarning(tx)
 }
 
-// malformedIPAssetsSampled bounds how many offending ids one warning names, so a
-// large batch of bad rows stays readable in a toast and in the log.
+// malformedIPAssetsSampled는 경고 하나가 이름을 적는 문제 id 수의 상한이다.
+// 나쁜 행이 많아도 토스트와 로그에서 읽을 수 있게 한다.
 const malformedIPAssetsSampled = 5
 
-// logAttributionWarning records a recompute warning in the server log. Every
-// recompute path calls it, so the warning is reported even for triggers with no
-// per-request response (company deletion, scopesentry sync, agent asset writes).
+// logAttributionWarning은 재계산 경고를 서버 로그에 남긴다. 모든
+// 재계산 경로가 이것을 부르므로, 요청별 응답이 없는 트리거
+// (기업 삭제, scopesentry 동기화, 에이전트 자산 쓰기)에서도 경고가 남는다.
 func logAttributionWarning(warning string) {
 	if warning != "" {
 		log.Printf("[assets] %s", warning)
 	}
 }
 
-// malformedIPAssetQueryer is satisfied by both *sql.Tx and *DB so the warning
-// can be produced inside a recompute transaction or read standalone by the API.
+// malformedIPAssetQueryer는 *sql.Tx와 *DB가 모두 만족한다. 그래서 경고를
+// 재계산 트랜잭션 안에서 만들거나, API가 따로 읽을 수 있다.
 type malformedIPAssetQueryer interface {
 	Query(query string, args ...any) (*sql.Rows, error)
 }
 
-// MalformedIPAssetWarning reports assets with an unparseable ip outside of any
-// mutation, letting the API attach the warning to a scope response without
-// widening the mutation signatures — an unrelated data problem is not one of
-// this request's validation errors.
+// MalformedIPAssetWarning은 변경 밖에서, ip를 해석할 수 없는 자산을 보고한다.
+// API가 변경 함수 서명을 넓히지 않고 범위 응답에 경고를 붙일 수 있다.
+// 이 요청과 무관한 데이터 문제는 이 요청의 검사 오류가 아니다.
 func (s *CompanyStore) MalformedIPAssetWarning() (string, error) {
 	return malformedIPAssetWarning(s.db)
 }
 
-// malformedIPAssetWarning describes assets whose ip column is not a valid
-// address. They are invisible to network attribution, so the operator has to be
-// told which rows to fix — silently skipping them would look like scope rules
-// that simply do not work.
+// malformedIPAssetWarning은 ip 열이 올바른 주소가 아닌 자산을 설명한다.
+// 네트워크 귀속에는 보이지 않으므로, 운영자에게 어느 행을 고칠지
+// 알려야 한다. 조용히 건너뛰면 범위 규칙이 그냥 안 되는 것처럼 보인다.
 func malformedIPAssetWarning(q malformedIPAssetQueryer) (string, error) {
 	rows, err := q.Query(`
 SELECT id, ip, count(*) OVER () AS total
@@ -642,7 +639,7 @@ LIMIT $1`, malformedIPAssetsSampled)
 	return warning, nil
 }
 
-// UpdateScope replaces all scope rules for a company and reattributes.
+// UpdateScope는 기업의 범위 규칙을 모두 바꾸고 귀속을 다시 계산한다.
 func (s *CompanyStore) UpdateScope(companyID int64, lines []string, reason string) (added, invalid int, errs []string) {
 	inputs := make([]ScopeInput, 0, len(lines))
 	for _, line := range lines {
@@ -651,7 +648,7 @@ func (s *CompanyStore) UpdateScope(companyID int64, lines []string, reason strin
 	return s.UpdateScopeInputs(companyID, inputs, reason)
 }
 
-// UpdateScopeInputs replaces all rules with a structured set.
+// UpdateScopeInputs는 모든 규칙을 구조화한 묶음으로 바꾼다.
 func (s *CompanyStore) UpdateScopeInputs(companyID int64, inputs []ScopeInput, reason string) (added, invalid int, errs []string) {
 	added, invalid, validationErrors, err := s.UpdateScopeInputsChecked(companyID, inputs, reason)
 	if err != nil {
@@ -660,8 +657,8 @@ func (s *CompanyStore) UpdateScopeInputs(companyID int64, inputs []ScopeInput, r
 	return added, invalid, validationErrors
 }
 
-// UpdateScopeInputsChecked replaces all rules while separating validation
-// feedback from storage and transaction failures.
+// UpdateScopeInputsChecked는 모든 규칙을 바꾸되, 검사
+// 피드백을 저장·트랜잭션 실패와 분리한다.
 func (s *CompanyStore) UpdateScopeInputsChecked(companyID int64, inputs []ScopeInput, reason string) (
 	added, invalid int, validationErrors []string, err error,
 ) {
@@ -695,8 +692,8 @@ func (s *CompanyStore) UpdateScopeInputsChecked(companyID int64, inputs []ScopeI
 	if err != nil {
 		return 0, invalid, errs, err
 	}
-	// Rebuild even for an empty replacement because removing the old rules may
-	// detach scope-derived assets or expose a lower-precedence company match.
+	// 빈 교체여도 다시 계산한다. 옛 규칙을 지우면
+	// 범위에서 온 자산이 떨어지거나, 더 낮은 우선순위의 기업 맞춤이 드러날 수 있다.
 	warning, err := recomputeAttributionTx(tx)
 	if err != nil {
 		return 0, invalid, errs, fmt.Errorf("기업 귀속 재계산 실패: %w", err)
@@ -708,14 +705,14 @@ func (s *CompanyStore) UpdateScopeInputsChecked(companyID int64, inputs []ScopeI
 	return added, invalid, errs, nil
 }
 
-// ResolveCompany returns the company_id for a given root_domain and/or ip, or nil
-// if no scope rule matches. Mirrors the attribution logic used at asset insert time.
+// ResolveCompany는 준 root_domain 그리고/또는 ip의 company_id를 돌려준다.
+// 맞는 범위 규칙이 없으면 nil이다. 자산을 넣을 때의 귀속 논리와 같다.
 func (s *CompanyStore) ResolveCompany(rootDomain, ipStr string) (*int64, error) {
 	return s.ResolveCompanyWithICP(rootDomain, ipStr, "")
 }
 
-// ResolveCompanyWithICP mirrors RecomputeAttribution for insert-time ownership.
-// ICP is consulted only after domain and IP/CIDR fail to match.
+// ResolveCompanyWithICP는 넣을 때의 소유에 RecomputeAttribution을 그대로 쓴다.
+// ICP는 도메인과 IP/CIDR이 맞지 않은 뒤에만 본다.
 func (s *CompanyStore) ResolveCompanyWithICP(rootDomain, ipStr, icp string) (*int64, error) {
 	return resolveCompanyWithICP(s.db, rootDomain, ipStr, icp)
 }

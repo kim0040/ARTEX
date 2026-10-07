@@ -13,23 +13,24 @@ import (
 	"unicode/utf8"
 )
 
-// Workspace file manager — browse / view / edit / download / upload / delete the
-// shared work dir (s.m.dir), where all agents write their artifacts. Every path is
-// confined to the work dir root (traversal via ".." is neutralised). All routes sit
-// behind requireAuth (see Handler()).
+// 작업 공간 파일 관리기. 공유 작업 디렉터리(s.m.dir)를 둘러보고, 보고, 고치고, 받고, 올리고, 지웁니다.
+// 모든 에이전트가 산출물을 쓰는 곳입니다. 모든 경로는
+// 작업 디렉터리 루트 안에 가둡니다(".."로 빠져나가는 것은 무력화). 모든 경로는
+// requireAuth 뒤에 있습니다(Handler()를 보세요).
+// 초보용: 화면의 파일 관리기입니다. 에이전트가 작업 폴더에 남긴 파일을 보고 고칩니다.
 
 const (
-	maxWorkspaceRead   = 2 << 20   // 2 MiB: files bigger than this aren't inlined for view/edit (download instead)
-	maxWorkspaceUpload = 512 << 20 // 512 MiB per upload request
+	maxWorkspaceRead   = 2 << 20   // 2 MiB: 이보다 큰 파일은 보기/편집에 본문을 넣지 않습니다(대신 받기).
+	maxWorkspaceUpload = 512 << 20 // 업로드 요청 하나당 512 MiB
 )
 
-// wsResolve maps a user-supplied relative path to an absolute path INSIDE the work
-// dir. It returns ok=false if the path would escape the root. filepath.Clean on a
-// rooted copy collapses any ".." so nothing can climb above the root.
+// wsResolve는 사용자가 준 상대 경로를 작업 디렉터리 안의 절대 경로로 바꿉니다.
+// 루트 밖으로 나가면 ok=false입니다. 루트를 붙인 사본에 filepath.Clean을 하면
+// ".."가 접혀, 루트 위로 올라갈 수 없습니다.
 func (s *Server) wsResolve(rel string) (string, bool) {
 	base := filepath.Clean(s.m.dir)
 	rel = strings.TrimPrefix(strings.TrimSpace(rel), "/")
-	clean := filepath.Clean("/" + rel) // e.g. "/a/../../etc" → "/etc" (still rooted at "/")
+	clean := filepath.Clean("/" + rel) // 예: "/a/../../etc" → "/etc" (그래도 "/"에 붙어 있음)
 	abs := filepath.Clean(filepath.Join(base, clean))
 	if abs != base && !strings.HasPrefix(abs, base+string(os.PathSeparator)) {
 		return "", false
@@ -37,7 +38,7 @@ func (s *Server) wsResolve(rel string) (string, bool) {
 	return abs, true
 }
 
-// wsRel renders an absolute path back as a workspace-relative path (forward slashes).
+// wsRel은 절대 경로를 작업 공간 상대 경로로 되돌립니다(슬래시는 /).
 func (s *Server) wsRel(abs string) string {
 	base := filepath.Clean(s.m.dir)
 	rel, err := filepath.Rel(base, abs)
@@ -52,10 +53,10 @@ type wsEntry struct {
 	Path  string `json:"path"`
 	Dir   bool   `json:"dir"`
 	Size  int64  `json:"size"`
-	MTime int64  `json:"mtime"` // unix millis
+	MTime int64  `json:"mtime"` // 유닉스 밀리초
 }
 
-// GET /api/workspace/list?path=<rel>
+// GET /api/workspace/list?path=<rel> — 목록
 func (s *Server) wsList(w http.ResponseWriter, r *http.Request) {
 	abs, ok := s.wsResolve(r.URL.Query().Get("path"))
 	if !ok {
@@ -100,8 +101,8 @@ func (s *Server) wsList(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"path": s.wsRel(abs), "entries": out})
 }
 
-// GET /api/workspace/read?path=<rel> — inline text for view/edit. Binary or oversize
-// files return {binary:true}/{too_large:true} with no content (use download instead).
+// GET /api/workspace/read?path=<rel> — 보기/편집용으로 글을 넣습니다. 바이너리이거나 너무 크면
+// 내용 없이 {binary:true}/{too_large:true}를 줍니다(대신 받기를 쓰세요).
 func (s *Server) wsRead(w http.ResponseWriter, r *http.Request) {
 	abs, ok := s.wsResolve(r.URL.Query().Get("path"))
 	if !ok {
@@ -133,7 +134,7 @@ func (s *Server) wsRead(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"path": s.wsRel(abs), "size": fi.Size(), "binary": false, "content": string(data)})
 }
 
-// POST /api/workspace/write  {path, content} — create/overwrite a text file.
+// POST /api/workspace/write {path, content} — 텍스트 파일을 만들거나 덮어씁니다.
 func (s *Server) wsWrite(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Path    string `json:"path"`
@@ -163,7 +164,7 @@ func (s *Server) wsWrite(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"ok": true, "path": s.wsRel(abs)})
 }
 
-// POST /api/workspace/mkdir  {path}
+// POST /api/workspace/mkdir {path} — 디렉터리 만들기
 func (s *Server) wsMkdir(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Path string `json:"path"`
@@ -184,8 +185,8 @@ func (s *Server) wsMkdir(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"ok": true, "path": s.wsRel(abs)})
 }
 
-// DELETE /api/workspace/delete?path=<rel> — removes a file or a directory tree
-// (confined to the work dir; the root itself can't be deleted).
+// DELETE /api/workspace/delete?path=<rel> — 파일이나 디렉터리 트리를 지웁니다
+// (작업 디렉터리 안만. 루트 자체는 못 지움).
 func (s *Server) wsDelete(w http.ResponseWriter, r *http.Request) {
 	abs, ok := s.wsResolve(r.URL.Query().Get("path"))
 	if !ok {
@@ -207,7 +208,7 @@ func (s *Server) wsDelete(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"ok": true})
 }
 
-// GET /api/workspace/download?path=<rel> — stream a file as an attachment.
+// GET /api/workspace/download?path=<rel> — 파일을 첨부로 흘려 보냅니다.
 func (s *Server) wsDownload(w http.ResponseWriter, r *http.Request) {
 	abs, ok := s.wsResolve(r.URL.Query().Get("path"))
 	if !ok {
@@ -220,12 +221,12 @@ func (s *Server) wsDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := filepath.Base(abs)
-	// RFC 5987 filename* keeps non-ASCII names intact; plain filename is the fallback.
+	// RFC 5987의 filename*가 비ASCII 이름을 지킵니다. 일반 filename은 폴백입니다.
 	w.Header().Set("Content-Disposition", "attachment; filename=\""+sanitizeFilename(name)+"\"; filename*=UTF-8''"+url.PathEscape(name))
 	http.ServeFile(w, r, abs)
 }
 
-// POST /api/workspace/upload?path=<dir> — multipart form field "file" (one or more).
+// POST /api/workspace/upload?path=<dir> — multipart 필드 "file"(하나 이상).
 func (s *Server) wsUpload(w http.ResponseWriter, r *http.Request) {
 	dirAbs, ok := s.wsResolve(r.URL.Query().Get("path"))
 	if !ok {
@@ -248,7 +249,7 @@ func (s *Server) wsUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	saved := 0
 	for _, hdr := range files {
-		name := filepath.Base(hdr.Filename) // strip any path component
+		name := filepath.Base(hdr.Filename) // 경로 조각은 떼어 냅니다.
 		if name == "" || name == "." || name == ".." {
 			continue
 		}
@@ -280,7 +281,7 @@ func saveUpload(hdr *multipart.FileHeader, dest string) error {
 	return err
 }
 
-// sanitizeFilename strips characters unsafe for a Content-Disposition filename token.
+// sanitizeFilename은 Content-Disposition 파일 이름에 위험한 문자를 뺍니다.
 func sanitizeFilename(name string) string {
 	name = strings.ReplaceAll(name, "\"", "")
 	name = strings.ReplaceAll(name, "\\", "")

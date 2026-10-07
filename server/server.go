@@ -31,113 +31,106 @@ import (
 	"github.com/Autumn-27/norma/transcript"
 )
 
-// BuildVersion is the backend application version, injected from cmd/artex at
-// startup (which in turn gets it from -ldflags "-X main.version=<tag>").
-// Defaults to "dev" for local builds. Exposed to the frontend via GET /api/health.
+// BuildVersion 는 백엔드 버전입니다. cmd/artex 가 켤 때 넣고, 그 값은
+// -ldflags "-X main.version=<tag>" 에서 옵니다. 로컬 빌드의 기본은 "dev" 입니다.
+// 화면은 GET /api/health 로 이 값을 봅니다.
 var BuildVersion = "dev"
 
-// Server exposes the ARTEX backend over a JSON HTTP API for the shadcn/ui
-// frontend.
+// Server 는 ARTEX 백엔드를 JSON HTTP API 로 엽니다. shadcn/ui 화면이 이 API 를 부릅니다.
+// 초보용: 작업·자산 그래프·탐색 그래프의 주인(Manager)과 실행 루프(Engine)를 화면과 잇는 계층입니다.
 type Server struct {
 	m      *Manager
 	engine *Engine
 	ctx    context.Context
 
-	skillDir string // root directory for skill subdirectories
-	jwtKey   []byte // HS256 signing key loaded from / generated into dataDir/jwt.key
+	skillDir string // 스킬 하위 디렉터리의 루트
+	jwtKey   []byte // HS256 서명 키. dataDir/jwt.key 에서 읽거나 없으면 만들어 둡니다.
 
-	// concMu serializes concurrency-cap decisions (admission + reconcile) so a
-	// scheduler tick and an HTTP settings change / task creation can't both count
-	// free slots off the same snapshot and over-promote past the limit.
+	// concMu 는 동시 실행 상한 결정(입장과 재조정)을 한 줄로 세웁니다. 스케줄 틱과
+	// 설정 변경·작업 생성이 같은 스냅샷의 빈 자리를 같이 세면 상한을 넘겨 승격할 수 있습니다.
 	concMu sync.Mutex
 
 	cfgMu     sync.Mutex
-	chatAgent *agent.ChatAgent // conversational runner for the chat page; nil w/o LLM
-	// llmProv is the fully-decorated global provider (recorder + failover chain)
-	// installed by applyLLM. Task routers use it after an explicit chain is cleared.
+	chatAgent *agent.ChatAgent // 채팅 화면의 대화 실행기. LLM 이 없으면 nil
+	// llmProv 는 기록기와 장애 조치 사슬까지 붙인 전역 공급자입니다. applyLLM 이 넣습니다.
+	// 작업이 자기 사슬을 비우면 작업 라우터가 이것을 씁니다.
 	llmProv   llm.Provider
-	llmDirect llm.Provider // concrete global provider, before any failover pool
-	llmCfg    agent.Config // current LLM config (key not exposed)
+	llmDirect llm.Provider // 장애 조치 풀을 붙이기 전의 전역 공급자
+	llmCfg    agent.Config // 현재 LLM 설정. 키는 밖으로 내보이지 않습니다.
 	llmOn     bool
-	llmProf   string // active LLM profile name (for llmrec tagging)
+	llmProf   string // 활성 LLM 프로필 이름. llmrec 기록에 태그로 붙습니다.
 
-	// chatBusy guards the per-task main-agent run: the chat handler launches the
-	// agent on the server's background ctx (not the request ctx) and returns
-	// immediately, so a page reload / proxy timeout can't abort a live run. This
-	// map serializes turns per task — one main-agent run at a time per task, so
-	// concurrent messages don't corrupt the shared exp<id>-main transcript.
+	// chatBusy 는 작업마다 메인 에이전트 실행을 지킵니다. 채팅 처리기는 요청 문맥이 아니라
+	// 서버 배경 문맥에서 에이전트를 띄우고 바로 돌아옵니다. 그래서 새로고침이나 프록시
+	// 시간 초과가 돌고 있는 실행을 끊지 못합니다. 이 맵은 작업마다 차례를 하나씩만 허용해
+	// 동시에 온 메시지가 exp<id>-main 기록을 망가뜨리지 않게 합니다.
 	chatMu   sync.Mutex
 	chatBusy map[string]bool
-	// chatCancel holds the cancel func for each in-flight conversation run (keyed by
-	// convBusyKey), so a manual stop can abort JUST that session's agent run. Set/
-	// cleared alongside chatBusy under chatMu. Aborting a run does NOT touch the P3
-	// trigger queue — the drain goroutine simply proceeds to the next queued fire.
+	// chatCancel 는 진행 중인 대화 실행의 취소 함수입니다. 키는 convBusyKey 입니다.
+	// 사람이 멈추면 그 세션의 에이전트 실행만 끊습니다. chatMu 아래에서 chatBusy 와 같이
+	// 넣고 뺍니다. 실행을 끊어도 P3 트리거 대기열은 건드리지 않습니다. 비우는 고루틴이
+	// 다음 대기 항목으로 갑니다.
 	chatCancel map[string]context.CancelCauseFunc
 
-	// triggerQ buffers P3 trigger fires PER AGENT. A per-agent "pump" launches runs up
-	// to a concurrency limit derived from the agent's 전략: serial → limit 1 (+ optional
-	// merge); parallel → limit = trigger_max_parallel (0=∞), no merge. triggerActive
-	// counts in-flight runs per agent (replaces a boolean drain flag); a run's
-	// completion decrements it and re-pumps to fill the freed slot. triggerCfg caches
-	// the agent's last-read 전략 so the pump never queries the DB while holding queueMu.
-	// Distinct agents always run concurrently. Queue is in-memory (matches chatBusy); a
-	// restart drops pending fires — the scheduler re-fires from watermarks next tick.
+	// triggerQ 는 에이전트마다 P3 트리거 발화를 쌓습니다. 에이전트별 펌프가 전략에 따른
+	// 동시 상한까지 실행을 띄웁니다. 직렬이면 상한 1(합치기는 선택), 병렬이면
+	// trigger_max_parallel(0 은 무제한)이고 합치지 않습니다. triggerActive 는 에이전트별
+	// 진행 수를 셉니다. 실행이 끝나면 하나를 빼고 빈 자리를 다시 채웁니다. triggerCfg 는
+	// 마지막으로 읽은 전략을 기억해, 펌프가 queueMu 를 쥔 채 DB 를 묻지 않게 합니다.
+	// 서로 다른 에이전트는 항상 동시에 돕니다. 대기열은 메모리에만 있습니다(chatBusy 와 같음).
+	// 다시 켜면 대기 중인 발화는 버려지고, 스케줄러가 다음 틱의 워터마크부터 다시 쏩니다.
 	queueMu       sync.Mutex
 	triggerQ      map[string][]triggeredRun
 	triggerActive map[string]int
 	triggerCfg    map[string]triggerBehavior
 
-	// profChatAgents caches a per-profile ChatAgent (chat page), keyed by profile id.
-	// Built lazily on first use; invalidated when any profile is saved/activated/deleted
-	// so edits take effect.
+	// profChatAgents 는 프로필 id 마다 채팅 화면용 ChatAgent 를 기억합니다.
+	// 처음 쓸 때 만들고, 프로필을 저장·활성화·지우면 버려서 수정이 바로 반영됩니다.
 	profMu         sync.Mutex
-	profChatAgents map[int64]*agent.ChatAgent // per-profile ChatAgent cache (chat page)
+	profChatAgents map[int64]*agent.ChatAgent // 프로필별 ChatAgent 캐시(채팅 화면)
 
-	// provByProfile caches ONE provider per LLM profile id so every agent bound or
-	// pinned to the same profile shares a single provider instance — hence one rate
-	// limiter. applyLLM also resolves the persisted global-active profile through this
-	// cache, so global fallback and task chains do not accidentally double the
-	// configured request rate. Cleared on profile edits, then repopulated by active reapply.
+	// provByProfile 는 LLM 프로필 id 마다 공급자를 하나만 기억합니다. 같은 프로필에 묶인
+	// 에이전트는 공급자 하나를 나눠 쓰므로 속도 제한도 하나입니다. applyLLM 도 저장된
+	// 전역 활성 프로필을 이 캐시로 풀어서, 전역 폴백과 작업 사슬이 요청 속도를 두 배로
+	// 세지 않습니다. 프로필을 고치면 비우고, 활성 프로필을 다시 적용할 때 채웁니다.
 	provCacheMu   sync.Mutex
 	provByProfile map[int64]*provEntry
 	provCacheGen  uint64
 
-	// llmHealth is the process-wide circuit-breaker state for LLM failover (라운드 로빈).
-	// It deliberately lives OUTSIDE the provider caches: rebuilding the chain
-	// (saving an unrelated profile, flipping a setting) must not erase what we
-	// learned about which backends are out of credit / rate-limited.
+	// llmHealth 는 프로세스 전체의 LLM 장애 조치 서킷 브레이커입니다(라운드 로빈).
+	// 일부러 공급자 캐시 밖에 둡니다. 사슬을 다시 만들어도(다른 프로필 저장, 설정 변경)
+	// 어느 백엔드가 잔액 부족인지, 속도 제한인지 배운 내용을 지우면 안 됩니다.
 	llmHealth *llmpool.Registry
 
-	// Explicit task chains use one task-scoped dynamic provider shared by goals,
-	// planner, workers, and the main agent. Bundles are stable; their runtime reads
-	// the persisted current profile at every new LLM call.
+	// 작업이 사슬을 직접 정하면, 목표·플래너·워커·메인 에이전트가 그 작업의 동적 공급자
+	// 하나를 나눕니다. 묶음은 그대로 두고, 호출마다 저장된 현재 프로필을 읽습니다.
 	taskAgentMu sync.Mutex
 	taskAgents  map[string]*taskAgentBundle
 
-	// Cold task archives run through one persistent FIFO worker. The buffered wake
-	// channel coalesces enqueue bursts; the database remains the source of truth.
+	// 식은 작업 보관은 상주 FIFO 워커 하나가 처리합니다. 버퍼된 깨움 채널이 몰린 대기열을
+	// 모으고, 어디까지 했는지의 기준은 데이터베이스입니다.
 	archiveWake chan struct{}
 	archiveWG   sync.WaitGroup
 	side        *sideQuestionState
 }
 
-// provEntry is a cached provider + its config for one LLM profile id.
+// provEntry 는 LLM 프로필 id 하나의 캐시된 공급자와 그 설정입니다.
 type provEntry struct {
 	prov llm.Provider
 	cfg  agent.Config
 }
 
-// triggeredRun is one queued P3 trigger fire awaiting its turn for an agent.
-// taskID + mergeable let the drainer coalesce several event triggers (finding/goal)
-// from the SAME task into one conversation before it starts (interval fires don't merge).
+// triggeredRun 은 에이전트 차례를 기다리는 P3 트리거 발화 하나입니다.
+// taskID 와 mergeable 로, 비우기가 같은 작업의 발견·목표 이벤트를 시작 전에 대화 하나로
+// 합칩니다. 간격 발화는 합치지 않습니다.
 type triggeredRun struct {
 	agentKey  string
 	title     string
 	message   string // 이벤트 본문(트리거 문구 + 도구/인자/반환 등); 작업 설명/목표 머리글은 포함하지 않음
-	taskID    int64  // source task for finding/goal triggers; 0 for interval/none
+	taskID    int64  // 발견·목표 트리거의 원본 작업. 간격이거나 없으면 0
 	taskDesc  string // 작업 설명(작업 수준, 같은 작업면 동일); 합칠 때 한 번만 렌더링
 	taskGoal  string // 작업 목표(작업 수준, 같은 작업면 동일); 합칠 때 한 번만 렌더링
-	mergeable bool   // true for finding/goal event triggers (merge by taskID)
+	mergeable bool   // 발견·목표 이벤트면 true. 같은 taskID 로 합칩니다.
 }
 
 func New(ctx context.Context, m *Manager, skillDir string, dataDir string, keyDir string) *Server {
@@ -155,9 +148,9 @@ func New(ctx context.Context, m *Manager, skillDir string, dataDir string, keyDi
 	// 서킷 브레이커 임계값/쿨다운은 실패 경로의 핫 파라미터이며, 시작 시 전역 재시도 전략을 Registry에 한 번 밀어 넣습니다.
 	// 이후 전략을 저장할 때마다 한 번 더 밀어 넣습니다(saveLLMRetryPolicy).
 	s.applyRetryPolicy()
-	// Every task uses a stable task router. An empty explicit chain is resolved by
-	// that router through Agent bindings and then the global provider, so adding a
-	// first chain to a running task takes effect on its very next LLM call.
+	// 모든 작업은 안정된 작업 라우터를 씁니다. 명시적 사슬이 비어 있으면 그 라우터가
+	// 에이전트 바인딩을 보고, 그다음 전역 공급자를 봅니다. 그래서 돌고 있는 작업에
+	// 첫 사슬을 더하면 바로 다음 LLM 호출부터 적용됩니다.
 	s.engine.SetAuthoritativeAgentResolver(func(t *Task) (*agent.Planner, *agent.Worker) {
 		if !s.taskRuntimeAvailable(t, "planner", "worker") {
 			return nil, nil
@@ -165,15 +158,15 @@ func New(ctx context.Context, m *Manager, skillDir string, dataDir string, keyDi
 		b := s.agentsForTask(t)
 		return b.pl, b.wk
 	})
-	// Global readiness (Ready()/llm_configured): a global active LLM provider is
-	// installed. Task-level runnability is separate (ReadyFor → the resolver above).
+	// 전역 준비(Ready()/llm_configured)는 전역 활성 LLM 공급자가 깔려 있는지를 말합니다.
+	// 작업이 실제로 돌 수 있는지는 별개입니다(ReadyFor 가 위의 해석기를 봅니다).
 	s.engine.SetReadiness(func() bool {
 		s.cfgMu.Lock()
 		defer s.cfgMu.Unlock()
 		return s.llmOn
 	})
 	// DB에 저장된 프롬프트 템플릿을 에이전트에 연결합니다(신규 방안 §3.3 / §5a). 없을 때는
-	// override row, agents keep their built-in defaults — behavior is unchanged.
+	// 덮어쓰기 행이 없고, 에이전트는 내장 기본값을 유지합니다. 동작은 그대로입니다.
 	if m.pg != nil {
 		agent.PromptOverride = func(key string) (string, bool) {
 			a, err := m.pg.GetAgentByKey(key)
@@ -186,7 +179,7 @@ func New(ctx context.Context, m *Manager, skillDir string, dataDir string, keyDi
 			}
 			return t, true
 		}
-		// Wire DB-stored wrap-up (settlement) prompts. Empty column → built-in default.
+		// DB에 저장된 마무리(정산) 프롬프트를 연결합니다. 열이 비면 내장 기본값입니다.
 		agent.WrapupOverride = func(key string) (string, bool) {
 			a, err := m.pg.GetAgentByKey(key)
 			if err != nil || a == nil || a.WrapupPrompt == "" {
@@ -194,7 +187,7 @@ func New(ctx context.Context, m *Manager, skillDir string, dataDir string, keyDi
 			}
 			return a.WrapupPrompt, true
 		}
-		// Wire DB-stored wrap-up turn budgets. 0 / missing → built-in per-agent default.
+		// DB에 저장된 마무리 턴 예산을 연결합니다. 0 이거나 없으면 에이전트별 내장 기본값입니다.
 		agent.WrapupMaxTurnsOverride = func(key string) (int, bool) {
 			a, err := m.pg.GetAgentByKey(key)
 			if err != nil || a == nil || a.WrapupMaxTurns <= 0 {
@@ -202,7 +195,7 @@ func New(ctx context.Context, m *Manager, skillDir string, dataDir string, keyDi
 			}
 			return a.WrapupMaxTurns, true
 		}
-		// Wire DB-stored TASK-TIMEOUT wrap-up prompt/turns (worker/planner). Empty/0 → default.
+		// DB에 저장된 작업 시간 초과 마무리 프롬프트와 턴(워커·플래너)을 연결합니다. 비었거나 0 이면 기본값입니다.
 		agent.WrapupTaskTimeoutOverride = func(key string) (string, bool) {
 			a, err := m.pg.GetAgentByKey(key)
 			if err != nil || a == nil || a.TaskTimeoutWrapupPrompt == "" {
@@ -231,12 +224,12 @@ func New(ctx context.Context, m *Manager, skillDir string, dataDir string, keyDi
 		// 발견(finding) IM 푸시 전달 엔진입니다. Scheduler와 나란히 있으나 독립이고, 푸시는 실시간(3초)을 요구합니다. 발견(finding)을 밖으로 보내는 경로이며, 자산 그래프·탐색 그래프와는 분리됩니다.
 		// 트리거의 업무 리듬과 다르고, 둘의 실패는 서로 엮이지 않습니다. 푸시가 멈춰도 agent 트리거에 영향을 주면 안 됩니다.
 		go newNotifier(s).Run(s.ctx)
-		// Fill the tool cache for any enabled MCP that has none yet (notably the
-		// seeded browser MCP on first run). Async so it never blocks startup.
+		// 켰는데 도구 캐시가 아직 없는 MCP 를 채웁니다. 첫 실행의 브라우저 MCP 가 대표적입니다.
+		// 비동기로 돌려 부팅을 막지 않습니다.
 		go s.discoverEmptyMCPsOnStartup()
-		logSink.SetDB(ctx, m.pg) // restore last 100 log rows and enable async persistence
+		logSink.SetDB(ctx, m.pg) // 최근 로그 100줄을 되돌리고 비동기 저장을 켭니다.
 	}
-	// precedence: persisted DB config > env.
+	// 우선순위: 저장된 DB 설정이 환경 변수보다 앞섭니다.
 	if cfg, ok := s.loadLLMConfig(); ok {
 		if err := s.applyLLM(cfg); err != nil {
 			log.Printf("[engine] saved LLM config init failed — engine idle: %v", err)
@@ -259,16 +252,16 @@ func New(ctx context.Context, m *Manager, skillDir string, dataDir string, keyDi
 	return s
 }
 
-// Restored deadline and worker loops must inherit the same context as new tasks,
-// including the side-question checkpoint publisher installed during startup.
+// 복구한 마감·워커 루프는 새 작업과 같은 문맥을 물려받아야 합니다.
+// 부팅 때 붙인 곁질문 체크포인트 발행자도 그 문맥에 있습니다.
 func (s *Server) restoreTaskRuntimes() {
 	m := s.m
-	// reload tasks persisted on disk so the task list survives a restart, and
-	// restore persisted paused state (so a task paused before restart stays paused).
+	// 디스크에 남은 작업을 다시 읽어 재시작 뒤에도 목록이 남게 하고,
+	// 저장된 일시정지 상태도 되돌립니다. 재시작 전에 멈춘 작업은 계속 멈춥니다.
 	for _, t := range m.LoadExisting() {
 		lifecycle := t.lifecycleSnapshot()
-		// clear stale 'running' intents from a prior crash/restart (no live worker
-		// owns them) so they re-claim instead of spinning forever in the UI.
+		// 이전 충돌·재시작 때문에 'running' 으로 남은 의도를 치웁니다. 살아있는 워커가
+		// 없으므로, 화면에서 영원히 돌지 않고 다시 집어 갈 수 있게 합니다.
 		if n, _ := t.Store.ResetRunningIntents(); n > 0 {
 			log.Printf("[engine] task %s 잔여 running 의도 %d개를 open으로 재설정", t.ID, n)
 		}
@@ -281,10 +274,9 @@ func (s *Server) restoreTaskRuntimes() {
 			s.engine.startDeadlineCoordinator(s.ctx, t)
 		}
 	}
-	// Restore every task that had already been admitted before shutdown. Starting
-	// only the active UI task left other non-queued tasks counted as concurrency
-	// occupants without live loops, which could permanently block the persistent
-	// FIFO. Paused loops remain idle; queued tasks are admitted below as slots allow.
+	// 끄기 전에 이미 입장한 작업을 모두 되돌립니다. 화면의 활성 작업만 켜면 다른
+	// 비대기 작업이 루프 없이 동시 실행 자리를 차지해, 상주 FIFO 가 영원히 막힐 수 있습니다.
+	// 일시정지 루프는 쉬고, 대기 작업은 아래에서 자리가 날 때 입장합니다.
 	for _, t := range m.List() {
 		lifecycle := t.lifecycleSnapshot()
 		if !lifecycle.Queued && !isTerminalStatus(lifecycle.Status) {
@@ -293,8 +285,7 @@ func (s *Server) restoreTaskRuntimes() {
 	}
 }
 
-// agentMaxTurns returns the configured max_turns for an agent key (0 = unlimited,
-// also the fallback when no DB or no row).
+// agentMaxTurns 는 에이전트 키의 max_turns 입니다. 0 은 무제한이고, DB 나 행이 없을 때의 기본도 0 입니다.
 func (s *Server) agentMaxTurns(key string) int {
 	if s.m.pg == nil {
 		return 0
@@ -306,8 +297,8 @@ func (s *Server) agentMaxTurns(key string) int {
 	return a.MaxTurns
 }
 
-// agentRunSeconds returns the configured wall-clock run budget (seconds) for an
-// agent key (0 = unlimited; 1200 fallback when no DB or no row, matching schema).
+// agentRunSeconds 는 에이전트 키의 벽시계 실행 예산(초)입니다. 0 은 무제한이고,
+// DB 나 행이 없으면 스키마와 같이 1200 입니다.
 func (s *Server) agentRunSeconds(key string) int {
 	if s.m.pg == nil {
 		return 1200
@@ -319,7 +310,7 @@ func (s *Server) agentRunSeconds(key string) int {
 	return a.RunSecs
 }
 
-// loadLLMConfig reads the active LLM profile from PG (llm_profiles).
+// loadLLMConfig 는 PostgreSQL 의 llm_profiles 에서 활성 LLM 프로필을 읽습니다.
 func (s *Server) loadLLMConfig() (agent.Config, bool) {
 	p, err := s.m.pg.ActiveProfile()
 	if err != nil || p == nil {
@@ -343,10 +334,10 @@ func (s *Server) loadLLMConfig() (agent.Config, bool) {
 	return cfg, true
 }
 
-// saveLLMConfig persists the LLM config as the active "default" profile in PG.
+// saveLLMConfig 는 LLM 설정을 PostgreSQL 의 활성 "default" 프로필로 저장합니다.
 func (s *Server) saveLLMConfig(cfg agent.Config) error {
-	// cfg.Provider() already returns one of the three valid format strings
-	// (anthropic / openai / openai-responses), matching the DB CHECK constraint.
+	// cfg.Provider() 는 이미 세 형식 문자열 중 하나를 돌려줍니다
+	// (anthropic / openai / openai-responses). DB CHECK 제약과 같습니다.
 	format := cfg.Provider()
 	var id int64
 	// 이 legacy 엔드포인트의 요청 본문에는 폴링/송수신/출력 상한 파라미터가 없으므로, DB에 이미 저장된 값을 그대로 가져옵니다 —
@@ -384,9 +375,8 @@ func (s *Server) saveLLMConfig(cfg agent.Config) error {
 	return s.m.pg.SetActiveProfile(newID)
 }
 
-// reapplyActiveProfile hot-reloads the engine from the active DB profile so that
-// saving or activating a profile takes effect without a restart. Best-effort:
-// logs on failure and leaves the running engine untouched.
+// reapplyActiveProfile 는 활성 DB 프로필로 엔진을 다시 읽습니다. 프로필을 저장하거나
+// 활성화하면 재시작 없이 반영됩니다. 실패하면 로그만 남기고 돌고 있는 엔진은 그대로 둡니다.
 func (s *Server) reapplyActiveProfile() {
 	cfg, ok := s.loadLLMConfig()
 	if !ok {
@@ -399,8 +389,8 @@ func (s *Server) reapplyActiveProfile() {
 	log.Printf("[engine] LLM reapplied from active profile: %s / %s", cfg.Provider(), cfg.Model)
 }
 
-// webSearchFor gates the global web-search opts (backend/key) by an agent's own
-// web_search flag: the backend/key come from the global config, each agent decides on/off.
+// webSearchFor 는 전역 웹 검색 설정(백엔드·키)을 에이전트 자신의 web_search 스위치로 가립니다.
+// 백엔드와 키는 전역 설정에서 오고, 켜고 끄는 것은 에이전트마다 정합니다.
 func (s *Server) webSearchFor(key string) agent.WebSearchOpts {
 	o := s.m.WebSearchOpts()
 	if a, err := s.m.pg.GetAgentByKey(key); err != nil || a == nil || !a.WebSearch {
@@ -409,26 +399,26 @@ func (s *Server) webSearchFor(key string) agent.WebSearchOpts {
 	return o
 }
 
-// nonStreamingResolver returns a resolver capturing a profile's streaming choice.
-// The agents read it per run; a profile change rebuilds the agents (applyLLM),
-// so the captured value is always the one in effect for this build.
+// nonStreamingResolver 는 프로필의 스트리밍 선택을 잡아 둔 함수를 돌려줍니다.
+// 에이전트는 실행마다 이것을 읽습니다. 프로필이 바뀌면 applyLLM 이 에이전트를 다시 만들어
+// 이 빌드에 적용 중인 값만 남습니다.
 func nonStreamingResolver(cfg agent.Config) func() bool {
 	nonStreaming := !cfg.Stream
 	return func() bool { return nonStreaming }
 }
 
-// maxTokensResolver mirrors nonStreamingResolver for the per-reply output cap.
+// maxTokensResolver 는 답변 하나당 출력 상한에 대해 nonStreamingResolver 와 같습니다.
 func maxTokensResolver(cfg agent.Config) func() int {
 	maxTokens := cfg.MaxTokens
 	return func() int { return maxTokens }
 }
 
-// applyLLM (re)builds the planner/worker/main-agent from cfg and installs them on
-// the running engine as the GLOBAL active pair. Safe to call at runtime (UI configures LLM).
+// applyLLM 은 cfg 로 플래너·워커·메인 에이전트를 다시 만들어 돌고 있는 엔진에
+// 전역 활성 쌍으로 넣습니다. 실행 중에 불러도 됩니다. 화면이 LLM 을 설정할 때 씁니다.
 func (s *Server) applyLLM(cfg agent.Config) error {
 	var prov llm.Provider
-	// A persisted active profile must use the same cached provider as task chains
-	// and Agent bindings, otherwise each path owns a separate rate limiter.
+	// 저장된 활성 프로필은 작업 사슬·에이전트 바인딩과 같은 캐시된 공급자를 써야 합니다.
+	// 그렇지 않으면 경로마다 속도 제한이 따로 생깁니다.
 	if active, _ := s.m.pg.ActiveProfile(); active != nil {
 		if activeCfg, ok := s.loadProfileConfig(active.ID); ok && activeCfg == cfg {
 			prov, _, _ = s.providerForProfile(active.ID)
@@ -440,7 +430,7 @@ func (s *Server) applyLLM(cfg agent.Config) error {
 		if err != nil {
 			return err
 		}
-		// Non-persisted/env configs do not have a profile cache key.
+		// 저장되지 않은 환경 변수 설정에는 프로필 캐시 키가 없습니다.
 		s.cfgMu.Lock()
 		profName := s.llmProf
 		s.cfgMu.Unlock()
@@ -456,20 +446,20 @@ func (s *Server) applyLLM(cfg agent.Config) error {
 	if act, err := s.m.pg.ActiveProfile(); err == nil && act != nil {
 		prov = s.poolForActive(act.ID, prov, cfg)
 	}
-	// No global planner/worker pair: every task runs on its own task-routed pair
-	// (agentsForTask), resolved through the engine's authoritative resolver. Global
-	// readiness (Ready()/llm_configured) is reported from s.llmOn, set below.
+	// 전역 플래너·워커 쌍은 없습니다. 작업마다 agentsForTask 가 만든 쌍으로 돌고,
+	// 엔진의 권한 있는 해석기가 그것을 고릅니다. 전역 준비(Ready()/llm_configured)는
+	// 아래에서 켜는 s.llmOn 으로 알립니다.
 
 	tx := transcript.NewStore(filepath.Join(s.m.dir, "transcripts"))
 	win := cfg.CompactionWindow()
-	// chat stays the GLOBAL fallback since one ChatAgent serves many agent keys — its
-	// per-agent binding is resolved at Chat time (runConversationSync →
-	// chatAgentForProfile). The main-agent has no global instance: each task builds its
-	// own via agentsForTask (task-routed), so nothing is constructed for it here.
+	// 채팅은 전역 폴백으로 남습니다. ChatAgent 하나가 여러 에이전트 키를 맡고,
+	// 키별 바인딩은 대화 때 정합니다(runConversationSync → chatAgentForProfile).
+	// 메인 에이전트의 전역 인스턴스는 없습니다. 작업마다 agentsForTask 가 만듭니다.
+	// 그래서 여기서는 메인 에이전트를 만들지 않습니다.
 	s.cfgMu.Lock()
-	// chat agent serves MANY custom agents by key → it holds the GLOBAL opts
+	// 채팅 에이전트는 키로 여러 사용자 정의 에이전트를 맡으므로 전역 옵션
 	// (backend/key)이고, Chat 시점에 대화별 agent의 Enabled를 게이트합니다. 대화는 항상 활성 설정을 씁니다.
-	s.chatAgent = agent.NewChatAgent(prov, cfg.Model, s.m.dir, tx, win) // chat page runner
+	s.chatAgent = agent.NewChatAgent(prov, cfg.Model, s.m.dir, tx, win) // 채팅 화면 실행기
 	s.chatAgent.SetProxy(s.m.ProxyAddr(), s.m.ProxyCACert())
 	s.chatAgent.SetWebSearch(s.m.WebSearchOpts())
 	s.chatAgent.SetGuard(s.chatGuard())
@@ -482,15 +472,15 @@ func (s *Server) applyLLM(cfg agent.Config) error {
 	s.cfgMu.Unlock()
 	s.invalidateTaskAgents()
 
-	// wake the active task so a task created while idle starts exploring.
+	// 활성 작업을 깨웁니다. 엔진이 쉬고 있을 때 만든 작업이 탐색을 시작하게 합니다.
 	if t := s.m.ActiveTask(); t != nil {
 		t.Notify()
 	}
 	return nil
 }
 
-// loadProfileConfig builds an agent.Config from a specific profile id (with its key).
-// ok=false when the profile is missing or has no api key.
+// loadProfileConfig 는 프로필 id 하나에서 키가 포함된 agent.Config 를 만듭니다.
+// 프로필이 없거나 API 키가 없으면 ok 는 false 입니다.
 func (s *Server) loadProfileConfig(id int64) (agent.Config, bool) {
 	p, err := s.m.pg.ProfileByID(id)
 	if err != nil || p == nil {
@@ -511,11 +501,10 @@ func (s *Server) loadProfileConfig(id int64) (agent.Config, bool) {
 	return cfg, true
 }
 
-// effectiveProfileForAgent resolves the LLM profile id an agent should run on, by
-// precedence: agent binding (agents.llm_profile_id) → pin (task/conversation) → nil
-// (caller falls back to the global active profile). A binding to a deleted profile
-// can't happen (FK ON DELETE SET NULL); an otherwise-invalid one is dropped downstream
-// by loadProfileConfig, letting the caller fall back.
+// effectiveProfileForAgent 는 에이전트가 쓸 LLM 프로필 id 를 고릅니다. 우선순위는
+// 에이전트 바인딩(agents.llm_profile_id) → 고정(작업·대화) → nil 입니다. nil 이면
+// 호출자가 전역 활성 프로필로 돌아갑니다. 지워진 프로필에 묶이는 일은 없습니다
+// (FK ON DELETE SET NULL). 그 밖의 잘못된 값은 loadProfileConfig 가 버려서 호출자가 폴백합니다.
 func (s *Server) effectiveProfileForAgent(agentKey string, pinID *int64) *int64 {
 	if s.m.pg != nil && agentKey != "" {
 		if a, _ := s.m.pg.GetAgentByKey(agentKey); a != nil && a.LLMProfileID != nil {
@@ -525,12 +514,10 @@ func (s *Server) effectiveProfileForAgent(agentKey string, pinID *int64) *int64 
 	return pinID
 }
 
-// resolveChatAgent picks the ChatAgent for one conversation: the agent's own
-// binding or this conversation's chosen profile first, the global active config
-// only as a fallback. Both the send precheck and the background runner MUST use
-// this — resolving differently in the two paths is how a conversation that had
-// 유효한 profile을 골랐는데도 전역 설정이 없으면 "LLM 미설정"으로 거절되던 경우
-// config was active.
+// resolveChatAgent 는 대화 하나의 ChatAgent 를 고릅니다. 에이전트 자신의 바인딩이나
+// 이 대화가 고른 프로필이 먼저이고, 전역 활성 설정은 폴백입니다. 보내기 전 검사와
+// 배경 실행기가 반드시 이것을 같이 써야 합니다. 두 경로가 다르게 고르면, 유효한
+// 프로필을 골랐는데도 전역 설정이 없을 때 "LLM 미설정"으로 거절되던 경우가 다시 납니다.
 func (s *Server) resolveChatAgent(c *db.Conversation) *agent.ChatAgent {
 	ca := s.chatAgentRef()
 	if eff := s.effectiveProfileForAgent(c.AgentKey, c.LLMProfileID); eff != nil {
@@ -541,9 +528,9 @@ func (s *Server) resolveChatAgent(c *db.Conversation) *agent.ChatAgent {
 	return ca
 }
 
-// chatUnavailableReason explains why no ChatAgent could be resolved, so the user
-// knows whether to add a config, activate one, or pick one for this conversation
-// — rather than a flat "not configured" that hides which of those it is.
+// chatUnavailableReason 는 ChatAgent 를 못 고른 이유를 설명합니다. 설정을 추가할지,
+// 하나를 켤지, 이 대화에 지정할지를 사람이 알 수 있습니다. 어느 경우인지 숨기는
+// "설정 안 됨" 한 줄이 아닙니다.
 func (s *Server) chatUnavailableReason() string {
 	if s.m.pg != nil {
 		if profiles, err := s.m.pg.ListProfiles(); err == nil && len(profiles) == 0 {
@@ -556,9 +543,9 @@ func (s *Server) chatUnavailableReason() string {
 	return "LLM이 준비되지 않아 대화할 수 없습니다. 시스템 → LLM 설정에 쓸 수 있고 켜진 설정이 있는지 확인하세요"
 }
 
-// providerForProfile returns a cached provider+cfg for a profile id, so every agent
-// bound/pinned to the same profile shares one provider instance (one rate limiter).
-// ok=false when the profile is missing/invalid → caller falls back to the global pair.
+// providerForProfile 는 프로필 id 의 캐시된 공급자와 설정을 돌려줍니다. 같은 프로필에
+// 묶이거나 고정된 에이전트는 공급자 하나(속도 제한 하나)를 나눕니다. 프로필이 없거나
+// 잘못되면 ok 는 false 이고, 호출자는 전역 쌍으로 돌아갑니다.
 func (s *Server) providerForProfile(id int64) (llm.Provider, agent.Config, bool) {
 	s.provCacheMu.Lock()
 	if e := s.provByProfile[id]; e != nil {
@@ -576,7 +563,7 @@ func (s *Server) providerForProfile(id int64) (llm.Provider, agent.Config, bool)
 		log.Printf("[engine] build provider for LLM profile %d failed: %v", id, err)
 		return nil, agent.Config{}, false
 	}
-	// Wrap with recorder, tagged with this profile's name.
+	// 기록기로 감싸고 이 프로필 이름을 태그로 붙입니다. llmrec 가 화면의 LLM 기록에 씁니다.
 	if p, _ := s.m.pg.ProfileByID(id); p != nil {
 		prov = llmrec.Wrap(prov, s.m.PG(), cfg.Model, p.Name, cfg.ThinkingType, cfg.ReasoningEffort, s.m.LLMRecordEnabled)
 		prov = bindSideProvider(prov, cfg, id, p.Name)
@@ -586,7 +573,7 @@ func (s *Server) providerForProfile(id int64) (llm.Provider, agent.Config, bool)
 		s.provCacheMu.Unlock()
 		return s.providerForProfile(id)
 	}
-	if e := s.provByProfile[id]; e != nil { // lost the race → keep the winner
+	if e := s.provByProfile[id]; e != nil { // 경합에서 졌으면 먼저 넣은 쪽을 유지합니다.
 		prov, cfg = e.prov, e.cfg
 	} else {
 		s.provByProfile[id] = &provEntry{prov: prov, cfg: cfg}
@@ -596,8 +583,8 @@ func (s *Server) providerForProfile(id int64) (llm.Provider, agent.Config, bool)
 	return prov, cfg, true
 }
 
-// chatAgentForProfile returns a ChatAgent built from a specific LLM profile, cached
-// per profile id. Returns nil if the profile is missing or has no API key.
+// chatAgentForProfile 는 특정 LLM 프로필로 만든 ChatAgent 를 프로필 id 마다 기억합니다.
+// 프로필이 없거나 API 키가 없으면 nil 입니다.
 func (s *Server) chatAgentForProfile(id int64) *agent.ChatAgent {
 	s.profMu.Lock()
 	cached := s.profChatAgents[id]
@@ -618,7 +605,7 @@ func (s *Server) chatAgentForProfile(id int64) *agent.ChatAgent {
 	ca.SetMaxTokens(maxTokensResolver(cfg))
 	ca.SetNoaEnabled(s.m.NoaCompactionEnabled) // 실험 기능: noa 컨텍스트 압축(run마다 읽음)
 	s.profMu.Lock()
-	if ex := s.profChatAgents[id]; ex != nil { // lost the race → keep the winner
+	if ex := s.profChatAgents[id]; ex != nil { // 경합에서 졌으면 먼저 넣은 쪽을 유지합니다.
 		ca = ex
 	} else {
 		s.profChatAgents[id] = ca
@@ -627,9 +614,9 @@ func (s *Server) chatAgentForProfile(id int64) *agent.ChatAgent {
 	return ca
 }
 
-// invalidateProfileAgents drops the per-profile ChatAgent + provider caches so a profile
-// save/activate/delete — or an agent's binding change — rebuilds pinned tasks' agents
-// (and re-resolves each agent's bound model) on their next round.
+// invalidateProfileAgents 는 프로필별 ChatAgent 와 공급자 캐시를 버립니다. 프로필을
+// 저장·활성화·지우거나 에이전트 바인딩이 바뀌면, 고정된 작업의 에이전트와 묶인 모델이
+// 다음 라운드에 다시 만들어집니다.
 func (s *Server) invalidateProfileAgents() {
 	s.profMu.Lock()
 	s.profChatAgents = map[int64]*agent.ChatAgent{}
@@ -651,7 +638,7 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	s.registerSideRoutes(mux)
 
-	// Auth routes — exempt from JWT check (handled in requireAuth)
+	// 인증 경로. JWT 검사에서 빠집니다(requireAuth 가 처리).
 	mux.HandleFunc("GET /api/auth/status", s.authStatus)
 	mux.HandleFunc("POST /api/auth/init", s.authInit)
 	mux.HandleFunc("POST /api/auth/login", s.authLogin)
@@ -738,13 +725,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/llm", s.setLLM)
 	mux.HandleFunc("POST /api/llm/test", s.testLLM)
 
-	// asset system
+	// 자산 그래프. 모든 작업이 공유하는 자산(도메인, IP, 서비스, 엔드포인트)입니다.
 	mux.HandleFunc("GET /api/assets", s.listAssets)
 	mux.HandleFunc("GET /api/assets/counts", s.assetCounts)
 	mux.HandleFunc("POST /api/assets", s.insertAssets)
 	mux.HandleFunc("DELETE /api/assets", s.deleteAssets)
 
-	// company system
+	// 기업. 자산 그래프의 회사를 묶고 범위를 붙입니다.
 	mux.HandleFunc("GET /api/companies", s.listCompanies)
 	mux.HandleFunc("POST /api/companies", s.createCompany)
 	mux.HandleFunc("GET /api/companies/{id}", s.getCompany)
@@ -819,8 +806,7 @@ func (s *Server) Handler() http.Handler {
 
 	// --- 관리 백엔드 API (PostgreSQL 데이터 소스; 신규 데이터베이스와 관리 백엔드 방안) --- 관리 UI가 PostgreSQL의 자산 그래프와 탐색 그래프를 읽고 쓰는 입구입니다.
 	mux.HandleFunc("DELETE /api/tasks/{id}", s.pgDeleteTask)
-	// Agents
-	// conversations (chat page)
+	// 에이전트 정의와 채팅 화면의 대화. 메인 에이전트와 별도로, 사람이 고른 에이전트와의 대화입니다.
 	mux.HandleFunc("GET /api/conversations", s.pgListConversations)
 	mux.HandleFunc("POST /api/conversations", s.pgCreateConversation)
 	mux.HandleFunc("POST /api/conversations/delete/batch", s.pgDeleteConversationsBatch)
@@ -862,7 +848,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/tools/custom/{key}", s.pgDeleteCustomTool)
 	mux.HandleFunc("POST /api/settings/python/detect", s.pgDetectPython)
 	mux.HandleFunc("POST /api/tools/{key}/reset", s.pgResetTool)
-	// MCP CRUD
+	// MCP 등록. 외부 도구 서버를 붙이고 지웁니다. 워커가 부르는 도구 목록에 들어갑니다.
 	mux.HandleFunc("GET /api/mcp", s.pgListMCP)
 	mux.HandleFunc("POST /api/mcp", s.pgSaveMCP)
 	mux.HandleFunc("DELETE /api/mcp/{id}", s.pgDeleteMCP)
@@ -884,7 +870,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /api/skills/{name}/meta", s.fsUpdateSkillMeta)
 	mux.HandleFunc("POST /api/skills/{name}/dirs", s.fsCreateDir)
 	mux.HandleFunc("GET /api/skills/{name}/files", s.fsListFiles)
-	// {file...} captures path segments including slashes (e.g. scripts/extract.py)
+	// {file...} 는 슬래시를 포함한 경로 조각을 받습니다. 예: scripts/extract.py
 	mux.HandleFunc("GET /api/skills/{name}/files/{file...}", s.fsReadFile)
 	mux.HandleFunc("PUT /api/skills/{name}/files/{file...}", s.fsWriteFile)
 	mux.HandleFunc("DELETE /api/skills/{name}/files/{file...}", s.fsDeletePath)
@@ -932,9 +918,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /api/intercept/judge", s.interceptSetJudgeConfig)
 	mux.HandleFunc("GET /api/intercept/judge/usage", s.interceptJudgeUsage) // 최후 승인에 누적된 token 사용량
 
-	// /api/* goes through CORS + JWT; everything else is served by the embedded
-	// frontend (public — auth is enforced client-side and on the API). With the
-	// no-embed build the webui handler just 404s (run `next dev` separately).
+	// /api/* 는 CORS 와 JWT 를 탑니다. 그 밖은 바이너리에 넣은 화면이 줍니다.
+	// 화면 자체는 공개이고, 인증은 브라우저와 API 에서 합니다. 화면을 넣지 않은 빌드에서는
+	// 이 처리기가 404 만 돌려줍니다. 그때는 next dev 를 따로 띄웁니다.
 	api := cors(s.requireAuth(mux))
 	root := http.NewServeMux()
 	root.Handle("/api/", api)
@@ -942,7 +928,7 @@ func (s *Server) Handler() http.Handler {
 	return root
 }
 
-// --- handlers ---
+// --- 처리기. HTTP 요청을 Manager 와 Engine 에 연결합니다. ---
 
 func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"ok": true, "service": "artex", "version": BuildVersion})
@@ -950,8 +936,8 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) stats(w http.ResponseWriter, r *http.Request) {
 	out := map[string]any{}
-	out["engine_mode"] = "idle"              // spec enum; overridden below when a task is active
-	out["llm_configured"] = s.engine.Ready() // is an LLM provider installed at all
+	out["engine_mode"] = "idle"              // 명세의 열거값. 활성 작업이 있으면 아래에서 바꿉니다.
+	out["llm_configured"] = s.engine.Ready() // LLM 공급자가 깔려 있는지. 작업이 돌 수 있는지는 별개입니다.
 	if tr := s.m.Traffic(); tr != nil {
 		c, _ := tr.Count()
 		out["traffic"] = c
@@ -966,8 +952,8 @@ func (s *Server) stats(w http.ResponseWriter, r *http.Request) {
 		out["asset_counts"] = counts
 	}
 
-	// resolve the task: explicit ?task=<id> binds to that task (so a detail view
-	// never silently follows a globally-changed active task); empty = active.
+	// 작업을 고릅니다. ?task=<id> 가 있으면 그 작업에 고정합니다. 상세 화면이
+	// 전역 활성 작업이 바뀌었다고 조용히 따라가면 안 됩니다. 비어 있으면 활성 작업입니다.
 	taskParam := r.URL.Query().Get("task")
 	t := s.m.ResolveTask(taskParam)
 	if t == nil {
@@ -975,7 +961,7 @@ func (s *Server) stats(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, 404, "작업을 찾을 수 없습니다")
 			return
 		}
-		writeJSON(w, 200, out) // no task selected: only global fields
+		writeJSON(w, 200, out) // 고른 작업이 없으면 전역 필드만 돌려줍니다.
 		return
 	}
 	out["llm_configured"] = s.engine.ReadyFor(t)
@@ -983,7 +969,7 @@ func (s *Server) stats(w http.ResponseWriter, r *http.Request) {
 	st, _ := t.Store.Stats()
 	out["exploration"] = st
 
-	// per-task running state + heartbeat (distinct from "LLM configured").
+	// 작업마다의 실행 상태와 심장박동. "LLM 이 설정됨"과는 다릅니다.
 	intents, _ := t.Store.ListByKind(db.KindIntent, 100000)
 	inFlight := 0
 	for _, in := range intents {
@@ -1002,11 +988,11 @@ func (s *Server) stats(w http.ResponseWriter, r *http.Request) {
 	paused := s.engine.IsPaused(t.ID)
 	activeCalls := s.engine.ActiveLLMCalls(t.ID)
 	running := s.engine.ReadyFor(t) && s.engine.Started(t.ID) && !paused
-	// A live event-driven engine with no work is healthy idle. Only a persisted
-	// running intent without any corresponding LLM call can be considered stalled.
+	// 일이 없는 이벤트 엔진은 건강한 쉼입니다. 저장된 running 의도가 있는데
+	// 그에 해당하는 LLM 호출이 없을 때만 멈춘 것으로 봅니다.
 	stalled := running && activeCalls == 0 && inFlight > 0 && last > 0 && time.Now().Unix()-last > 120
 
-	// engine_mode follows the spec enum (exploring|paused|stalled|idle).
+	// engine_mode 는 명세의 열거값입니다. exploring, paused, stalled, idle.
 	engineMode := "idle"
 	switch {
 	case paused:
@@ -1047,8 +1033,8 @@ func (s *Server) listTasks(w http.ResponseWriter, r *http.Request) {
 		applyTaskArchiveBlocker(&dto, archiveBlockers)
 		metric := metrics[t.ExpID]
 		dto.Tokens = tokenTotalDTO(metric.Tokens)
-		// prefer the live in-memory heartbeat (fresher) and fall back to the
-		// persisted max activity time (survives restarts) for run-duration display.
+		// 실행 시간 표시는 메모리의 심장박동을 우선합니다. 없으면 재시작 뒤에도 남는
+		// 저장된 마지막 활동 시각을 씁니다.
 		dto.LastActivity = metric.LastActivity
 		if live := s.engine.LastActivity(t.ID); live > dto.LastActivity {
 			dto.LastActivity = live
@@ -1080,8 +1066,8 @@ func (s *Server) resolvedTaskStatus(t *Task) string {
 	case lifecycle.Paused || s.engine.IsPaused(t.ID):
 		return "paused"
 	case t.llmStateSnapshot().FailoverState == "chain_exhausted" && s.engine.Started(t.ID):
-		// LLM readiness is an execution dependency, not lifecycle state. Keeping
-		// an exhausted task running lets the user edit/reset its chain directly.
+		// LLM 준비는 실행 조건이지 수명 상태가 아닙니다. 사슬이 소진된 작업을
+		// running 으로 두면 사람이 사슬을 바로 고치거나 리셋할 수 있습니다.
 		return "running"
 	case s.engine.ReadyFor(t) && s.engine.Started(t.ID):
 		return "running"
@@ -1102,7 +1088,7 @@ func (s *Server) setActive(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 404, "작업을 찾을 수 없습니다")
 		return
 	}
-	// resume the engine for the opened task (idempotent — no-op if already running).
+	// 연 작업의 엔진을 다시 돌립니다. 이미 돌고 있으면 아무 일도 하지 않습니다.
 	// 대기 중인 작업: 활성으로만 바꿔 볼 수 있고, 엔진은 시작하지 않습니다(동시 상한을 유지하고, reconcile이 빈자리를 채웁니다).
 	if t, ok := s.m.Task(req.ID); ok && !t.lifecycleSnapshot().Queued {
 		s.engine.Run(s.ctx, t)
@@ -1110,7 +1096,7 @@ func (s *Server) setActive(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"active": req.ID})
 }
 
-// control pauses/resumes a task's autonomous execution (planner + workers).
+// control 은 작업의 자율 실행(플래너와 워커)을 멈추거나 다시 시작합니다.
 func (s *Server) control(w http.ResponseWriter, r *http.Request) {
 	t, ok := s.m.Task(r.PathValue("id"))
 	if !ok {
@@ -1136,9 +1122,9 @@ func (s *Server) control(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, result)
 }
 
-// controlIntent pauses, resumes, or cancels one local worker intent. A running
-// worker is always stopped before state mutation/cleanup, preventing tool output
-// that arrives after the user action from recreating deleted blackboard records.
+// controlIntent 는 워커 의도 하나를 멈추거나, 다시 시작하거나, 취소합니다.
+// 돌고 있는 워커는 상태를 고치거나 치우기 전에 항상 멈춥니다. 사람이 지운 뒤
+// 도착한 도구 출력이 블랙보드 기록을 다시 만들지 않게 합니다.
 func (s *Server) controlIntent(w http.ResponseWriter, r *http.Request) {
 	t, ok := s.m.Task(r.PathValue("id"))
 	if !ok {
@@ -1284,7 +1270,7 @@ func (s *Server) rerunBlocked(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"id": t.ID, "reopened": n, "queued": queued})
 }
 
-// getLLM returns the current LLM config (key never exposed).
+// getLLM 은 현재 LLM 설정을 돌려줍니다. 키는 절대 내보이지 않습니다.
 func (s *Server) getLLM(w http.ResponseWriter, r *http.Request) {
 	s.cfgMu.Lock()
 	defer s.cfgMu.Unlock()
@@ -1303,7 +1289,7 @@ func (s *Server) getLLM(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// setLLM configures the LLM at runtime. A blank api_key keeps the existing key.
+// setLLM 은 실행 중에 LLM 을 설정합니다. api_key 가 비어 있으면 기존 키를 유지합니다.
 func (s *Server) setLLM(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Provider        string  `json:"provider"`
@@ -1325,7 +1311,7 @@ func (s *Server) setLLM(w http.ResponseWriter, r *http.Request) {
 	cfg.RatePerSecond, cfg.RatePerMinute = req.RatePerSecond, req.RatePerMinute
 	cfg.ThinkingType = req.ThinkingType
 	cfg.ReasoningEffort = req.ReasoningEffort
-	if k := req.ContextWindowK; k > 0 { // 0 = keep default (200K); cap at 1M
+	if k := req.ContextWindowK; k > 0 { // 0 이면 기본 200K 를 유지합니다. 상한은 1M 입니다.
 		if k > 1000 {
 			k = 1000
 		}
@@ -1333,14 +1319,14 @@ func (s *Server) setLLM(w http.ResponseWriter, r *http.Request) {
 	}
 	if cfg.APIKey == "" {
 		s.cfgMu.Lock()
-		cfg.APIKey = s.llmCfg.APIKey // keep existing key if not re-entered
+		cfg.APIKey = s.llmCfg.APIKey // 다시 입력하지 않으면 기존 키를 유지합니다.
 		s.cfgMu.Unlock()
 	}
 	if cfg.APIKey == "" {
 		writeErr(w, 400, "api_key 는 필수입니다")
 		return
 	}
-	// Validate provider construction before persisting it as the active profile.
+	// 활성 프로필로 저장하기 전에 공급자가 만들어지는지 확인합니다.
 	if _, err := cfg.NewProvider(); err != nil {
 		writeErr(w, 400, "공급자 초기화에 실패했습니다: "+err.Error())
 		return
@@ -1362,7 +1348,7 @@ func (s *Server) setLLM(w http.ResponseWriter, r *http.Request) {
 	s.getLLM(w, r)
 }
 
-// testLLM makes a real minimal completion to verify the config works.
+// testLLM 은 아주 짧은 완성을 실제로 호출해 설정이 되는지 확인합니다.
 func (s *Server) testLLM(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Provider         string `json:"provider"`
@@ -1381,8 +1367,8 @@ func (s *Server) testLLM(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cfg := agent.ConfigFrom(req.Provider, req.Model, req.BaseURL, req.APIKey, req.Proxy)
-	// mirror production: send the SAME thinking params so a provider that rejects the
-	// reasoning_effort/thinking field fails the test too (no false "test ok, run 400").
+	// 실제 실행과 같게, 같은 생각 매개변수를 보냅니다. reasoning_effort 나 thinking 필드를
+	// 거절하는 공급자는 테스트도 실패합니다. "테스트는 되고 실행은 400" 이 나오지 않게 합니다.
 	cfg.ThinkingType = req.ThinkingType
 	cfg.ReasoningEffort = req.ReasoningEffort
 	// 마찬가지로 송수신 모드도 그 profile의 선택을 따른다. 그중 한 채널만 지원하는 엔드포인트는 여기서
@@ -1430,9 +1416,9 @@ func (s *Server) testLLM(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// truncateReply clips a connection-test reply for display. A model told to answer
-// "OK" can still ramble (or think out loud); the UI only needs enough to show it
-// really said something. Rune-based so multibyte text never splits mid-character.
+// truncateReply 는 연결 테스트 답을 화면에 맞게 자릅니다. "OK" 만 하라고 해도
+// 모델이 길게 말하거나 생각을 쏟을 수 있습니다. 화면은 정말로 말했는지만 보여 주면 됩니다.
+// 글자(룬) 단위로 잘라 여러 바이트 문자가 중간에서 깨지지 않습니다.
 func truncateReply(s string) string {
 	const max = 200
 	r := []rune(s)
@@ -1578,10 +1564,9 @@ func (s *Server) updateTaskLLMProfiles(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, err.Error())
 		return
 	}
-	// Profile edits affect only subsequent LLM calls. Existing in-flight calls
-	// retain their provider. Concurrency reconciliation treats ActiveLLMCalls as a
-	// live slot and postpones an unavailable task's pause/queue transition until
-	// the call returns; a nudge lets an idle running task resume promptly.
+	// 프로필 수정은 그 다음 LLM 호출부터 적용됩니다. 이미 나간 호출은 자기 공급자를 유지합니다.
+	// 동시 실행 재조정은 ActiveLLMCalls 를 살아있는 자리로 보고, 쓸 수 없는 작업의
+	// 일시정지·대기 전환을 호출이 돌아올 때까지 미룹니다. 깨우면 쉬고 있는 running 작업이 바로 이어집니다.
 	t.Notify()
 	go s.reconcileConcurrency()
 	llmState := t.llmStateSnapshot()
@@ -1603,8 +1588,8 @@ var (
 	reDomain = regexp.MustCompile(`\b((?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,})(?::(\d{1,5}))?`)
 )
 
-// parseTarget extracts a target (scheme, host, port) from free text, supporting
-// full URLs, IP[:port] and domain[:port]. ok=false when nothing parseable.
+// parseTarget 은 자유 글에서 대상(스킴, 호스트, 포트)을 뽑습니다. 전체 URL,
+// IP[:port], 도메인[:port] 를 받습니다. 파싱할 것이 없으면 ok 는 false 입니다.
 func parseTarget(text string) (scheme, host string, port int, ok bool) {
 	text = strings.TrimSpace(text)
 	if m := reURL.FindString(text); m != "" {
@@ -1650,7 +1635,7 @@ func schemeForPort(p int) string {
 	return "http"
 }
 
-// llmHost returns the host of the configured LLM endpoint (to keep it out of scope).
+// llmHost 는 설정된 LLM 끝점의 호스트입니다. 그 호스트를 작업 범위에 넣지 않으려고 씁니다.
 func (s *Server) llmHost() string {
 	s.cfgMu.Lock()
 	base := s.llmCfg.BaseURL
@@ -1670,7 +1655,7 @@ func (s *Server) seed(t *Task, text string) {
 		log.Printf("[seed] task %s: %q에서 대상 host/IP를 파싱하지 못해 사이트를 만들지 않습니다(scope를 수동으로 설정하세요)", t.ID, text)
 		return
 	}
-	// P0-1 guard: never treat the configured LLM gateway as a target.
+	// 가드: 설정된 LLM 게이트웨이를 대상으로 삼지 않습니다.
 	if gw := s.llmHost(); gw != "" && host == gw {
 		log.Printf("[seed] task %s: 대상 %q은(는) LLM 게이트웨이이므로 침투 대상으로 거부", t.ID, host)
 		return
@@ -1694,8 +1679,8 @@ func (s *Server) seed(t *Task, text string) {
 			_ = as.SetTaskAssetSource(taskID, rootID, "task", "작업 설명 또는 대상에서 초기화", nil)
 		}
 	}
-	// anchor the seeded assets to this task's begin root as lineage/provenance
-	// (the asset graph is global and shared; anchoring no longer gates reads).
+	// 심은 자산을 이 작업의 시작 뿌리에 앵커로 묶습니다. 계보를 남기는 용도입니다.
+	// 자산 그래프는 전역으로 공유되고, 앵커는 이제 읽기를 막지 않습니다.
 	if rootID > 0 {
 		if begin, _ := t.Store.OriginFactID(); begin > 0 {
 			_ = t.Store.Anchor(begin, rootID)
@@ -1707,11 +1692,10 @@ func (s *Server) seed(t *Task, text string) {
 	// 소비되어 Run의 게이트를 우회한다 → 시드 작업이 여전히 첫 라운드를 잘못 트리거한다.
 }
 
-// seedFirstIntent는 open 의도 하나(summary = 설명+목표)를 작업의
-// frontier at creation, so a worker can claim and run it immediately without first
-// waiting a planner round. Mirrors a planner top-level intent: it links from the
-// origin fact (RelDerivedFrom) so it still traces back to a fact node. Best-effort —
-// a failure just falls back to the normal planner-driven flow.
+// seedFirstIntent 는 만들 때 프론티어에 open 의도 하나(summary = 설명+목표)를 넣습니다.
+// 워커가 플래너 라운드를 기다리지 않고 바로 집어 실행합니다. 플래너의 최상위 의도와 같이
+// 기원 사실에서 RelDerivedFrom 으로 이어져 사실 노드까지 거슬러 갑니다. 실패해도
+// 평범한 플래너 흐름으로 돌아갑니다.
 func (s *Server) seedFirstIntent(t *Task) {
 	summary := fmt.Sprintf("작업 목표 완료: %s(작업: %s)", t.Goal, t.Description)
 	id, err := t.Store.AddIntent(map[string]any{"summary": summary}, 8, nil, "seed")
@@ -1737,7 +1721,7 @@ func (s *Server) getTask(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, dto)
 }
 
-// taskCoverage returns a task's rough asset test coverage (denominator/tested/backlog).
+// taskCoverage 는 작업의 거친 자산 시험 범위입니다. 분모, 시험한 수, 남은 수입니다.
 func (s *Server) taskCoverage(w http.ResponseWriter, r *http.Request) {
 	t, ok := s.m.Task(r.PathValue("id"))
 	if !ok {
@@ -1764,7 +1748,7 @@ func (s *Server) taskCoverage(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, cov)
 }
 
-// taskCoverageGraph returns the force-directed asset coverage graph for a task:
+// taskCoverageGraph 는 작업의 힘 기반 자산 커버리지 그래프입니다.
 // 범위 안 자산 전부(유형마다) + 연결용 루트 도메인/회사 노드, 각각 tested/in_scope를 담는다.
 func (s *Server) taskCoverageGraph(w http.ResponseWriter, r *http.Request) {
 	t, ok := s.m.Task(r.PathValue("id"))
@@ -1786,8 +1770,8 @@ func (s *Server) taskCoverageGraph(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, g)
 }
 
-// taskAssetRefs returns the intents / facts / findings in this task anchored to a
-// 주어진 asset id — 커버리지 그래프 노드 드로어의 「연관 의도 / 연관 사실」을 구동한다.
+// taskAssetRefs 는 이 작업에서 주어진 자산 id 에 앵커된 의도·사실·발견을 돌려줍니다.
+// 커버리지 그래프 노드 서랍의 「연관 의도 / 연관 사실」이 이 목록을 씁니다.
 func (s *Server) taskAssetRefs(w http.ResponseWriter, r *http.Request) {
 	t, ok := s.m.Task(r.PathValue("id"))
 	if !ok {
@@ -1821,7 +1805,7 @@ func (s *Server) taskAssetRefs(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"intents": intents, "facts": facts, "findings": findings})
 }
 
-// taskScopeList returns a task's scope rows (coverage denominator sources).
+// taskScopeList 는 작업의 범위 행입니다. 커버리지 분모가 어디서 왔는지입니다.
 func (s *Server) taskScopeList(w http.ResponseWriter, r *http.Request) {
 	t, ok := s.m.Task(r.PathValue("id"))
 	if !ok {
@@ -1965,8 +1949,8 @@ func (s *Server) findings(w http.ResponseWriter, r *http.Request) {
 	assets := s.resolveAssetIDs(aidSet)
 	out := findingDTOsForTask(t, f, meta, assets)
 
-	// Related-task findings are a live, read-only view. Provenance metadata lets
-	// the task UI suppress mutation affordances while retaining stable ids.
+	// 연관 작업의 발견은 살아있는 읽기 전용 보기입니다. 출처 메타데이터가 있어서
+	// 작업 화면은 안정된 id 는 남기고 수정 버튼은 숨깁니다.
 	sources, err := t.Store.DirectSourceStores()
 	if err != nil {
 		writeErr(w, 500, err.Error())
@@ -2001,8 +1985,7 @@ func (s *Server) findings(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, out)
 }
 
-// normFilter maps the frontend's "all" sentinel (and empty) to "" so the DB layer
-// treats it as no filter.
+// normFilter 는 화면의 "all" 과 빈 값을 "" 로 바꿉니다. DB 는 그것을 필터 없음으로 봅니다.
 func normFilter(v string) string {
 	if v == "all" {
 		return ""
@@ -2010,8 +1993,8 @@ func normFilter(v string) string {
 	return v
 }
 
-// resolveFindingAssets loads every asset anchored by the given findings, keyed by
-// id, so each finding DTO can render its assets' labels.
+// resolveFindingAssets 는 주어진 발견이 앵커한 자산을 id 로 읽습니다.
+// 발견 DTO 가 자산 이름을 그릴 때 씁니다.
 func (s *Server) resolveFindingAssets(fs []*db.DBFinding) map[int64]*db.Asset {
 	var ids []int64
 	for _, f := range fs {
@@ -2020,7 +2003,7 @@ func (s *Server) resolveFindingAssets(fs []*db.DBFinding) map[int64]*db.Asset {
 	return s.resolveAssetIDs(ids)
 }
 
-// resolveAssetIDs de-dupes ids and loads their asset rows into an id→asset map.
+// resolveAssetIDs 는 id 중복을 빼고 자산 행을 id→자산 맵으로 읽습니다.
 func (s *Server) resolveAssetIDs(ids []int64) map[int64]*db.Asset {
 	assets := map[int64]*db.Asset{}
 	seen := map[int64]bool{}
@@ -2044,7 +2027,7 @@ func (s *Server) resolveAssetIDs(ids []int64) map[int64]*db.Asset {
 	return assets
 }
 
-// findingStats serves the whole-table aggregates (stat cards + vuln-class filter)
+// findingStats 는 표 전체의 집계입니다. 통계 카드와 취약 유형 필터가 씁니다.
 // 페이지가 나뉜 발견 페이지용.
 func (s *Server) findingStats(w http.ResponseWriter, r *http.Request) {
 	st, err := s.m.pg.FindingStats()
@@ -2055,8 +2038,8 @@ func (s *Server) findingStats(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, st)
 }
 
-// getFinding returns one finding by its standalone-table id (DTO finding_id),
-// with anchored assets resolved for display.
+// getFinding 은 독립 표 id(DTO 의 finding_id)로 발견 하나를 돌려줍니다.
+// 화면에 쓸 앵커된 자산도 같이 풀립니다.
 func (s *Server) getFinding(w http.ResponseWriter, r *http.Request) {
 	id := int64(atoiDefault(r.PathValue("id"), 0))
 	if id <= 0 {
@@ -2095,7 +2078,7 @@ func (s *Server) getFinding(w http.ResponseWriter, r *http.Request) {
 //
 //	scope   = filtered（페이지 필터를 그대로 사용）| all（전체）| selected（선택한 ids）
 //	format  = md-single（하나의 .md로 합침）| md-zip（발견(finding)마다 .md 하나, zip으로 묶음）
-//	          | csv | json
+//	          | csv | json  표 또는 JSON 파일
 //	ids     = 쉼표로 구분한 finding id（scope=selected일 때 필수）
 //	필터 매개변수 severity/status/vulnclass/task_id/q/sort 는 목록 인터페이스와 같다(scope=filtered 용).
 func (s *Server) findingsExport(w http.ResponseWriter, r *http.Request) {
@@ -2214,10 +2197,9 @@ func findingProvenanceInTask(contextTask *Task, findingTaskID *int64) (sourceTas
 	return "", false, false
 }
 
-// findingLineage returns the exploration sub-DAG from the task root to this
-// finding's node — the finding node + all its ancestors + edges among them — so
-// the detail page can show "how this finding was reached". Empty {nodes,edges}
-// when the finding has no node/task (e.g. the originating task was deleted).
+// findingLineage 는 작업 뿌리에서 이 발견 노드까지의 탐색 부분 그래프입니다.
+// 발견 노드, 그 조상, 그들 사이의 간선입니다. 상세 화면이 "어떻게 도달했는지"를 보여 줍니다.
+// 노드나 작업이 없으면(원래 작업이 지워진 경우) {nodes,edges} 는 빕니다.
 func (s *Server) findingLineage(w http.ResponseWriter, r *http.Request) {
 	id := int64(atoiDefault(r.PathValue("id"), 0))
 	if id <= 0 {
@@ -2251,10 +2233,9 @@ func (s *Server) findingLineage(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"nodes": taskNodeDTOs(nodes), "edges": edgeDTOs(edges)})
 }
 
-// patchFinding partially updates a finding: any subset of {status, severity}.
-// The id is the standalone findings-table id (DTO finding_id). Severity edits are
-// mirrored onto the originating exploration node so the per-task view stays in
-// sync. Returns the updated finding DTO.
+// patchFinding 은 발견의 일부만 고칩니다. {status, severity} 의 부분집합입니다.
+// id 는 독립 발견 표 id(DTO finding_id)입니다. 심각도 수정은 원래 탐색 노드에도
+// 비쳐 작업별 보기가 맞게 남습니다. 고친 발견 DTO 를 돌려줍니다.
 func (s *Server) patchFinding(w http.ResponseWriter, r *http.Request) {
 	id := int64(atoiDefault(r.PathValue("id"), 0))
 	if id <= 0 {
@@ -2345,8 +2326,8 @@ func (s *Server) patchFinding(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, findingFromDB(f, s.resolveAssetIDs(f.AssetIDs)))
 }
 
-// deleteFinding removes a finding (findings row + originating exploration node).
-// id is the standalone findings-table id (DTO finding_id).
+// deleteFinding 은 발견을 지웁니다. 발견 행과 원래 탐색 노드입니다.
+// id 는 독립 발견 표 id(DTO finding_id)입니다.
 func (s *Server) deleteFinding(w http.ResponseWriter, r *http.Request) {
 	id := int64(atoiDefault(r.PathValue("id"), 0))
 	if id <= 0 {
@@ -2368,14 +2349,13 @@ func (s *Server) deleteFinding(w http.ResponseWriter, r *http.Request) {
 func (s *Server) intents(w http.ResponseWriter, r *http.Request) {
 	t := s.m.ResolveTask(r.URL.Query().Get("task"))
 	if t == nil {
-		// Back-compat: bare list shape when the task can't be resolved.
+		// 예전 호환: 작업을 못 찾으면 맨 목록 모양을 그대로 돌려줍니다.
 		writeJSON(w, 200, []any{})
 		return
 	}
 	q := r.URL.Query()
 	limit := min(atoiDefault(q.Get("limit"), 300), 500)
-	// No paging params → preserve the legacy bare-array response so existing callers
-	// (and the poll) keep working unchanged.
+	// 페이지 매개변수가 없으면 예전 맨 배열 응답을 유지합니다. 기존 호출과 폴링이 그대로 됩니다.
 	if q.Get("before") == "" && q.Get("page") == "" {
 		in, err := t.Store.ListByKind(db.KindIntent, limit)
 		if err != nil {
@@ -2386,10 +2366,9 @@ func (s *Server) intents(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, taskNodeDTOs(in))
 		return
 	}
-	// Paged form: ?before=<id> (or ?page as a marker) → {items, has_more} so the
-	// worker session list can reach past the old fixed 300 boundary on scroll. It
-	// also includes immutable intent results from directly related tasks; those
-	// rows never participate in this task's frontier or claim path.
+	// 페이지 형식: ?before=<id> (또는 표시용 ?page) 는 {items, has_more} 입니다.
+	// 워커 세션 목록이 스크롤로 예전 고정 300 경계를 넘습니다. 직접 연관된 작업의
+	// 불변 의도 결과도 포함하지만, 그 행은 이 작업의 프론티어나 집어 가기 경로에 들어가지 않습니다.
 	before := int64(atoiDefault(q.Get("before"), 0))
 	in, hasMore, err := taskIntentHistoryPage(t.Store, before, limit, false, 0)
 	if err != nil {
@@ -2428,9 +2407,9 @@ func inheritedIntentResult(state string) bool {
 	}
 }
 
-// inheritedGraphSnapshot exposes immutable source-task history without leaking
-// work that is still open or running. Edges are filtered with the nodes so the
-// response cannot contain dangling ids that reveal hidden live intent topology.
+// inheritedGraphSnapshot 은 원본 작업의 불변 기록만 보여 줍니다. 아직 열려 있거나
+// 돌고 있는 일은 새지 않습니다. 간선도 노드와 같이 걸러, 숨은 살아있는 의도 구조를
+// 드러내는 끊긴 id 가 응답에 남지 않습니다.
 func inheritedGraphSnapshot(nodes []*db.Node, edges []db.Edge, sourceTaskID int64) ([]*db.Node, []db.Edge) {
 	visible := make(map[int64]struct{}, len(nodes))
 	filteredNodes := make([]*db.Node, 0, len(nodes))
@@ -2456,9 +2435,8 @@ func inheritedGraphSnapshot(nodes []*db.Node, edges []db.Edge, sourceTaskID int6
 	return filteredNodes, filteredEdges
 }
 
-// taskIntentHistoryPage returns one newest-first page for an exploration.
-// A source may have many open/running intents, so keep paging until enough
-// historical results are collected instead of leaking its frontier into the UI.
+// taskIntentHistoryPage 는 탐색 하나의 최신순 페이지입니다. 원본에 열린 의도나
+// 돌고 있는 의도가 많아도, 프론티어를 화면에 흘리지 않고 과거 결과가 충분해질 때까지 페이지를 넘깁니다.
 func taskIntentHistoryPage(store *db.ExplorationStore, before int64, limit int, inherited bool, sourceTaskID int64) ([]*db.Node, bool, error) {
 	if !inherited {
 		return store.ListByKindPage(db.KindIntent, before, limit)
@@ -2489,7 +2467,7 @@ func taskIntentHistoryPage(store *db.ExplorationStore, before int64, limit int, 
 	}
 }
 
-// explorationGraph returns the whole exploration chain (task graph) as nodes+edges.
+// explorationGraph 는 탐색 사슬 전체(작업 그래프)를 노드와 간선으로 돌려줍니다.
 func (s *Server) explorationGraph(w http.ResponseWriter, r *http.Request) {
 	t := s.m.ResolveTask(r.URL.Query().Get("task"))
 	if t == nil {
@@ -2530,12 +2508,11 @@ func (s *Server) explorationGraph(w http.ResponseWriter, r *http.Request) {
 }
 
 // explorationNodes 는 방송판을 위해, 이 작업 자신의 탐색 노드를
-// paged time series (newest first unless ?order=asc), filterable by kind/state
-// and a payload substring. Inherited nodes are deliberately out of scope — the
-// board reports what this task is doing right now, and paging across the source
-// tasks' stores would make the cursor meaningless.
-// Response also carries the edges touching the page plus the neighbour nodes
-// they point at, so each row can state where it came from and what it produced.
+// 페이지로 나눈 시간순입니다. ?order=asc 가 아니면 최신이 먼저입니다. kind, state,
+// 페이로드 부분 문자열로 거릅니다. 물려받은 노드는 일부러 뺍니다. 이 보드는 이 작업이
+// 지금 하는 일만 말하고, 원본 작업 저장소를 가로질러 페이지를 넘기면 커서가 의미를 잃습니다.
+// 응답에는 이 페이지에 닿는 간선과 이웃 노드도 담깁니다.
+// 각 행이 가리키는 곳입니다. 어디서 왔고 무엇을 만들었는지 말할 수 있습니다.
 func (s *Server) explorationNodes(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	page := atoiDefault(q.Get("page"), 1)
@@ -2603,10 +2580,9 @@ func (s *Server) explorationNodes(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// nodeAnchoredAssets resolves the exploration_anchors of the given nodes into
-// display-ready asset labels, keyed by node id. Anchors are provenance decoration
-// 방송판용으로 제공한다. 여기서 실패해도 호출자의 페이지를 잃게 해서는 안 되므로, 오류는
-// logged and degrade to "no assets".
+// nodeAnchoredAssets 는 주어진 노드의 앵커를 화면에 쓸 자산 이름으로 풉니다. 키는 노드 id 입니다.
+// 앵커는 출처를 보여주는 장식입니다. 방송판용으로 제공한다. 여기서 실패해도 호출자의
+// 페이지를 잃게 해서는 안 되므로, 오류는 로그만 남기고 "자산 없음"으로 낮춥니다.
 func (s *Server) nodeAnchoredAssets(t *Task, nodeIDs []int64) map[string][]FindingAssetDTO {
 	out := map[string][]FindingAssetDTO{}
 	anchors, err := t.Store.NodeAssets(nodeIDs)
@@ -2627,7 +2603,7 @@ func (s *Server) nodeAnchoredAssets(t *Task, nodeIDs []int64) map[string][]Findi
 	return out
 }
 
-// csvValues splits a comma-separated query parameter, dropping empty entries.
+// csvValues 는 쉼표로 나눈 질의 값을 쪼개고 빈 항목은 버립니다.
 func csvValues(s string) []string {
 	out := []string{}
 	for _, part := range strings.Split(s, ",") {
@@ -2638,7 +2614,7 @@ func csvValues(s string) []string {
 	return out
 }
 
-// activity returns the worker execution step log (incremental via ?since=seq).
+// activity 는 워커 실행 단계 기록입니다. ?since=seq 로 그 이후만 받습니다.
 func (s *Server) activity(w http.ResponseWriter, r *http.Request) {
 	t := s.m.ResolveTask(r.URL.Query().Get("task"))
 	if t == nil {
@@ -2671,13 +2647,13 @@ func (s *Server) activity(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"items": activityDTOs(items), "cursor": cursor})
 }
 
-// parseActivitySession maps a stable session key (main | plan | intent:<ID>) to a
-// DB session filter. Goal Agent + Planner both live under worker="planner" (the
-// single Plan session); a Worker session is one intent, keyed by its node id.
+// parseActivitySession 은 안정된 세션 키(main, plan, intent:<ID>)를 DB 세션 필터로 바꿉니다.
+// 목표 에이전트와 플래너는 둘 다 worker="planner" 인 계획 세션 하나입니다.
+// 워커 세션은 의도 하나이고, 키는 그 노드 id 입니다.
 func parseActivitySession(sess string) (db.ActivitySessionFilter, bool) {
 	switch {
 	case sess == "" || sess == "main":
-		// bare "main" = the current segment; caller resolves MainSeg via the store.
+		// 맨 "main" 은 현재 구간입니다. 호출자가 저장소로 MainSeg 를 정합니다.
 		return db.ActivitySessionFilter{Main: true}, true
 	case strings.HasPrefix(sess, "main:"):
 		seg, err := strconv.Atoi(strings.TrimPrefix(sess, "main:"))
@@ -2697,9 +2673,9 @@ func parseActivitySession(sess string) (db.ActivitySessionFilter, bool) {
 	return db.ActivitySessionFilter{}, false
 }
 
-// activitySessionStore resolves a worker session against the current task and
-// its direct sources. Planner/main always stay local; inherited intent sessions
-// are immutable history and use the source exploration only for reads.
+// activitySessionStore 는 워커 세션을 현재 작업과 직접 원본에 맞춥니다.
+// 플래너와 메인은 항상 이 작업에 있습니다. 물려받은 의도 세션은 불변 기록이라
+// 읽을 때만 원본 탐색을 씁니다.
 func activitySessionStore(t *Task, filter db.ActivitySessionFilter) (*db.ExplorationStore, int64, error) {
 	if filter.NodeID == nil {
 		return t.Store, 0, nil
@@ -2729,11 +2705,10 @@ func activitySessionStore(t *Task, filter db.ActivitySessionFilter) (*db.Explora
 	return nil, 0, nil
 }
 
-// activityHistory serves one reverse-paginated page of a session's activity history.
-// The latest page (no ?before) opens a session; ?before=<id> pulls the older page on
-// scroll-up. snapshot_cursor is the TASK-level max id at query time — the client uses
-// it to open the single task SSE at since=snapshot_cursor so history (id<=cursor) and
-// the live tail (id>cursor) meet with no gap and no overlap.
+// activityHistory 는 세션 활동의 역순 페이지 하나입니다. ?before 가 없으면 최신 페이지로
+// 세션을 엽니다. ?before=<id> 는 위로 스크롤할 때 더 오래된 페이지입니다.
+// snapshot_cursor 는 조회 시점의 작업 단위 최대 id 입니다. 클라이언트가 작업 SSE 를
+// since=snapshot_cursor 로 열면 기록(id<=커서)과 실시간 꼬리(id>커서)가 빈틈과 겹침 없이 만납니다.
 func (s *Server) activityHistory(w http.ResponseWriter, r *http.Request) {
 	t := s.m.ResolveTask(r.URL.Query().Get("task"))
 	if t == nil {
@@ -2747,7 +2722,7 @@ func (s *Server) activityHistory(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, "세션이 올바르지 않습니다")
 		return
 	}
-	if filter.Main && filter.MainSeg == nil { // bare "main" → the current segment
+	if filter.Main && filter.MainSeg == nil { // 그냥 main이면 현재 구간입니다.
 		seg, err := t.Store.CurrentMainSeg()
 		if err != nil {
 			writeErr(w, 500, err.Error())
@@ -2756,7 +2731,7 @@ func (s *Server) activityHistory(w http.ResponseWriter, r *http.Request) {
 		filter.MainSeg = &seg
 	}
 	before := int64(atoiDefault(q.Get("before"), 0))
-	limit := min(atoiDefault(q.Get("limit"), 200), 500) // cap so one request can't pull an unbounded slice
+	limit := min(atoiDefault(q.Get("limit"), 200), 500) // 상한입니다. 요청 하나가 끝없는 조각을 가져가지 못하게 합니다.
 	store, sourceTaskID, err := activitySessionStore(t, filter)
 	if err != nil {
 		writeErr(w, 500, err.Error())
@@ -2766,8 +2741,8 @@ func (s *Server) activityHistory(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 404, "세션을 찾을 수 없습니다")
 		return
 	}
-	// The browser tails only this task's broadcaster. Keep the SSE join cursor
-	// local even when the opened worker transcript comes from a related task.
+	// 브라우저는 이 작업의 방송만 따라갑니다. 연 워커 기록이 연관 작업에서 왔어도
+	// SSE 를 잇는 커서는 이 작업의 것으로 둡니다.
 	snapshot, err := t.Store.ActivityMaxID()
 	if err != nil {
 		log.Printf("[activity/history] task=%s session=%s snapshot: %v", t.ID, sess, err)
@@ -2777,8 +2752,8 @@ func (s *Server) activityHistory(w http.ResponseWriter, r *http.Request) {
 	var items []db.Activity
 	var hasMore bool
 	if sourceTaskID > 0 {
-		// Source sessions are readable only while the intent remains terminal. The
-		// DB query also removes model reasoning/accounting rows from inherited data.
+		// 원본 세션은 의도가 종료 상태일 때만 읽을 수 있습니다. DB 질의는 물려받은
+		// 데이터에서 모델의 생각·정산 행도 뺍니다.
 		items, hasMore, err = store.ActivityPageForTerminalIntent(*filter.NodeID, before, limit)
 	} else {
 		items, hasMore, err = store.ActivityPage(filter, before, limit)
@@ -2806,8 +2781,8 @@ func (s *Server) activityHistory(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// tokenStats returns per-worker token usage (input/output/cache read/write) for a
-// task — main agent, planner, and each work#N.
+// tokenStats 는 작업의 워커별 토큰 사용량입니다. 입력, 출력, 캐시 읽기·쓰기.
+// 메인 에이전트, 플래너, work#N 각각입니다.
 func (s *Server) tokenStats(w http.ResponseWriter, r *http.Request) {
 	t := s.m.ResolveTask(r.URL.Query().Get("task"))
 	if t == nil {
@@ -2828,7 +2803,7 @@ func (s *Server) tokenStats(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 500, err.Error())
 		return
 	}
-	total, err := t.Store.TokenTotal() // whole-task total (all agents)
+	total, err := t.Store.TokenTotal() // 작업 전체 합계(모든 에이전트)
 	if err != nil {
 		writeErr(w, 500, err.Error())
 		return
@@ -2836,8 +2811,8 @@ func (s *Server) tokenStats(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"workers": stats, "sessions": sessions, "total": tokenTotalDTO(total)})
 }
 
-// tokenDailyStats returns global token consumption aggregated by calendar day
-// (UTC) across all tasks for the past ?days=N days (default 30).
+// tokenDailyStats 는 모든 작업의 토큰을 달력 날(UTC)로 모읍니다.
+// 지난 ?days=N 일, 기본 30일입니다.
 func (s *Server) tokenDailyStats(w http.ResponseWriter, r *http.Request) {
 	days := atoiDefault(r.URL.Query().Get("days"), 30)
 	if s.m.pg == nil {
@@ -2855,9 +2830,8 @@ func (s *Server) tokenDailyStats(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, buckets)
 }
 
-// conversationTokens returns per-conversation token summaries so the dashboard can
-// merge chat (conversation) usage into its per-profile / daily token stats — which
-// otherwise count only task (exploration) usage.
+// conversationTokens 는 대화별 토큰 요약입니다. 대시보드가 채팅 사용량을
+// 프로필별·일별 통계에 합칩니다. 그렇지 않으면 작업(탐색) 사용량만 셉니다.
 func (s *Server) conversationTokens(w http.ResponseWriter, r *http.Request) {
 	if s.m.pg == nil {
 		writeJSON(w, 200, []any{})
@@ -2871,11 +2845,11 @@ func (s *Server) conversationTokens(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, rows)
 }
 
-// streamActivity is the live SSE tail: it replays history after ?since=<seq>, then
-// pushes each newly appended activity for the task. The seq cursor makes history +
-// live join gap-free; on reconnect the client passes its last seq to catch any
-// dropped events. Optional ?intent=<id> scopes the stream to one worker session.
-// getLogs returns recent backend log lines (Seq > since), newest-last.
+// streamActivity 는 실시간 SSE 꼬리입니다. ?since=<seq> 이후 기록을 다시 보낸 뒤
+// 새로 붙는 활동을 밀어 줍니다. seq 커서가 기록과 실시간을 빈틈 없이 잇습니다.
+// 다시 붙을 때 클라이언트가 마지막 seq 를 넘겨 빠진 이벤트를 받습니다.
+// ?intent=<id> 가 있으면 워커 세션 하나로 좁힙니다.
+// getLogs 는 최근 백엔드 로그입니다. Seq 가 since 보다 큰 것, 오래된 것이 먼저입니다.
 func (s *Server) getLogs(w http.ResponseWriter, r *http.Request) {
 	since := int64(atoiDefault(r.URL.Query().Get("since"), 0))
 	limit := atoiDefault(r.URL.Query().Get("limit"), 500)
@@ -2883,9 +2857,9 @@ func (s *Server) getLogs(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"items": lines, "cursor": cursor})
 }
 
-// getLogsHistory returns older log lines from the DB (before a given db_id).
-// GET /api/logs/history?before=<db_id>&limit=200
-// Returns {items:[LogLine], has_more: bool}.
+// getLogsHistory 는 DB 에서 더 오래된 로그를 돌려줍니다. 주어진 db_id 보다 앞입니다.
+// 예: GET /api/logs/history?before=<db_id>&limit=200
+// {items:[LogLine], has_more: bool}을 돌려줍니다.
 func (s *Server) getLogsHistory(w http.ResponseWriter, r *http.Request) {
 	if s.m.pg == nil {
 		writeJSON(w, 200, map[string]any{"items": []any{}, "has_more": false})
@@ -2896,7 +2870,7 @@ func (s *Server) getLogsHistory(w http.ResponseWriter, r *http.Request) {
 	if limit > 500 {
 		limit = 500
 	}
-	// If no before given, return the most recent DB rows (mirrors ring restore).
+	// before가 없으면 가장 최근 DB 행을 돌려줍니다(링 복원과 같음).
 	var (
 		rows []*db.DBLog
 		err  error
@@ -2923,8 +2897,8 @@ func (s *Server) getLogsHistory(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"items": items, "has_more": len(rows) == limit})
 }
 
-// streamLogs is the live SSE tail of the backend log: replays history after
-// ?since=<seq>, then pushes each new line.
+// streamLogs는 백엔드 로그의 실시간 SSE 꼬리입니다. ?since=seq 뒤의 기록을
+// 다시 재생한 다음 새 줄을 밀어 줍니다.
 func (s *Server) streamLogs(w http.ResponseWriter, r *http.Request) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -2993,10 +2967,10 @@ func (s *Server) streamActivity(w http.ResponseWriter, r *http.Request) {
 			intentPtr = &n
 		}
 	}
-	// Cursor precedence: the browser's automatic reconnect sends Last-Event-ID (the
-	// last id it received) — trust it over the query so an auto-reconnect resumes
-	// exactly where it dropped. A fresh/manual connect has no header and passes
-	// since=<snapshot_cursor> from the history page instead.
+	// 커서 우선순위: 브라우저의 자동 재연결은 Last-Event-ID를 보냅니다(받은
+	// 마지막 id). 질의보다 이것을 믿어, 자동 재연결이 끊긴
+	// 자리에서 정확히 이어지게 합니다. 새 연결이나 수동 연결에는 헤더가 없고,
+	// 기록 페이지의 since=snapshot_cursor를 넘깁니다.
 	since := int64(atoiDefault(r.URL.Query().Get("since"), 0))
 	if le := r.Header.Get("Last-Event-ID"); le != "" {
 		if n, err := strconv.ParseInt(le, 10, 64); err == nil {
@@ -3007,28 +2981,28 @@ func (s *Server) streamActivity(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("X-Accel-Buffering", "no") // disable proxy buffering
+	w.Header().Set("X-Accel-Buffering", "no") // 프록시 버퍼링을 끕니다.
 
-	// Subscribe BEFORE replaying history so events in between aren't lost; dedup the
-	// overlap by skipping channel events whose id was already replayed.
+	// 기록을 다시 재생하기 전에 구독합니다. 그 사이 이벤트를 잃지 않으려고요. 겹친 것은
+	// 이미 재생한 id의 채널 이벤트를 건너뛰어 중복을 뺍니다.
 	ch, unsub := s.engine.Broadcaster().Subscribe(t.ID)
 	defer unsub()
 
-	// Emit a standard SSE id: line so the browser echoes it as Last-Event-ID on
-	// auto-reconnect (see cursor precedence above).
+	// 표준 SSE id 줄을 냅니다. 브라우저가 자동 재연결 때 Last-Event-ID로
+	// 되울리게 합니다(위의 커서 우선순위를 보세요).
 	sendSSE := func(a db.Activity) {
 		b, _ := json.Marshal(activityDTO(a))
 		fmt.Fprintf(w, "id: %d\ndata: %s\n\n", a.ID, b)
 		flusher.Flush()
 	}
 
-	// Compensate the DB backlog after `since` in batches until caught up. This is the
-	// gap between the history snapshot and the live tail — NOT the first-page history
-	// (that's the /activity/history endpoint). A long task can have far more than one
-	// batch, so loop instead of a single fixed read; on a query error log it and close
-	// so the client reconnects and retries from its last id (broadcast is lossy — the
-	// DB is the source of truth). The Broadcaster keeps buffering live events meanwhile;
-	// the id<=since skip below drops any that this replay already covered.
+	// since 뒤의 DB 밀린 분을 따라잡을 때까지 묶음으로 메웁니다. 이것은
+	// 기록 스냅샷과 실시간 꼬리 사이의 빈틈입니다. 첫 페이지 기록이
+	// 아닙니다(그것은 /activity/history). 긴 작업은 묶음 하나보다 훨씬 많을 수 있어,
+	// 한 번만 읽지 않고 반복합니다. 질의 오류면 로그를 남기고 닫아,
+	// 클라이언트가 마지막 id부터 다시 연결해 재시도하게 합니다(방송은 손실이 있습니다.
+	// 기준은 DB입니다). 그 동안 Broadcaster는 실시간 이벤트를 버퍼합니다.
+	// 아래의 id가 since 이하인 건너뛰기가, 이 재생이 이미 덮은 것을 버립니다.
 	const replayBatch = 500
 	for {
 		items, cursor, err := t.Store.ActivityList(intentPtr, since, replayBatch)
@@ -3060,10 +3034,10 @@ func (s *Server) streamActivity(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			if a.ID <= since {
-				continue // already replayed
+				continue // 이미 재생함
 			}
 			if intentPtr != nil && (a.NodeID == nil || *a.NodeID != *intentPtr) {
-				continue // scoped session: only this intent's steps
+				continue // 좁힌 세션: 이 의도의 단계만
 			}
 			since = a.ID
 			sendSSE(a)
@@ -3074,7 +3048,7 @@ func (s *Server) streamActivity(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// activityDetail lazily returns the full detail blob for one step.
+// activityDetail은 단계 하나의 상세 본문 전체를 필요할 때 돌려줍니다.
 func (s *Server) activityDetail(w http.ResponseWriter, r *http.Request) {
 	t := s.m.ResolveTask(r.URL.Query().Get("task"))
 	if t == nil {
@@ -3090,10 +3064,10 @@ func (s *Server) activityDetail(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"detail": d})
 }
 
-// taskActivityDetail keeps the legacy local-task behavior (including thinking
-// rows), while inherited details are restricted to terminal worker intents.
-// This prevents a guessed global activity id from exposing source planner/main
-// or in-flight transcripts.
+// taskActivityDetail은 예전 로컬 작업 동작을 유지합니다(생각
+// 행 포함). 물려받은 상세는 종료된 워커 의도로 제한합니다.
+// 그래서 짐작한 전역 활동 id로 원본 플래너나 메인의
+// 대화 기록, 또는 진행 중 기록을 보지 못하게 합니다.
 func taskActivityDetail(t *Task, seq int64) (string, error) {
 	return t.Store.ActivityDetailWithSources(seq)
 }
@@ -3119,20 +3093,20 @@ func (s *Server) getTraffic(w http.ResponseWriter, r *http.Request) {
 		Sort:    q.Get("sort"),
 		Order:   q.Get("order"),
 	}, page, size)
-	count, _ := tr.Count() // global total, for the stat card
+	count, _ := tr.Count() // 통계 카드용 전역 합계
 	writeJSON(w, 200, map[string]any{
-		"enabled":   s.m.TrafficEnabled(), // reflect the capture toggle
+		"enabled":   s.m.TrafficEnabled(), // 캡처 스위치를 반영합니다
 		"proxy":     s.m.ProxyAddr(),
-		"count":     count,   // total recorded (unfiltered)
-		"total":     matched, // rows matching the current filter (for pagination)
+		"count":     count,   // 기록된 전체(필터 없음)
+		"total":     matched, // 현재 필터에 맞는 행 수(페이지용)
 		"page":      page,
 		"size":      size,
 		"exchanges": trafficDTOs(ex),
 	})
 }
 
-// getTrafficHosts returns distinct recorded hosts with counts, for the page's
-// target picker (pick a host → filter the list, then delete it).
+// getTrafficHosts는 기록된 호스트를 개수와 함께 중복 없이 돌려줍니다. 화면의
+// 대상 고르기에 씁니다(호스트를 고르면 목록을 거르고, 그다음 지움).
 func (s *Server) getTrafficHosts(w http.ResponseWriter, r *http.Request) {
 	tr := s.m.Traffic()
 	if tr == nil {
@@ -3147,11 +3121,11 @@ func (s *Server) getTrafficHosts(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"hosts": hosts})
 }
 
-// deleteTraffic removes recorded traffic for every host containing the query's
-// host substring (the page's host filter is substring-based, so what you
-// filtered is what gets deleted): index rows + each host's file tree, then
-// garbage-collects blobs no remaining exchange references. Empty host → 400.
-// Returns the number of exchanges deleted.
+// deleteTraffic은 질의의 호스트 부분 문자열을 포함하는 모든 호스트의 기록 트래픽을 지웁니다.
+// 화면의 호스트 필터가 부분 문자열이라, 거른 것이
+// 지워지는 것입니다. 색인 행과 호스트마다의 파일 트리를 지운 뒤,
+// 남은 교환이 가리키지 않는 블롭을 거둡니다. 호스트가 비면 400입니다.
+// 지운 교환 수를 돌려줍니다.
 func (s *Server) deleteTraffic(w http.ResponseWriter, r *http.Request) {
 	tr := s.m.Traffic()
 	if tr == nil {
@@ -3171,10 +3145,10 @@ func (s *Server) deleteTraffic(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"deleted": n})
 }
 
-// deleteTrafficHosts removes traffic for a set of EXACT hosts (JSON body
-// {"hosts": [...]}) — the batch path for the page's multi-select delete. Exact
-// match, so picking "api.example.com" never sweeps "api.example.com.cn".
-// Returns the number of exchanges deleted.
+// deleteTrafficHosts는 정확한 호스트 묶음의 트래픽을 지웁니다(JSON 본문
+// hosts 배열). 화면의 여러 개 선택 삭제 경로입니다. 정확히
+// 맞으므로, api.example.com을 골라도 api.example.com.cn은 안 지웁니다.
+// 지운 교환 수를 돌려줍니다.
 func (s *Server) deleteTrafficHosts(w http.ResponseWriter, r *http.Request) {
 	tr := s.m.Traffic()
 	if tr == nil {
@@ -3206,11 +3180,11 @@ func (s *Server) deleteTrafficHosts(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"deleted": n})
 }
 
-// deleteAllTraffic purges every recorded exchange, then compacts the index so
-// the space is actually returned to the filesystem — an emptied index is the one
-// moment a full rewrite is cheap. Evidence already bound to a finding lives in
-// the evidence store and is deliberately left alone. Returns the number of
-// exchanges deleted and the bytes of index reclaimed.
+// deleteAllTraffic은 기록된 교환을 모두 지운 뒤 색인을 압축해,
+// 공간을 실제로 파일시스템에 돌려줍니다. 비운 색인은
+// 전체를 다시 쓰기가 싼 유일한 때입니다. 발견에 이미 묶인 증거는
+// 증거 저장소에 있고, 일부러 그대로 둡니다. 지운
+// 교환 수와 되돌린 색인 바이트를 돌려줍니다.
 func (s *Server) deleteAllTraffic(w http.ResponseWriter, r *http.Request) {
 	tr := s.m.Traffic()
 	if tr == nil {
@@ -3225,8 +3199,8 @@ func (s *Server) deleteAllTraffic(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"deleted": n, "reclaimed": reclaimed})
 }
 
-// getTrafficExchange returns the full raw request/response of one exchange,
-// read on demand from the traffic tree (bodies are not in the paged list).
+// getTrafficExchange는 교환 하나의 날것 요청과 응답 전체를 돌려줍니다.
+// 필요할 때 트래픽 트리에서 읽습니다(본문은 페이지 목록에 없음).
 func (s *Server) getTrafficExchange(w http.ResponseWriter, r *http.Request) {
 	tr := s.m.Traffic()
 	if tr == nil {
@@ -3246,10 +3220,10 @@ func (s *Server) getTrafficExchange(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"req": req, "resp": resp})
 }
 
-// getTrafficBlob streams one oversized body by its sha256. Bodies past the inline
-// threshold are not carried by the exchange endpoint — it returns a preview plus
-// an "@blob sha256:<hash>" pointer — so this is how the UI fetches them whole.
-// Streamed rather than buffered: these are the bodies too large to hold in memory.
+// getTrafficBlob은 너무 큰 본문 하나를 sha256으로 흘려 보냅니다. 인라인
+// 상한을 넘은 본문은 교환 끝점이 안 실습니다. 미리보기와
+// @blob sha256:<hash> 포인터만 줍니다. 화면이 전체를 가져오는 길이 이것입니다.
+// 버퍼하지 않고 흘립니다. 메모리에 담기엔 너무 큰 본문이기 때문입니다.
 func (s *Server) getTrafficBlob(w http.ResponseWriter, r *http.Request) {
 	tr := s.m.Traffic()
 	if tr == nil {
@@ -3275,9 +3249,9 @@ func (s *Server) getTrafficBlob(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// getSettings returns the runtime app settings the UI toggles. The Brave API key
-// is returned as a boolean presence flag (brave_key_set), never the value itself,
-// so the UI can show "configured" without echoing the secret back.
+// getSettings는 화면이 켜고 끄는 실행 중 앱 설정을 돌려줍니다. Brave API 키는
+// 값이 아니라 있는지 여부(brave_key_set)로 돌려줍니다.
+// 화면이 설정됨을 보여도 비밀을 다시 울리지 않게 하려고요.
 func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, s.settingsPayload())
 }
@@ -3341,7 +3315,7 @@ func notifyDigestIntervalMin(pg *db.DB) int {
 	return n
 }
 
-// pgDetectPython re-runs interpreter detection, stores + returns it.
+// pgDetectPython은 인터프리터 찾기를 다시 돌리고, 저장한 뒤 돌려줍니다.
 func (s *Server) pgDetectPython(w http.ResponseWriter, r *http.Request) {
 	p := detectPython()
 	if p == "" {
@@ -3355,16 +3329,16 @@ func (s *Server) pgDetectPython(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"python_interpreter": p})
 }
 
-// putSettings applies a settings change. Toggling traffic_capture rebuilds the
-// agents (applyLLM) so the new proxy/traffic-tools/prompt state takes hold — when
-// off, agents get no proxy config, no traffic tools, and no proxy prompt content.
+// putSettings는 설정 변경을 적용합니다. traffic_capture를 바꾸면
+// 에이전트를 다시 만듭니다(applyLLM). 새 프록시, 트래픽 도구, 프롬프트가 먹게 하려고요.
+// 꺼지면 에이전트는 프록시 설정, 트래픽 도구, 프록시 프롬프트 내용이 없습니다.
 func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		TrafficCapture      *bool `json:"traffic_capture"`
 		AgentTrafficBinding *bool `json:"agent_traffic_binding"`
 		LLMRecord           *bool `json:"llm_record"` // LLM 녹화 스위치(기본 꺼짐). 즉시 적용되며 agent 를 다시 만들 필요가 없다
-		// Web search. WebSearchEnabled/Backend toggle the tool + backend; BraveKey/TavilyKey
-		// are optional — omit (null) to leave a stored key untouched, send "" to clear.
+		// 웹 검색입니다. WebSearchEnabled와 Backend가 도구와 백엔드를 바꿉니다. BraveKey와 TavilyKey는
+		// 선택입니다. 빼면(null) 저장된 키를 그대로 두고, 빈 문자열을 보내면 지웁니다.
 		WebSearchEnabled *bool   `json:"web_search_enabled"`
 		WebSearchBackend *string `json:"web_search_backend"`
 		BraveKey         *string `json:"brave_search_api_key"`
@@ -3490,7 +3464,7 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, 500, err.Error())
 			return
 		}
-		changed = true // the provider chain itself changes shape → rebuild
+		changed = true // 제공자 사슬 모양 자체가 바뀜 → 다시 만듭니다.
 	}
 	if req.LLMPoolBindFallback != nil {
 		if err := s.m.SetLLMPoolBindFallback(*req.LLMPoolBindFallback); err != nil {
@@ -3500,8 +3474,8 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 		changed = true
 	}
 	if req.LLMPoolEnabled != nil || req.LLMPoolBindFallback != nil {
-		// Pinned tasks' planner/worker and per-profile chat agents hold providers
-		// built under the OLD switch state — drop them so they pick up the new one.
+		// 고정된 작업의 플래너/워커와 설정별 채팅 에이전트는
+		// 옛 스위치 상태로 만든 제공자를 가집니다. 버려서 새 것을 받게 합니다.
 		s.invalidateProfileAgents()
 	}
 	if req.AgentTrafficBinding != nil {
@@ -3518,15 +3492,15 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 		changed = true
 	}
 	if req.GlobalProxy != nil {
-		// Validation failure (bad scheme/host) is a client error, not a 500.
+		// 검사 실패(나쁜 스킴이나 호스트)는 클라이언트 오류입니다. 500이 아닙니다.
 		if err := s.m.SetGlobalProxy(*req.GlobalProxy); err != nil {
 			writeErr(w, 400, err.Error())
 			return
 		}
-		changed = true // capture-off egress is baked into agents at build time → rebuild
+		changed = true // 캡처가 꺼진 출구는 만들 때 에이전트에 구워집니다 → 다시 만듭니다.
 	}
 	if req.WebSearchEnabled != nil || req.WebSearchBackend != nil || req.BraveKey != nil || req.TavilyKey != nil || req.WebSearchProxy != nil {
-		// Fill unspecified fields from current state so a partial PUT doesn't reset them.
+		// 안 준 필드는 현재 상태로 채웁니다. 일부만 PUT해도 나머지가 리셋되지 않게 합니다.
 		on, backend, _, _, _ := s.m.WebSearch()
 		if req.WebSearchEnabled != nil {
 			on = *req.WebSearchEnabled
@@ -3541,7 +3515,7 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 		changed = true
 	}
 	if changed {
-		// rebuild agents so the new proxy/tools/prompt/web-search take hold (only if LLM configured).
+		// 에이전트를 다시 만듭니다. 새 프록시, 도구, 프롬프트, 웹 검색이 먹게 합니다(LLM이 설정된 경우만).
 		s.cfgMu.Lock()
 		cfg, on := s.llmCfg, s.llmOn
 		s.cfgMu.Unlock()
@@ -3555,11 +3529,11 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, s.settingsPayload())
 }
 
-// testWebSearch runs a real "test" search with the given (or currently saved)
-// backend/proxy/key to verify the config can actually reach a search backend —
-// mirroring testLLM. Backend/proxy come from the request (so the form's unsaved
-// edits are tested); empty API keys fall back to stored values so the user need
-// not retype them. Always 200 with {ok, error?, count?, backend?}.
+// testWebSearch는 준(또는 지금 저장된)
+// 백엔드, 프록시, 키로 시험 검색을 실제로 돌려, 설정이 검색 백엔드에 닿는지 확인합니다.
+// testLLM과 같습니다. 백엔드와 프록시는 요청에서 옵니다(그래서 폼의 아직 안 저장한
+// 수정을 시험함). API 키가 비면 저장된 값으로 물러섭니다. 사용자가
+// 다시 치지 않아도 됩니다. 항상 200이고 {ok, error?, count?, backend?}입니다.
 func (s *Server) testWebSearch(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Backend   string `json:"web_search_backend"`
@@ -3567,7 +3541,7 @@ func (s *Server) testWebSearch(w http.ResponseWriter, r *http.Request) {
 		BraveKey  string `json:"brave_search_api_key"`
 		TavilyKey string `json:"tavily_search_api_key"`
 	}
-	// Empty body is fine — fall back entirely to the saved config below.
+	// 본문이 비어 있어도 됩니다. 아래의 저장된 설정으로 전부 물러섭니다.
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
 		writeErr(w, 400, err.Error())
 		return
@@ -3576,10 +3550,10 @@ func (s *Server) testWebSearch(w http.ResponseWriter, r *http.Request) {
 	if strings.TrimSpace(req.Backend) != "" {
 		backend = req.Backend
 	}
-	// Proxy is taken from the form as-is (empty = direct), so testing reflects exactly
-	// what's shown — including an intentional "clear proxy to test direct" before saving.
+	// 프록시는 폼에 있는 그대로 씁니다(비어 있으면 직접 연결). 그래서 시험은 화면에
+	// 보인 것과 같습니다. 저장 전에 프록시를 비워 직접 연결을 시험하는 것도 포함합니다.
 	proxy := strings.TrimSpace(req.Proxy)
-	// API keys are secrets the form omits when already saved, so fall back to stored.
+	// API 키는 비밀이라, 이미 저장했으면 폼이 빼 둡니다. 그래서 저장된 값으로 물러섭니다.
 	braveKey := storedBraveKey
 	if strings.TrimSpace(req.BraveKey) != "" {
 		braveKey = req.BraveKey
@@ -3589,7 +3563,7 @@ func (s *Server) testWebSearch(w http.ResponseWriter, r *http.Request) {
 		tavilyKey = req.TavilyKey
 	}
 	cfg := actool.WebSearchConfig{Backend: backend, BraveAPIKey: braveKey, TavilyAPIKey: tavilyKey, Proxy: proxy}
-	// Hard cap so a slow/blocked proxy can't hang the request.
+	// 단단한 상한입니다. 느리거나 막힌 프록시가 요청을 붙잡지 못하게 합니다.
 	wall := 30 * time.Second
 	// deepseek 자격 증명은 폼에 없고, 현재 활성화된 LLM 설정에서 온다. 또한 검색할 때마다 한 번씩
 	// 모델 추론을 돌리므로, 30초 공통 상한은 빡빡해서 따로 늘린다. 여기서 설정이 쓸 수 있는지는 미리 판단하지 않는다. 이 한 번을 재는 것
@@ -3615,7 +3589,7 @@ func (s *Server) testWebSearch(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"ok": true, "count": len(results), "backend": backend})
 }
 
-// mainSessions lists the task's main-agent conversation segments (newest-first) and
+// mainSessions는 작업의 메인 에이전트 대화 구간을 나열합니다(최신 먼저). 그리고
 // 현재 것. 프론트엔드는 이들을 메인 에이전트 아래 전환 가능한 세션으로 그린다.
 func (s *Server) mainSessions(w http.ResponseWriter, r *http.Request) {
 	t := s.m.ResolveTask(r.URL.Query().Get("task"))
@@ -3630,14 +3604,15 @@ func (s *Server) mainSessions(w http.ResponseWriter, r *http.Request) {
 	}
 	current := 0
 	if len(list) > 0 {
-		current = list[0].Seq // newest-first
+		current = list[0].Seq // 최신 먼저
 	}
 	writeJSON(w, 200, map[string]any{"sessions": list, "current": current})
 }
 
-// newMainSession starts a fresh main-agent conversation segment. Only the segment
-// counter advances — the task's exploration graph, assets and goal are untouched, so
-// the main agent continues over the same task with a clean transcript/context.
+// newMainSession은 새 메인 에이전트 대화 구간을 시작합니다. 구간
+// 카운터만 올라갑니다. 작업의 탐색 그래프, 자산, 목표는 그대로라,
+// 메인 에이전트는 같은 작업을 깨끗한 대화 기록과 맥락으로 이어 갑니다.
+// 초보용: 새 대화 구간만 열고, 탐색 그래프와 자산, 목표는 그대로 둡니다.
 func (s *Server) newMainSession(w http.ResponseWriter, r *http.Request) {
 	t := s.m.ResolveTask(r.URL.Query().Get("task"))
 	if t == nil {
@@ -3681,9 +3656,9 @@ func (s *Server) chat(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	// Admission is serialized with deletion's chat cancellation. Mark every chat
-	// turn busy before its first activity/file write, including rule-mode turns.
-	// If deletion wins the race, the second barrier check rejects this request.
+	// 입장은 삭제의 채팅 취소와 순서를 맞춥니다. 모든 채팅
+	// 턴은 첫 활동이나 파일 쓰기 전에 바쁨으로 표시합니다. 규칙 모드 턴도 포함합니다.
+	// 삭제가 경주에서 이기면, 두 번째 장벽 검사가 이 요청을 거절합니다.
 	s.chatMu.Lock()
 	if s.engine.IsDeleting(t.ID) {
 		s.chatMu.Unlock()
@@ -3701,10 +3676,10 @@ func (s *Server) chat(w http.ResponseWriter, r *http.Request) {
 	s.chatCancel[t.ID] = cancel
 	s.chatMu.Unlock()
 
-	// The turn belongs to whichever main-agent segment the user is chatting in (any
-	// segment is interactive, like the top-level chat conversations). Stamp every
-	// mainagent row with it so this turn's transcript + activity land in that segment.
-	// Missing seg (older clients) falls back to the newest segment.
+	// 이 턴은 사용자가 대화 중인 메인 에이전트 구간의 것입니다(어느
+	// 구간이든 맨 위 채팅 대화처럼 주고받을 수 있음). 모든
+	// mainagent 행에 그것을 찍어, 이 턴의 대화 기록과 활동이 그 구간에 들어가게 합니다.
+	// seg가 없으면(옛 클라이언트) 가장 새 구간으로 물러섭니다.
 	mainSeg := 0
 	if req.Seg != nil && *req.Seg >= 0 {
 		mainSeg = *req.Seg
@@ -3714,10 +3689,10 @@ func (s *Server) chat(w http.ResponseWriter, r *http.Request) {
 	segPtr := &mainSeg
 
 	// 사람의 턴을 저장하고 브로드캐스트해서, 메인 에이전트 오케스트레이션 세션이 페이지
-	// reloads and updates live: the conversation lives in the activity stream as
-	// worker="mainagent" (the per-task activity table, replayed via SSE). With
-	// attachments, the activity's Detail carries {text, attachments} so the transcript
-	// renders attachment cards.
+	// 를 새로고침해도 실시간으로 갱신됩니다. 대화는 활동 스트림에 있습니다.
+	// worker는 mainagent입니다(작업별 활동 표, SSE로 다시 재생). 첨부가
+	// 있으면 활동의 Detail에 {text, attachments}가 들어가 대화 기록이
+	// 첨부 카드를 그립니다.
 	humanTurn := userActivityWithAttachments("mainagent", req.Message, req.Attachments)
 	humanTurn.MainSeg = segPtr
 	s.engine.emitActivity(t, humanTurn)
@@ -3726,18 +3701,19 @@ func (s *Server) chat(w http.ResponseWriter, r *http.Request) {
 		ma = s.agentsForTask(t).main
 	}
 	if ma != nil {
-		// Run the agent on a per-turn cancellable ctx (NOT r.Context()): the turn can
-		// take minutes (multi-tool loop), and binding it to the request lifecycle meant
-		// a page reload / proxy timeout cancelled it mid-run ("context canceled"). The
-		// steps + final answer stream back live via SSE (worker="mainagent"), so the
-		// handler returns immediately and the browser never needs to hold the request.
+		// 에이전트는 턴마다 취소 가능한 ctx에서 돕니다(r.Context()가 아님). 턴은
+		// 몇 분이 걸릴 수 있습니다(도구를 여러 번 도는 루프). 요청 수명에 묶으면
+		// 페이지 새로고침이나 프록시 시간 초과가 도중에 취소했습니다(context canceled).
+		// 단계와 마지막 답은 SSE로 실시간으로 돌아옵니다(worker는 mainagent). 그래서
+		// 처리기는 바로 돌아가고, 브라우저가 요청을 붙들고 있을 필요가 없습니다.
+		// 초보용: 화면의 메인 에이전트 턴은 요청이 아니라 서버 배경에서 돌고, 단계는 SSE로 흐릅니다.
 		go func() {
 			defer func() {
 				s.finishTaskChat(t.ID, cancel)
 			}()
-			// emit every step (thinking/tool_use/tool_result/text/result) so the main
-			// agent session shows its work live, like worker/planner. The final answer
-			// is the captured "result" step — no separate reply emit (would duplicate).
+			// 모든 단계를 내보냅니다(생각, tool_use, tool_result, 글, result). 그래서 메인
+			// 에이전트 세션이 워커나 플래너처럼 일을 실시간으로 보여 줍니다. 마지막 답은
+			// 잡은 result 단계입니다. 답을 따로 내보내면 중복됩니다.
 			emit := func(rec db.Activity) {
 				rec.MainSeg = segPtr
 				s.engine.emitActivity(t, rec)
@@ -3782,9 +3758,9 @@ func (s *Server) finishTaskChat(taskID string, cancel context.CancelCauseFunc) {
 	s.chatMu.Unlock()
 }
 
-// taskChatStatus reports the authoritative state of the task's main-agent turn.
-// Activity timestamps are not a reliable proxy because a tool or LLM call may run
-// for minutes without emitting an intermediate frame.
+// taskChatStatus는 작업의 메인 에이전트 턴 상태를 권위 있게 알립니다.
+// 활동 시각은 믿을 만한 대리가 아닙니다. 도구 호출이나 LLM 호출이
+// 중간 프레임 없이 몇 분 돌 수 있기 때문입니다.
 func (s *Server) taskChatStatus(w http.ResponseWriter, r *http.Request) {
 	t := s.m.ResolveTask(r.PathValue("id"))
 	if t == nil {
@@ -3797,9 +3773,9 @@ func (s *Server) taskChatStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"running": running})
 }
 
-// stopChat aborts the in-flight main-agent turn for a task (manual stop button).
-// Mirrors pgStopConversation: cancels only the current turn; planner/workers are
-// unaffected and continue running. The user can send a new message immediately.
+// stopChat은 작업의 진행 중 메인 에이전트 턴을 끊습니다(수동 정지 버튼).
+// pgStopConversation과 같습니다. 현재 턴만 취소합니다. 플래너와 워커는
+// 영향 없이 계속 돕니다. 사용자는 바로 새 메시지를 보낼 수 있습니다.
 func (s *Server) stopChat(w http.ResponseWriter, r *http.Request) {
 	t := s.m.ResolveTask(r.PathValue("id"))
 	if t == nil {
@@ -3870,12 +3846,12 @@ func (s *Server) getAudit(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"entries": t.Guard.Audit(), "attributions": t.Guard.Attributions()})
 }
 
-// gc is a no-op stub (GC not yet implemented in the new asset store).
+// gc는 아직 아무 일도 안 하는 자리입니다(새 자산 저장소에는 GC가 아직 없음).
 func (s *Server) gc(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"removed": 0})
 }
 
-// --- utils ---
+// --- 도우미 ---
 
 func cors(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

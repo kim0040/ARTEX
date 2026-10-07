@@ -75,8 +75,8 @@ var (
 	reLong    = regexp.MustCompile(`^[A-Za-z0-9_-]{24,}$`)
 )
 
-// TemplatePath collapses high-cardinality path segments into placeholders so the
-// graph is not flooded by instances: /user/123 -> /user/{id}.
+// TemplatePath는 경우의 수가 많은 경로 조각을 자리표시자로 바꾼다.
+// 그래서 /user/123 같은 주소가 자산 그래프의 endpoint를 건마다 채우지 않는다. 예: /user/123 → /user/{id}.
 func TemplatePath(path string) string {
 	if path == "" {
 		return "/"
@@ -99,8 +99,8 @@ func TemplatePath(path string) string {
 	return strings.Join(segs, "/")
 }
 
-// SplitURL parses a raw URL into scheme/host/port/urlTemplate/params for building
-// site/endpoint/param keys.
+// SplitURL은 원본 URL을 scheme, host, port, urlTemplate, params로 나눈다.
+// 이 값으로 site, endpoint, param 키를 만들어 자산 그래프의 endpoint를 구분한다.
 func SplitURL(raw, method string) (scheme, host string, port int, urlTemplate string, params []string, err error) {
 	u, err := url.Parse(raw)
 	if err != nil {

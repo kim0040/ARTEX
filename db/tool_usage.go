@@ -1,7 +1,7 @@
 package db
 
-// ToolUsage is one catalog tool invocation. It stores attribution dimensions only:
-// tool arguments and results are deliberately excluded from the ledger.
+// ToolUsage는 카탈로그 도구를 한 번 호출한 기록이다. 누가 썼는지만 남기고,
+// 도구 인자와 결과는 장부에 일부러 넣지 않는다.
 type ToolUsage struct {
 	ToolKey       string `json:"tool_key"`
 	AgentKey      string `json:"agent_key"`
@@ -11,8 +11,8 @@ type ToolUsage struct {
 	SessionID     string `json:"session_id"`
 }
 
-// InsertToolUsage appends one ledger row. Runtime callers treat metering as
-// best-effort so a statistics failure never interrupts the tool itself.
+// InsertToolUsage는 장부 한 줄을 덧붙인다. 실행 중 호출자는 통계 실패가
+// 도구 실행을 막지 않도록, 기록 실패를 그냥 넘긴다.
 func (d *DB) InsertToolUsage(u *ToolUsage) error {
 	_, err := d.Exec(`
 INSERT INTO tool_usage(tool_key, agent_key, task_id, exploration_id, intent_id, session_id)
@@ -22,8 +22,8 @@ VALUES ($1, NULLIF($2,''), $3, $4, $5, NULLIF($6,''))`,
 	return err
 }
 
-// ToolUsageCounts returns invocation totals keyed by catalog tool key. Entries
-// without calls are absent; API callers merge the result into the tools catalog.
+// ToolUsageCounts는 카탈로그 도구 키별 호출 횟수를 돌려준다.
+// 한 번도 안 쓴 도구는 빠지며, API가 이 결과를 도구 목록과 합친다.
 func (d *DB) ToolUsageCounts() (map[string]int, error) {
 	rows, err := d.Query(`
 SELECT tool_key, COUNT(*)

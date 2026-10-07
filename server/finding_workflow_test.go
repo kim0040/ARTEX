@@ -51,7 +51,7 @@ func TestFindingWorkflowAutoHintToPlannerAndSetting(t *testing.T) {
 	seedServerEvidenceFlow(t, s, "handoff-proof", []byte("verified local proof"))
 	seedServerEvidenceFlow(t, s, "handoff-baseline", []byte("local baseline"))
 	seedServerEvidenceFlow(t, s, "handoff-verification", []byte{0, 1, 255})
-	// Manual binding is independent of the Agent switch.
+	// 수동 바인딩은 에이전트 스위치와 별개입니다.
 	if r := request("POST", fmt.Sprintf("/api/exploration/findings/%d/traffic", initial.FindingID), `{"traffic_refs":[{"traffic_id":"handoff-proof"}]}`); r.Code != 200 {
 		t.Fatal(r.Code, r.Body)
 	}
@@ -67,7 +67,7 @@ func TestFindingWorkflowAutoHintToPlannerAndSetting(t *testing.T) {
 	f, _ := pg.GetFinding(initial.FindingID)
 	task := s.m.ResolveTask(fmt.Sprint(*f.TaskID))
 	refs := []db.TrafficRef{{TrafficID: "handoff-baseline", Role: "baseline", Note: "normal response"}, {TrafficID: "handoff-proof", Role: "proof", Note: "proves the finding"}, {TrafficID: "handoff-verification", Role: "verification", Note: "binary verification"}}
-	// Real cross-task Auto hint handler -> persisted graph -> Planner tool.
+	// 실제 작업 사이 Auto 힌트 처리기에서, 저장된 그래프를 거쳐, 플래너 도구로 갑니다.
 	hintResult := workflowCall(t, ctx, s.toolAddHint(), map[string]any{"task_id": task.ID, "hints": []any{map[string]any{"text": "Report the confirmed local finding with its verified evidence", "traffic_refs": refs}}}, false)
 	var hints struct {
 		IDs []int64 `json:"ids"`
@@ -135,13 +135,13 @@ func TestFindingWorkflowAutoHintToPlannerAndSetting(t *testing.T) {
 		t.Fatal("ambiguous ID error", wrong)
 	}
 	input["finding_id"] = recorded.FindingID
-	// Duplicate append preserves metadata and version.
+	// 중복해서 붙여도 메타데이터와 버전은 유지됩니다.
 	workflowCall(t, ctx, bind, input, false)
 	after, err := pg.GetFindingTraffic(ctx, recorded.FindingID)
 	if err != nil || len(after.Bindings) != 3 || after.Version != recorded.Traffic.Version || after.Bindings[0].Note != refs[0].Note {
 		t.Fatal("duplicate changed evidence", after, err)
 	}
-	// A malformed handoff must not create a partial finding or notify Planner.
+	// 형식이 깨진 넘김은 발견을 반만 만들거나 플래너에 알리면 안 됩니다.
 	badHint := workflowCall(t, ctx, s.toolAddHint(), map[string]any{"task_id": task.ID, "text": "missing packet", "traffic_refs": []db.TrafficRef{{TrafficID: "missing"}}}, false)
 	var badID int64
 	fmt.Sscanf(badHint, "hint added: %d", &badID)
@@ -159,13 +159,13 @@ func TestFindingWorkflowAutoHintToPlannerAndSetting(t *testing.T) {
 	childCtx := agent.WithRunInfo(ctx, agent.RunInfo{TaskID: childRow.ID})
 	workflowCall(t, childCtx, bind, input, true)
 	workflowCall(t, childCtx, s.toolGetFindingTraffic(), map[string]any{"finding_id": recorded.FindingID}, false)
-	// Existing, already assembled tools must honor a later switch-off.
+	// 이미 조립된 도구도, 나중에 스위치를 끄면 그 상태를 따라야 합니다.
 	if r := request("PUT", "/api/settings", `{"agent_traffic_binding":false}`); r.Code != 200 {
 		t.Fatal(r.Code, r.Body)
 	}
 	workflowCall(t, ctx, bind, input, true)
-	// Turning binding off must still save a confirmed finding from an already
-	// assembled tool, even if the model sends the old optional evidence fields.
+	// 바인딩을 꺼도, 이미 조립된 도구로는 확인된 발견을 저장할 수 있어야 합니다.
+	// 모델이 예전 선택 증거 필드를 보내도 그렇습니다.
 	offResult := workflowCall(t, ctx, report, map[string]any{"vulnclass": "TEST", "severity": "low", "summary": "off", "evidence_hint_id": hints.IDs[0]}, false)
 	var offRecord struct {
 		db.RecordedFinding
@@ -309,7 +309,7 @@ func TestFindingWorkflowReporterBindsBeforeWritingReport(t *testing.T) {
 	if err != nil || updated.ReportEvidenceVersion != summary.Version || updated.EvidenceVersion != summary.Version {
 		t.Fatal("report did not cover post-binding version", updated, err)
 	}
-	// Disabling automatic binding still lets Reporter read manually bound snapshots.
+	// 자동 바인딩을 꺼도, 보고자는 수동으로 묶인 스냅샷을 읽을 수 있습니다.
 	if r := request("PUT", "/api/settings", `{"agent_traffic_binding":false}`); r.Code != 200 {
 		t.Fatal(r.Code, r.Body)
 	}

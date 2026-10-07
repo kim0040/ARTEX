@@ -38,8 +38,8 @@ import * as D from "./data";
 
 const delay = (ms = 120) => new Promise((r) => setTimeout(r, ms));
 
-// Requests mutate a runtime copy, never the exported fixtures. This keeps module
-// initialization deterministic for tests/HMR while preserving state across mock calls.
+// 요청은 내보낸 고정 데이터가 아니라 실행 중 복사본을 바꿉니다. 그래서 모듈
+// 초기화는 테스트/HMR에서 결정적이고, 목업 호출 사이의 상태는 유지됩니다.
 const mockInterceptHistory = structuredClone(D.interceptHistory);
 const mockInterceptPending = structuredClone(D.interceptPending);
 const mockInterceptDetails = structuredClone(D.interceptDetails);
@@ -816,7 +816,7 @@ function mockProfileResolution(profileID: number | undefined, source: TaskLLMRes
   };
 }
 
-// Mirrors the backend precedence in server/task_resolution.go:
+// server/task_resolution.go의 백엔드 우선순위와 같습니다.
 // Agent 연결 → 작업 LLM 설정 사슬 → 전역 설정 → 환경 설정.
 function mockRoleResolution(task: Task, agentKey: "mainagent" | "planner" | "worker"): TaskLLMResolution {
   const agent = D.agents.find((item) => item.key === agentKey);
@@ -907,9 +907,9 @@ function sendMockWorkerMessage(
     return { ok: false, state: intent.state, error: "메시지는 4000자를 넘을 수 없습니다" };
   }
 
-  // The real endpoint transitions the intent paused->running, records the user turn,
-  // and runs it in a dedicated goroutine outside the worker pool. Keep the mock in
-  // sync: flip to running immediately and emit the visible user activity.
+  // 실제 주소는 의도를 paused에서 running으로 바꾸고, 사용자 차례를 기록한 뒤
+  // 워커 풀 밖 전용 고루틴에서 실행합니다. 목업도
+  // 맞춥니다. 바로 running으로 바꾸고, 보이는 사용자 활동을 냅니다.
   intent.state = "running";
   const activitySeq = nextMockWorkerMessageActivitySeq++;
   const workerMessage: MockWorkerMessage = {
@@ -1004,7 +1004,7 @@ export async function mockHandle<T>(method: string, rawPath: string, body?: Body
   await delay();
   const [path, qs] = rawPath.split("?");
   const q = new URLSearchParams(qs ?? "");
-  const seg = path.split("/").filter(Boolean); // ["exploration","activity"]
+  const seg = path.split("/").filter(Boolean); // ["exploration","activity"] 경로 조각
   const m = method.toUpperCase();
   const b = parseBody(body);
   return route(m, path, seg, q, b) as T;
@@ -1060,7 +1060,7 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
   if (path === "/auth/login" || path === "/auth/init") return { token: "mock-demo" };
   if (path === "/auth/change-password") return { ok: true };
 
-  // ── task cold archives ──
+  // ── 작업 콜드 아카이브 ──
   if (path === "/task-archives" && m === "GET") {
     const page = Math.max(1, Number(q.get("page")) || 1);
     const size = Math.min(100, Math.max(1, Number(q.get("size")) || 20));
@@ -1161,7 +1161,7 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
     return publicMockTaskArchive(mockArchiveTask(seg[1]));
   }
 
-  // ── tasks ──
+  // ── 작업 ──
   if (path === "/tasks" && m === "GET") {
     sortMockTasks();
     return { tasks: mockTasks.map(publicMockTask), active: mockActiveTask };
@@ -1384,8 +1384,8 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
         findingsDeleted++;
       }
     } else {
-      // PostgreSQL uses ON DELETE SET NULL for retained findings. Keep the mock
-      // grouped view consistent by moving them into the unassigned/deleted bucket.
+      // PostgreSQL은 남긴 발견에 ON DELETE SET NULL을 씁니다. 목업의
+      // 묶음 보기도 맞추려고, 그것들을 미지정/삭제 묶음으로 옮깁니다.
       for (const finding of mockFindings) {
         if (finding.task_id !== id) continue;
         finding.task_id = undefined;
@@ -1615,12 +1615,12 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
   if (path === "/workspace/list") return D.workspaceList(q.get("path") ?? "");
   if (path === "/workspace/read") return D.workspaceRead(q.get("path") ?? "");
 
-  // ── stats ──
+  // ── 통계 ──
   if (path === "/stats") {
     return D.stats(task, { tasks: mockTasks, findings: mockFindings, activeTask: mockActiveTask });
   }
 
-  // ── assets ──
+  // ── 자산 ──
   if (path === "/assets/counts") return mockAssetCounts(q.get("task_id"));
   if (path === "/assets" && m === "GET") {
     const type = q.get("type") ?? "";
@@ -1796,7 +1796,7 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
     return { assets };
   }
 
-  // ── companies ──
+  // ── 기업 ──
   if (path === "/companies" && m === "GET") return structuredClone(mockCompanies);
   if (path === "/companies" && m === "POST") {
     const name = String(b.name ?? "").trim();
@@ -1844,7 +1844,7 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
     return { deleted: 1, assets_deleted: assetsDeleted };
   }
 
-  // ── exploration ──
+  // ── 탐색 ──
   if (path === "/exploration/frontier") return D.frontier;
   if (path === "/exploration/findings/stats") {
     const vulnclasses = Array.from(new Set(mockFindings.map((f) => f.vulnclass))).sort();
@@ -2004,7 +2004,7 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
     };
   }
   // 연결된 트래픽 증거: 목록 / 연결 / 편집 / 연결 해제 / 정렬 / 패킷 한 건 상세(demo 메모리 상태).
-  // seg = ["exploration","findings",<id>,"traffic", ...]
+  // seg = ["exploration","findings",<id>,"traffic", ...] 경로 조각
   if (seg[0] === "exploration" && seg[1] === "findings" && seg[3] === "traffic") {
     const findingID = seg[2];
     if (!mockFindings.some((item) => item.id === findingID)) throw new Error("발견이 없습니다");
@@ -2212,7 +2212,7 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
   if (path === "/tokens/daily") return D.dailyTokens;
   if (path === "/tokens/conversations") return D.convTokens;
 
-  // ── traffic / audit / settings ──
+  // ── 트래픽 / 감사 / 설정 ──
   if (path === "/audit") return D.audit;
   if (path === "/traffic" && m === "DELETE") return { deleted: 0 };
   if (path === "/traffic/hosts" && m === "DELETE") return { deleted: (b.hosts as unknown[])?.length ?? 0 };
@@ -2267,7 +2267,7 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
   if (seg[0] === "llm" && seg[1] === "profiles" && seg.length === 3 && m === "DELETE")
     return { deleted: Number(seg[2]) };
 
-  // ── agents ──
+  // ── 에이전트 ──
   if (path === "/agents" && m === "GET") return { agents: D.agents };
   if (path === "/agents" && m === "POST")
     return {
@@ -2286,7 +2286,7 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
     return { rendered: String(b.template ?? "").replace(/\{\{\.(\w+)\}\}/g, "«$1»") };
   if (seg[0] === "agents" && seg[2] === "visibility" && m === "GET") return D.agentDetail(seg[1]).visibility;
 
-  // ── conversations ──
+  // ── 대화 ──
   if (path === "/conversations" && m === "GET") {
     sortMockConversations();
     return {
@@ -2367,7 +2367,7 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
     return { status: "stopped" };
   }
 
-  // ── tools ──
+  // ── 도구 ──
   if (path === "/tools" && m === "GET") return { tools: D.tools };
   if (path === "/tools/custom" && m === "POST") return { key: String(b.key ?? "custom-tool") };
   if (path === "/tools/custom/test") return { output: "(demo) 도구 실행 출력 예시.", is_error: false };
@@ -2386,7 +2386,7 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
   if (path === "/sync/scopesentry/tasks") return { tasks: [] };
   if (path === "/sync/scopesentry/sync") return { synced: {}, companies: null, warnings: null, errors: null };
 
-  // ── skills ──
+  // ── 스킬 ──
   if (path === "/skills" && m === "GET") return { skills: D.skills };
   if (path === "/skills/missing") return { missing: D.missingSkills };
   if (seg[0] === "skills" && seg[2] === "usage") return { calls: D.skillCalls };
@@ -2395,10 +2395,10 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
   if (seg[0] === "skills" && seg[2] === "files" && seg.length >= 4)
     return { content: "# SKILL.md\n\n(demo) 이 skill의 설명 파일 예시입니다.", file: seg.slice(3).join("/") };
 
-  // ── visibility ──
+  // ── 가시성 ──
   if (seg[0] === "visibility" && m === "GET") return { agents: [] };
 
-  // ── intercept ──
+  // ── 가로채기 ──
   if (path === "/intercept/rules" && m === "GET") return { rules: D.interceptRules };
   if (seg[0] === "intercept" && seg[1] === "rules" && seg[3] === "toggle")
     return { ok: true, enabled: b.enabled ?? true };

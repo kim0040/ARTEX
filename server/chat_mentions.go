@@ -80,9 +80,9 @@ func (s *Server) searchChatMentions(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, page)
 }
 
-// prepareChatMentionMessage fails before accepting/persisting a turn when a
-// selected record was deleted or its type does not match. Existing plain chat
-// continues to work without a database.
+// prepareChatMentionMessage는 고른 기록이 지워졌거나 유형이 안 맞으면,
+// 그 턴을 받아들이거나 저장하기 전에 실패합니다. 인용 없는 일반 대화는
+// 데이터베이스가 없어도 그대로 동작합니다.
 func (s *Server) prepareChatMentionMessage(w http.ResponseWriter, message string) (string, bool) {
 	msg, err := composeChatMentionMessage(s.m.pg, message)
 	if err != nil {
@@ -120,7 +120,7 @@ func composeChatMentionMessage(pg *db.DB, message string) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		// Bound each string/array, preserving valid JSON and visible truncation.
+		// 문자열과 배열의 길이를 제한합니다. 올바른 JSON과 잘림 표시는 유지합니다.
 		var value any
 		decoder := json.NewDecoder(strings.NewReader(string(blob)))
 		decoder.UseNumber()

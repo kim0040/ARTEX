@@ -17,7 +17,7 @@ type goalSpec struct {
 	VulnClass string
 }
 
-// launchTask runs the shared post-creation sequence for a task created via ANY
+// launchTask는 어느 경로로 만든 작업이든, 만든 직후 공통 절차를 돌립니다.
 // path (HTTP createTask 또는 orchestration spawn_task). 두 곳을 복사해 붙여 넣지 않으려고 한곳으로 모은다. 두 입구 모두 작업을 자산 그래프에 심고 탐색 그래프의 엔진으로 넘긴다:
 //  1. seed로 루트 자산을 심어, 이벤트 구동 loop에 넘긴다;
 //  2. 선택적 시드 의도. 워커(의도 하나를 실행한 뒤 정지)는 첫 라운드 플래너(의도만 생성)를 기다리지 않고 바로 실행한다;
@@ -73,10 +73,10 @@ func (s *Server) occupiesConcurrencySlot(t *Task) bool {
 	if lifecycle.Queued || lifecycle.Paused || isTerminalStatus(lifecycle.Status) {
 		return false
 	}
-	// Deletion temporarily pauses the Engine but has not committed yet. Preserve
-	// the task's slot until PostgreSQL deletion succeeds; otherwise FIFO promotion
-	// during the drain window could over-admit if deletion later aborts and the
-	// persisted running task is restored.
+	// 삭제가 엔진을 잠깐 일시정지했지만, 아직 확정 전입니다.
+	// PostgreSQL 삭제가 성공할 때까지 그 작업의 자리를 유지합니다. 그렇지 않으면
+	// 빼는 동안 FIFO 승격이 너무 많이 입장할 수 있습니다. 삭제가 나중에 취소되고
+	// 저장돼 있던 실행 중 작업이 되살아날 때요.
 	if s.engine.IsDeleting(t.ID) {
 		return true
 	}
@@ -93,16 +93,17 @@ func (s *Server) runningTaskCount(excludeID string) int {
 	return count
 }
 
-// admitTask is the single admission path for new, resumed, rerun and follow-up
-// work. It atomically either starts the task or appends it to the persistent FIFO
-// queue. mode is bootstrap for a freshly-created task and resume otherwise.
+// admitTask는 새 작업, 재개, 다시 실행, 이어하기의 유일한 입장 경로입니다.
+// 원자적으로 작업을 시작하거나, 영구 FIFO 대기열 끝에 붙입니다.
+// mode는 방금 만든 작업이면 bootstrap, 아니면 resume입니다.
+// 초보용: 작업이 엔진에 들어가거나 대기열에 서는 입구입니다.
 func (s *Server) admitTask(t *Task, mode string) (queued bool, err error) {
 	return s.admitTaskWhen(t, mode, false)
 }
 
-// admitPausedTask is the task-control resume path. The paused precondition is
-// checked under the same scheduler lock as admission so a concurrent pause,
-// dequeue or FIFO promotion cannot leave database and Engine state divergent.
+// admitPausedTask는 작업 제어의 재개 경로입니다. 일시정지였는지는
+// 입장과 같은 스케줄러 잠금 아래에서 확인합니다. 그래서 동시에 일시정지,
+// 대기열 빼기, FIFO 승격이 일어나도 DB와 엔진 상태가 어긋나지 않습니다.
 func (s *Server) admitPausedTask(t *Task) (queued bool, err error) {
 	return s.admitTaskWhen(t, "resume", true)
 }
@@ -116,9 +117,9 @@ func (s *Server) admitTaskWhen(t *Task, mode string, requirePaused bool) (queued
 	}
 	s.concMu.Lock()
 	defer s.concMu.Unlock()
-	// Delete installs its barrier under concMu as well. Re-resolve after acquiring
-	// the lock so a request that captured a task pointer before successful deletion
-	// cannot revive that stale handle after StopTask clears its Engine maps.
+	// 삭제도 concMu 아래에서 장벽을 세웁니다. 잠금을 얻은 뒤에 다시 찾습니다.
+	// 삭제가 성공하기 전에 작업 포인터를 잡은 요청이,
+	// StopTask가 엔진 맵을 지운 뒤 그 낡은 손잡이를 되살리지 못하게 합니다.
 	current, exists := s.m.Task(t.ID)
 	if !exists || current != t || s.engine.IsDeleting(t.ID) {
 		return false, fmt.Errorf("작업을 삭제하는 중입니다")
@@ -144,12 +145,12 @@ func (s *Server) admitTaskWhen(t *Task, mode string, requirePaused bool) (queued
 	enabled, limit := s.m.ConcurrencyLimit()
 	ready := s.engine.ReadyFor(t)
 
-	// Work added to a task that is already admitted only needs a wake-up. This
-	// matters when the configured limit was lowered below the current running
-	// count: an existing task must not suddenly mark itself queued while its
-	// planner/workers are still live. Still compare-and-commit the persisted
-	// status: a concurrent terminal transition must win instead of being silently
-	// reported as a successful follow-up admission.
+	// 이미 입장한 작업에 일을 더하면 깨우기만 하면 됩니다.
+	// 설정된 상한을 지금 도는 수보다 낮춰도 그렇습니다.
+	// 플래너/워커가 아직 살아있는 작업이 갑자기 자신을 대기라고 표시하면 안 됩니다.
+	// 그래도 저장된 상태는 비교 후 확정합니다. 동시에 종료로 바뀌면
+	// 그 종료가 이겨야 하고, 이어하기 입장이 성공한 것처럼 조용히
+	// 보고되면 안 됩니다.
 	if !wasTerminal && !wasPaused && !wasQueued && s.engine.Started(t.ID) && (!enabled || ready) {
 		if err := s.m.ApplyTaskAdmission(t.ID, lifecycle.Status, lifecycle.Status, false, "resume", false); err != nil {
 			return false, err
@@ -158,8 +159,8 @@ func (s *Server) admitTaskWhen(t *Task, mode string, requirePaused bool) (queued
 		return false, nil
 	}
 
-	// Preserve the original first-run mode across repeated admissions. Legacy
-	// queued rows have an empty queue_mode, so infer bootstrap from their graph.
+	// 여러 번 입장해도 처음 실행 모드는 유지합니다. 예전
+	// 대기 행은 queue_mode가 비어 있어서, 그래프로 bootstrap인지 추정합니다.
 	if wasQueued {
 		switch lifecycle.QueueMode {
 		case "bootstrap":
@@ -173,9 +174,9 @@ func (s *Server) admitTaskWhen(t *Task, mode string, requirePaused bool) (queued
 	atCapacity := enabled && s.runningTaskCount(t.ID) >= limit
 	shouldQueue := enabled && (!ready || readyBacklog || atCapacity)
 
-	// Install the execution barrier before reviving a terminal/paused task. Without
-	// this ordering, its already-running worker loops can claim the newly-opened
-	// intent in the gap between status=running and queued=true.
+	// 종료됐거나 일시정지된 작업을 되살리기 전에 실행 장벽을 세웁니다. 이 순서가 아니면
+	// 이미 돌던 워커 루프가, status가 running이 된 뒤 queued가 true가 되기 전 틈에
+	// 새로 열린 의도를 가져갈 수 있습니다.
 	if shouldQueue || wasTerminal || wasPaused || wasQueued {
 		s.engine.Pause(t.ID, agent.Causef("queued_for_admission", "작업이 실행 승인을 기다립니다",
 			"작업이 동시성 큐 또는 승인 상태 제출을 기다리는 중이라 이번 실행은 중지되었습니다. 실행 슬롯을 얻은 뒤에만 의도를 다시 가져옵니다"))
@@ -192,9 +193,9 @@ func (s *Server) admitTaskWhen(t *Task, mode string, requirePaused bool) (queued
 		return false, err
 	}
 	if lifecycle.Status == "timeout" && status == "running" {
-		// ApplyTaskAdmission reset this timed-out run's persisted clock. Clear the
-		// matching Engine gates before either parking it in FIFO or starting work;
-		// otherwise the old settling flag would make every worker skip forever.
+		// ApplyTaskAdmission이 이번 시간 초과 실행의 저장된 시계를 지웠습니다.
+		// FIFO에 세우거나 일을 시작하기 전에, 그에 맞는 엔진 문을 지웁니다.
+		// 안 그러면 옛 settling 플래그 때문에 워커가 영원히 건너뜁니다.
 		s.engine.resetTimeoutRevival(t.ID)
 	}
 	if shouldQueue {
@@ -229,10 +230,10 @@ func (s *Server) startAdmittedTask(t *Task, mode string) {
 		if !s.engine.beginTaskOperation(t.ID) {
 			return
 		}
-		// A first-run task may have kept the Engine pause barrier while waiting
-		// in the concurrency queue. Clear it only after operation admission, or
-		// startTaskEngine's first execContextFor call would return a cancelled
-		// context and silently strand the dequeued task.
+		// 처음 실행 작업은 동시성 대기열에서 기다리는 동안 엔진 일시정지 장벽을 유지했을 수 있습니다.
+		// 작업 입장이 끝난 뒤에만 그 장벽을 풉니다. 그렇지 않으면
+		// startTaskEngine의 첫 execContextFor가 취소된
+		// 컨텍스트를 돌려주고, 대기열에서 뺀 작업이 조용히 멈춥니다.
 		if s.engine.IsPaused(t.ID) {
 			s.engine.Resume(t)
 		}
@@ -244,9 +245,9 @@ func (s *Server) startAdmittedTask(t *Task, mode string) {
 	}
 	s.engine.Run(s.ctx, t)
 	s.engine.Resume(t)
-	// Run returns early for an already-started task. Explicitly ensure a timeout
-	// coordinator exists after resume; resetTimeoutRevival cleared the completed
-	// coordinator's marker and the next real call will stamp a fresh deadline.
+	// 이미 시작한 작업이면 Run은 바로 돌아옵니다. 재개 뒤에는 시간 초과
+	// 조정자가 있는지 명시적으로 확인합니다. resetTimeoutRevival이 끝난
+	// 조정자의 표시를 지웠고, 다음 진짜 호출이 마감을 새로 찍습니다.
 	s.engine.startDeadlineCoordinator(s.ctx, t)
 }
 
@@ -255,9 +256,9 @@ func (s *Server) reconcileConcurrency() {
 	defer s.concMu.Unlock()
 	enabled, limit := s.m.ConcurrencyLimit()
 
-	// A task whose provider chain becomes unavailable cannot do useful work and
-	// must not reserve a limited running slot forever. Park it persistently so a
-	// later profile edit/recovery can re-enter through the same FIFO path.
+	// 프로바이더 체인을 쓸 수 없게 된 작업은 쓸모 있는 일을 못 하고,
+	// 한정된 실행 자리를 영원히 잡으면 안 됩니다. 영구히 세워 두고,
+	// 나중에 설정을 고치거나 복구되면 같은 FIFO 경로로 다시 들어오게 합니다.
 	if enabled {
 		for _, task := range s.m.List() {
 			lifecycle := task.lifecycleSnapshot()
@@ -300,9 +301,9 @@ func (s *Server) reconcileConcurrency() {
 		if left != right {
 			return left < right
 		}
-		// Old rows may not have queued_at and task creation timestamps are only
-		// kept to second precision in memory. Task ids are monotonic, providing a
-		// deterministic oldest-first fallback for those ties.
+		// 옛 행에는 queued_at이 없을 수 있고, 작업 생성 시각은
+		// 메모리에서 초 단위로만 남습니다. 작업 id는 단조 증가하므로,
+		// 같은 시각이면 더 작은 id가 먼저인 결정적 순서로 씁니다.
 		leftID, leftErr := strconv.ParseInt(queued[i].task.ID, 10, 64)
 		rightID, rightErr := strconv.ParseInt(queued[j].task.ID, 10, 64)
 		if leftErr == nil && rightErr == nil {
@@ -320,9 +321,9 @@ func (s *Server) reconcileConcurrency() {
 		}
 		task := entry.task
 		lifecycle := task.lifecycleSnapshot()
-		// Keep FIFO order, but do not consume a concurrency slot for a task
-		// whose explicit chain/global provider is unavailable. It will be retried
-		// after the user configures or resets its LLM chain.
+		// FIFO 순서는 지키되, 명시한 체인이나 전역 프로바이더를 쓸 수 없는 작업에는
+		// 동시성 자리를 주지 않습니다. 사용자가 LLM 체인을
+		// 설정하거나 초기화한 뒤에 다시 시도합니다.
 		if lifecycle.Paused || (enabled && !s.engine.ReadyFor(task)) {
 			continue
 		}
@@ -361,21 +362,22 @@ func (s *Server) reviveTask(t *Task) {
 	}
 }
 
-// createGoals materializes the goal node(s) under the task root (rel objective).
-// Decomposition is done ENTIRELY by the LLM (the project requires an LLM). There is
-// no rule-based fallback splitter — it only ever produced garbage (shredded URLs,
-// meaningless 2-way splits). If the LLM yields nothing (an error), the raw task goal
-// is used verbatim as a single goal so the task still has something to judge against.
-// Returns the seeded specs so callers can emit activity records for them.
-// emit, when non-nil, is forwarded to DecomposeGoals so LLM steps are visible in the UI.
+// createGoals는 작업 루트 아래에 목표 노드를 만듭니다(관계 objective).
+// 분해는 전부 LLM이 합니다(이 프로젝트는 LLM이 필요합니다).
+// 규칙으로 자르는 대체 경로는 없습니다. 그건 쓰레기만 만들었습니다(URL을 찢고,
+// 의미 없는 2분할). LLM이 아무것도 안 주면(오류), 작업 목표 원문을
+// 목표 하나로 그대로 써서, 판단할 기준은 남깁니다.
+// 심은 명세를 돌려주어, 호출자가 활동 기록을 낼 수 있게 합니다.
+// emit이 nil이 아니면 DecomposeGoals로 넘깁니다. LLM 단계가 화면에 보이게 하려고요.
+// 초보용: 작업 목표를 탐색 그래프의 목표 노드로 만들고, 분해 과정은 화면에 보입니다.
 func (s *Server) createGoals(ctx context.Context, t *Task, emit func(db.Activity)) []goalSpec {
 	if t == nil {
 		return nil
 	}
-	// Use the SAME LLM the task runs on (its pinned profile, else the active profile),
-	// NOT agent.FromEnv() — the LLM is configured via the UI (DB profile), not env vars,
-	// so FromEnv returned empty and every task silently fell back to the crude rule
-	// splitter (which shredded URLs / made meaningless 2-way splits).
+	// 작업이 도는 것과 같은 LLM을 씁니다(고정한 설정, 없으면 활성 설정).
+	// agent.FromEnv()가 아닙니다. LLM은 화면의 DB 설정으로 고르고, 환경 변수가 아니라서
+	// FromEnv는 빈 값을 줬고, 모든 작업이 조용히 거친 규칙
+	// 분할로 떨어졌습니다(URL을 찢거나 의미 없는 2분할).
 	var specs []goalSpec
 	var as *db.AssetStore
 	if s.m != nil {
@@ -392,15 +394,15 @@ func (s *Server) createGoals(ctx context.Context, t *Task, emit func(db.Activity
 		}
 	}
 	if len(specs) == 0 {
-		// No decomposed goals (LLM error / no provider): use the raw task goal verbatim
-		// as a single goal so the task still has something to judge against. This is the
-		// only path that writes here — decomposed goals are already persisted by the tool.
+		// 분해된 목표가 없으면(LLM 오류 / 프로바이더 없음) 작업 목표 원문을
+		// 목표 하나로 씁니다. 판단할 기준은 남기려고요. 여기 쓰는 경로는
+		// 이것뿐입니다. 분해된 목표는 도구가 이미 저장합니다.
 		if g := strings.TrimSpace(t.Goal); g != "" {
 			log.Printf("[goals] task %s: LLM 목표 분해 산출이 없어 「원래 목표를 단일 목표로」 되돌립니다", t.ID)
 			origin, _ := t.Store.OriginFactID()
 			id, _ := t.Store.AddNode(db.KindGoal, map[string]any{"text": g}, 0, "open", "system", nil)
 			if origin > 0 && id > 0 {
-				_ = t.Store.Link(origin, db.RelSpawns, id) // goal descends from the task root (origin fact)
+				_ = t.Store.Link(origin, db.RelSpawns, id) // 목표는 작업 루트(출발 사실) 아래에 매달립니다.
 			}
 			specs = []goalSpec{{Text: g}}
 		}

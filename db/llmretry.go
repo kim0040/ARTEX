@@ -23,8 +23,7 @@ type RetryRule struct {
 	IntervalMS int `json:"interval_ms"`
 }
 
-// Interval returns the configured fixed interval, or 0 when unset (caller keeps
-// its own default ladder).
+// Interval은 설정된 고정 간격을 돌려준다. 설정이 없으면 0이며, 호출자가 자기 기본 계단을 쓴다.
 func (r RetryRule) Interval() time.Duration {
 	if r.IntervalMS <= 0 {
 		return 0
@@ -32,9 +31,9 @@ func (r RetryRule) Interval() time.Duration {
 	return time.Duration(r.IntervalMS) * time.Millisecond
 }
 
-// Or returns the rule with each unset field filled in from fallback. Used to
-// layer a profile override on top of the global policy field by field, so a
-// profile that only pins the interval still inherits the global count.
+// Or는 비어 있는 필드를 fallback으로 채운 규칙을 돌려준다.
+// 프로파일 덮어쓰기를 전역 정책 위에 필드마다 얹는다.
+// 간격만 고정한 프로파일도 전역 횟수는 그대로 물려받는다.
 func (r RetryRule) Or(fallback RetryRule) RetryRule {
 	if r.Attempts == 0 {
 		r.Attempts = fallback.Attempts
@@ -45,15 +44,15 @@ func (r RetryRule) Or(fallback RetryRule) RetryRule {
 	return r
 }
 
-// retry knob bounds. A count above the cap turns a blip into a token bonfire;
-// an interval above an hour outlives any transient failure worth waiting out.
+// 재시도 조절 값의 상한. 횟수가 상한을 넘으면 잠깐의 문제가 토큰을 태우고,
+// 간격이 한 시간을 넘으면 기다려 볼 만한 일시 장애보다 오래 기다린다.
 const (
 	maxRetryAttempts   = 20
-	maxRetryIntervalMS = 3600_000 // 1h
+	maxRetryIntervalMS = 3600_000 // 1시간
 )
 
-// Clamped returns the rule with out-of-range values pulled back into the sane
-// band (attempts within [-1, 20], interval within [0, 1h]).
+// Clamped는 범위를 벗어난 값을 안전한 구간으로 당긴 규칙을 돌려준다
+// (횟수는 [-1, 20], 간격은 [0, 1시간]).
 func (r RetryRule) Clamped() RetryRule {
 	if r.Attempts < -1 {
 		r.Attempts = -1
@@ -70,8 +69,8 @@ func (r RetryRule) Clamped() RetryRule {
 	return r
 }
 
-// Clamped bounds a profile's override the same way the global policy is bounded,
-// so a hand-crafted API payload can't land a value the CHECK constraint rejects.
+// Clamped는 프로파일 덮어쓰기도 전역 정책과 같은 상한으로 자른다.
+// 그래서 손으로 만든 API 본문이 CHECK가 거절할 값을 넣지 못한다.
 func (o RetryOverride) Clamped() RetryOverride {
 	o.Connect, o.Empty, o.Stream = o.Connect.Clamped(), o.Empty.Clamped(), o.Stream.Clamped()
 	return o
@@ -95,15 +94,15 @@ type LLMRetryPolicy struct {
 	Intent RetryRule `json:"intent"`
 }
 
-// Clamped returns the policy with every rule clamped.
+// Clamped는 모든 규칙을 상한 안으로 자른 정책을 돌려준다.
 func (p LLMRetryPolicy) Clamped() LLMRetryPolicy {
 	p.Connect, p.Empty, p.Stream = p.Connect.Clamped(), p.Empty.Clamped(), p.Stream.Clamped()
 	p.Breaker, p.Intent = p.Breaker.Clamped(), p.Intent.Clamped()
 	return p
 }
 
-// LLMRetryPolicy reads the global retry policy. A missing or unparseable value
-// yields the zero policy — i.e. every layer on its built-in default.
+// LLMRetryPolicy는 전역 재시도 정책을 읽는다. 값이 없거나 해석할 수 없으면
+// 제로 정책을 돌려준다. 즉 각 층이 코드에 있는 기본값을 쓴다.
 func (d *DB) LLMRetryPolicy() LLMRetryPolicy {
 	var p LLMRetryPolicy
 	if d == nil {
@@ -119,7 +118,7 @@ func (d *DB) LLMRetryPolicy() LLMRetryPolicy {
 	return p.Clamped()
 }
 
-// SetLLMRetryPolicy persists the global retry policy (values are clamped first).
+// SetLLMRetryPolicy는 전역 재시도 정책을 저장한다. 값은 먼저 상한 안으로 자른다.
 func (d *DB) SetLLMRetryPolicy(p LLMRetryPolicy) error {
 	raw, err := json.Marshal(p.Clamped())
 	if err != nil {

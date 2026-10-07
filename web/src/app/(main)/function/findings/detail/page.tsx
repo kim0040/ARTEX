@@ -44,7 +44,7 @@ function fmtTime(ts: string) {
   return new Date(ts).toLocaleString("zh-CN");
 }
 
-// FieldRow is one label/value line in the right-hand status panel.
+// FieldRow는 오른쪽 상태 패널의 이름/값 한 줄입니다.
 function FieldRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex items-start justify-between gap-3 py-2.5">
@@ -130,7 +130,7 @@ function FindingDetailInner() {
 
   return (
     <Tabs value={tab} onValueChange={setTab} className="flex flex-1 flex-col gap-0">
-      {/* Sticky header */}
+      {/* 위에 붙어 있는 머리 */}
       <header className="sticky top-0 z-10 flex flex-col gap-2 border-b bg-background/95 px-4 py-2.5 backdrop-blur lg:px-6">
         <div className="flex flex-wrap items-center gap-2">
           <SidebarTrigger className="-ml-1" />
@@ -157,7 +157,7 @@ function FindingDetailInner() {
         </TabsList>
       </header>
 
-      {/* Tab content */}
+      {/* 탭 내용 */}
       <div className="flex-1 p-4 lg:p-6">
         {/* 개요: 왼쪽(요약 + 증거) / 오른쪽(상태 영역) */}
         <TabsContent value="overview" className="mt-0">
@@ -334,7 +334,7 @@ function FindingDetailInner() {
   );
 }
 
-// useSearchParams must sit under a Suspense boundary for static export.
+// useSearchParams는 정적 내보내기를 위해 Suspense 안에 있어야 합니다.
 export default function FindingDetailPage() {
   return (
     <React.Suspense fallback={null}>

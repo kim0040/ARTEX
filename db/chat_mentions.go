@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-// ChatMention is a lightweight search result. Details are read again on send.
+// ChatMention은 가벼운 검색 결과다. 자세한 내용은 보낼 때 다시 읽는다.
 type ChatMention struct {
 	Kind        string `json:"kind"`
 	ID          int64  `json:"id"`
@@ -40,15 +40,15 @@ func ValidChatMentionKind(kind string) bool {
 	return false
 }
 
-// SearchChatMentions searches the shared catalog, just like the asset/finding
-// pages. Values remain SQL parameters; %, _ and backslash are literal search text.
+// SearchChatMentions는 자산·발견 화면과 같이 공유 목록을 검색한다.
+// 값은 SQL 매개변수로 남고, %, _, 역슬래시는 글자 그대로 검색한다.
 func (d *DB) SearchChatMentions(ctx context.Context, kind, query string) ([]ChatMention, error) {
 	page, err := d.SearchChatMentionsPage(ctx, kind, query, "")
 	return page.Items, err
 }
 
-// SearchChatMentionsPage uses the last result's stable sort key rather than an
-// offset, so loading later pages does not repeatedly skip all earlier results.
+// SearchChatMentionsPage는 offset 대신 마지막 결과의 안정적인 정렬 키를 쓴다.
+// 그래서 다음 페이지를 열 때 앞 결과를 매번 다시 건너뛰지 않는다.
 func (d *DB) SearchChatMentionsPage(ctx context.Context, kind, query, cursor string) (ChatMentionPage, error) {
 	page := ChatMentionPage{Items: make([]ChatMention, 0)}
 	if kind != "" && !ValidChatMentionKind(kind) {

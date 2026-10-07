@@ -130,12 +130,12 @@ export default function LLMRecordsPage() {
   const [total, setTotal] = React.useState(0);
   const [loading, setLoading] = React.useState(false);
 
-  // Recording on/off toggle (settings.llm_record; default off). When off the
-  // backend records nothing.
+  // 기록 켜기/끄기(settings.llm_record, 기본은 끔). 끄면
+  // 백엔드는 아무것도 기록하지 않습니다.
   const [recEnabled, setRecEnabled] = React.useState(false);
   const [recBusy, setRecBusy] = React.useState(false);
 
-  // Inline detail panel (Burp-style split, not a dialog)
+  // 그 자리 상세 패널(버프처럼 화면을 나누고, 대화창은 아님)
   const [selected, setSelected] = React.useState<LLMRecordItem | null>(null);
   const [detail, setDetail] = React.useState<LLMRecordDetail | null>(null);
   const [detailLoading, setDetailLoading] = React.useState(false);
@@ -155,14 +155,14 @@ export default function LLMRecordsPage() {
     ? detail?.raw_response
     : detail?.response_body && tryFormatJSON(detail.response_body);
 
-  // Per-task delete (task picker + confirm dialog)
+  // 작업별 삭제(작업 고르기 + 확인 대화)
   const [tasks, setTasks] = React.useState<LLMTask[]>([]);
   const [pickedTask, setPickedTask] = React.useState("");
   const [deleteOpen, setDeleteOpen] = React.useState(false);
   const [deleting, setDeleting] = React.useState(false);
-  const [reloadTick, setReloadTick] = React.useState(0); // manual refetch trigger
+  const [reloadTick, setReloadTick] = React.useState(0); // 사람이 누른 다시 불러오기 신호
 
-  // Load recording toggle state on mount.
+  // 마운트 때 기록 스위치 상태를 불러옵니다.
   React.useEffect(() => {
     let alive = true;
     api
@@ -174,29 +174,29 @@ export default function LLMRecordsPage() {
 
   const toggleRecording = async (on: boolean) => {
     setRecBusy(true);
-    setRecEnabled(on); // optimistic
+    setRecEnabled(on); // 먼저 화면에 반영
     try {
       const s = await api.setSettings({ llm_record: on });
       setRecEnabled(!!s.llm_record);
     } catch {
-      setRecEnabled(!on); // revert on failure
+      setRecEnabled(!on); // 실패하면 되돌림
     } finally {
       setRecBusy(false);
     }
   };
 
-  // Debounce session filter.
+  // 세션 필터는 잠깐 기다렸다가 적용합니다.
   React.useEffect(() => {
     const t = setTimeout(() => setSessionQ(session.trim()), 300);
     return () => clearTimeout(t);
   }, [session]);
 
-  // Reset page on filter change.
+  // 필터가 바뀌면 페이지를 처음으로 되돌립니다.
   React.useEffect(() => {
     setPage(0);
   }, [sessionQ, model, size, pickedTask]);
 
-  // Load list.
+  // 목록을 불러옵니다.
   React.useEffect(() => {
     let alive = true;
     setLoading(true);
@@ -216,7 +216,7 @@ export default function LLMRecordsPage() {
     return () => { alive = false; };
   }, [page, size, sessionQ, model, pickedTask, reloadTick]);
 
-  // Delete every LLM record for the picked task, then refetch.
+  // 고른 작업의 LLM 기록을 모두 지운 뒤 다시 불러옵니다.
   const confirmDelete = () => {
     setDeleting(true);
     api
@@ -233,7 +233,7 @@ export default function LLMRecordsPage() {
       .finally(() => setDeleting(false));
   };
 
-  // Lazy-load full request/response when a row is selected.
+  // 줄을 고르면 전체 요청/응답을 나중에 불러옵니다.
   React.useEffect(() => {
     if (!selected) {
       setDetail(null);
@@ -256,7 +256,7 @@ export default function LLMRecordsPage() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4">
-      {/* Header */}
+      {/* 머리 */}
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-2">
           <RadioIcon className="h-5 w-5 text-muted-foreground" />
@@ -265,7 +265,7 @@ export default function LLMRecordsPage() {
         </div>
       </div>
 
-      {/* Toolbar */}
+      {/* 도구 막대 */}
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative max-w-sm flex-1">
           <SearchIcon className="absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -325,7 +325,7 @@ export default function LLMRecordsPage() {
           </SelectContent>
         </Select>
 
-        {/* Recording on/off — off means no LLM calls are recorded */}
+        {/* 기록 켜기/끄기. 끄면 LLM 호출을 기록하지 않습니다 */}
         <div className="flex items-center gap-2 rounded-md border px-2.5 py-1">
           <Switch
             id="llm-rec-toggle"
@@ -373,7 +373,7 @@ export default function LLMRecordsPage() {
         </div>
       </div>
 
-      {/* History table + inline detail (Burp-style split) */}
+      {/* 기록 표와 그 자리 상세(버프처럼 화면을 나눔) */}
       <div className="flex h-[calc(100vh-13rem)] min-h-0 flex-col gap-3">
         <Card className="flex min-h-0 flex-1 flex-col overflow-hidden py-0">
           <div className="min-h-0 flex-1 overflow-auto">
@@ -455,10 +455,10 @@ export default function LLMRecordsPage() {
           </div>
         </Card>
 
-        {/* Inline detail panel */}
+        {/* 그 자리 상세 패널 */}
         {selected && (
           <Card className="flex h-[42%] min-h-0 flex-col overflow-hidden py-0">
-            {/* Detail header */}
+            {/* 상세 머리 */}
             <div className="flex items-center gap-2 border-b px-3 py-2">
               <Badge variant="outline" className="text-xs font-mono">
                 #{selected.id}
@@ -506,7 +506,7 @@ export default function LLMRecordsPage() {
                 <XIcon />
               </Button>
             </div>
-            {/* Request / Response split */}
+            {/* 요청 / 응답 나눔 */}
             <div className="grid min-h-0 flex-1 grid-cols-2 divide-x">
               <div className="flex min-h-0 min-w-0 flex-col">
                 <div className="flex items-center gap-2 border-b py-0.5 pr-1.5 pl-3 text-[11px] font-medium text-muted-foreground">

@@ -9,10 +9,11 @@ import (
 	"github.com/Autumn-27/artex/db"
 )
 
-// --- asset intercept rule CRUD ---
+// --- 자산 가로채기 규칙 생성·조회·수정·삭제 ---
 //
-// Global asset blocklist: exact/fuzzy domain·ip·url + CIDR. This layer only
-// persists rules; the actual match/enforcement logic lives elsewhere.
+// 전역 자산 가로채기 목록입니다. exact/fuzzy 도메인·ip·url 과 CIDR를 담습니다. 이 층은
+// 규칙만 저장하고, 실제로 맞추고 막는 일은 다른 곳에 있습니다.
+// 초보용: 화면의 전역 가로채기 목록입니다. 자산 그래프의 대상을 막을지는 여기서 정하지 않습니다.
 
 func (s *Server) assetInterceptListRules(w http.ResponseWriter, r *http.Request) {
 	pg := s.pg(w)
@@ -120,7 +121,7 @@ func (s *Server) assetInterceptToggleRule(w http.ResponseWriter, r *http.Request
 	writeJSON(w, 200, map[string]any{"ok": true, "enabled": req.Enabled})
 }
 
-// --- helpers ---
+// --- 도우미 ---
 
 type assetInterceptRuleReq struct {
 	Enabled bool   `json:"enabled"`
@@ -129,10 +130,10 @@ type assetInterceptRuleReq struct {
 	Note    string `json:"note"`
 }
 
-// validateAssetInterceptRuleReq normalizes and validates a rule. It trims the
-// pattern and, for the strictly-formatted kinds (exact_ip / cidr), rejects
-// malformed values; fuzzy kinds and domain/url patterns are left as free text
-// (the enforcement layer decides how to interpret them).
+// validateAssetInterceptRuleReq는 규칙을 맞추고 검사합니다. pattern의 앞뒤 공백을 지웁니다.
+// 형식이 엄격한 종류(exact_ip / cidr)는 잘못된 값을 거절합니다.
+// fuzzy 종류와 domain/url 패턴은 자유 글로 둡니다.
+// 그 글은 집행하는 쪽이 어떻게 읽을지 정합니다.
 func validateAssetInterceptRuleReq(req *assetInterceptRuleReq) error {
 	req.Pattern = strings.TrimSpace(req.Pattern)
 	if req.Pattern == "" {
@@ -140,7 +141,7 @@ func validateAssetInterceptRuleReq(req *assetInterceptRuleReq) error {
 	}
 	switch req.Kind {
 	case "exact_domain", "exact_url", "fuzzy_domain", "fuzzy_ip", "fuzzy_url":
-		// free-form, no format check
+		// 자유 형식입니다. 형식 검사는 하지 않습니다.
 	case "exact_ip":
 		if net.ParseIP(req.Pattern) == nil {
 			return fmt.Errorf("exact_ip가 올바른 IP 주소가 아닙니다: %s", req.Pattern)

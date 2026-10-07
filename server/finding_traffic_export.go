@@ -25,7 +25,7 @@ func writeFindingsEvidenceZip(out io.Writer, findings []*db.DBFinding, stage str
 }
 
 func writeFindingsZipEntries(zw *zip.Writer, findings []*db.DBFinding, stage string, now time.Time) error {
-	store := evidence.New(nil, nil, stage) // private export copy; not subject to GC
+	store := evidence.New(nil, nil, stage) // 내보내기 전용 사본입니다. 쓰레기 수집 대상이 아닙니다.
 	used := map[string]int{}
 	for _, f := range findings {
 		base := report.FindingFilename(f)
@@ -100,8 +100,8 @@ func buildFindingsEvidenceZip(path string, findings []*db.DBFinding, stage strin
 	if err := errors.Join(writeErr, syncErr, closeErr); err != nil {
 		return err
 	}
-	// Re-read every compressed entry to validate the finished ZIP, including CRCs,
-	// before the caller starts an HTTP download response.
+	// 압축된 항목을 모두 다시 읽어, CRC까지 포함해 끝난 ZIP이 맞는지 확인합니다.
+	// 호출자가 HTTP 다운로드 응답을 시작하기 전에 합니다.
 	archive, err := zip.OpenReader(path)
 	if err != nil {
 		return err

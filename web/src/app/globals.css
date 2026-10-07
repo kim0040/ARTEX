@@ -2,7 +2,7 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
-/* Theme preset styles: these override CSS variables based on the selected data-theme-preset */
+/* 테마 프리셋 스타일: 고른 data-theme-preset에 따라 CSS 변수를 덮어씁니다 */
 @import "../styles/presets/brutalist.css";
 @import "../styles/presets/soft-pop.css";
 @import "../styles/presets/tangerine.css";
@@ -52,8 +52,8 @@
   --font-sans: var(--font-sans);
 }
 
-/* Default theme styles (used when no data-theme-preset is set or when 'default' is selected).
-These serve as the fallback; there is no separate default.css file. */
+/* 기본 테마(data-theme-preset이 없거나 'default'일 때).
+따로 default.css 파일은 없고, 이 값이 대신 쓰입니다. */
 :root {
   --radius: 0.625rem;
   --card: oklch(1 0 0);
@@ -86,7 +86,7 @@ These serve as the fallback; there is no separate default.css file. */
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
 
-  /* fonts */
+  /* 글꼴 */
   --font-sans: var(--font-geist);
   --font-mono: var(--font-geist-mono);
   --background: oklch(1 0 0);

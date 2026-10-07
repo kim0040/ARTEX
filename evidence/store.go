@@ -61,8 +61,8 @@ func verifyFile(path, hash string, length int64) error {
 	return nil
 }
 
-// A new body becomes visible only after a durable write. Failed SQL commits may
-// leave unreferenced files; GC reaps those after a full day's grace period.
+// 새 본문은 내구성 있는 쓰기가 끝난 뒤에만 보입니다. SQL 커밋이 실패하면
+// 참조 없는 파일이 남을 수 있고, GC는 하루의 유예 뒤에 그것을 거둡니다.
 func (s *Store) writeBody(r io.Reader, expectedLength int64, expectedHash string) (hash string, err error) {
 	stage := filepath.Join(s.Dir, ".staging")
 	if err = os.MkdirAll(stage, 0o700); err != nil {
@@ -99,7 +99,7 @@ func (s *Store) writeBody(r io.Reader, expectedLength int64, expectedHash string
 		if err = verifyFile(path, hash, n); err != nil {
 			return "", err
 		}
-		// Refresh the grace period for a restored but not-yet-committed body.
+		// 복원됐지만 아직 커밋되지 않은 본문의 유예를 다시 잡습니다.
 		now := time.Now()
 		return hash, os.Chtimes(path, now, now)
 	} else if !os.IsNotExist(err) {
@@ -119,8 +119,9 @@ func (s *Store) writeBody(r io.Reader, expectedLength int64, expectedHash string
 	return hash, d.Sync()
 }
 
-// StageFindingsExport freezes bindings/report versions and makes private body
-// copies before the HTTP response is started. The caller owns and removes dest.
+// StageFindingsExport는 바인딩·보고서 버전을 얼리고, HTTP 응답을 시작하기 전에
+// 본문 사본을 만듭니다. dest의 소유와 삭제는 호출자 몫입니다.
+// 초보: 화면이 발견 보고서를 내려주기 전에, 트래픽 저장소와 분리된 증거 사본을 고정합니다.
 func (s *Store) StageFindingsExport(ctx context.Context, findings []*db.DBFinding, dest string, copyBodies bool) error {
 	return s.DB.WithEvidenceTx(ctx, func(tx *sql.Tx) error {
 		var snapshots []db.TrafficEvidenceSnapshot
@@ -173,8 +174,9 @@ func (s *Store) prepare(ctx context.Context, refs []db.TrafficRef) ([]db.Prepare
 		}
 		v := db.TrafficEvidenceSnapshot{SourceTrafficID: e.ID, CapturedAt: e.TS, URL: e.URL, Method: e.Method, Status: e.Status, ContentType: e.ContentType,
 			ReqHead: e.ReqHead, RespHead: e.RespHead, ReqHash: rh, RespHash: ph, ReqLen: e.ReqLen, RespLen: e.RespLen}
-		// Raw wire bytes: normalize once here so the ID, the stored row and every
-		// downstream consumer (archive, API responses) all see the same text.
+		// 전송 원문 바이트입니다. 여기서 한 번만 정규화해, 번호와 저장된 행과
+		// 이후 소비자(보관함, API 응답)가 같은 글을 보게 합니다.
+		// 초보: 기록 프록시의 트래픽 원문을 발견 증거로 고정하는 지점입니다.
 		v = v.Normalize()
 		v.ID = db.TrafficSnapshotID(v)
 		out = append(out, db.PreparedTrafficEvidence{Ref: byID[e.ID], Snapshot: v})
@@ -231,13 +233,13 @@ func (s *Store) WithBinding(ctx context.Context, findingID, bindingID int64, fn 
 	})
 }
 
-// Binding resolves one binding's metadata under the evidence lock and releases
-// the lock before returning. Callers that then stream a body to a client must
-// use this instead of WithBinding: verifyFile+io.Copy is O(body size), so a
-// large download (or a slow client) holding WithEvidenceTx would block every
-// evidence write process-wide. Reading the blob afterwards is safe — blobs are
-// content-addressed and GC only reaps unreferenced files after a 24h grace
-// period, and an already-open fd survives an unlink regardless.
+// Binding은 증거 잠금 아래에서 바인딩 메타데이터 하나를 푼 뒤, 돌려주기 전에
+// 잠금을 놓습니다. 이어서 본문을 클라이언트에 흘리는 호출자는 WithBinding 대신
+// 이것을 써야 합니다. verifyFile과 io.Copy는 본문 크기에 비례하므로, 큰 다운로드나
+// 느린 클라이언트가 WithEvidenceTx를 쥐면 프로세스 안의 증거 쓰기가 모두 막힙니다.
+// 그 다음 파일을 읽는 것은 안전합니다. 파일은 내용 해시로 찾고, GC는 참조 없는
+// 파일을 24시간 유예 뒤에만 거두며, 이미 연 기술자는 파일이 지워져도 남습니다.
+// 초보: 화면으로 본문을 내려주는 동안 증거 잠금을 쥐지 않기 위한 조회입니다.
 func (s *Store) Binding(ctx context.Context, findingID, bindingID int64) (db.FindingTrafficBinding, error) {
 	var out db.FindingTrafficBinding
 	err := s.WithBinding(ctx, findingID, bindingID, func(b db.FindingTrafficBinding) error {
@@ -247,7 +249,7 @@ func (s *Store) Binding(ctx context.Context, findingID, bindingID int64) (db.Fin
 	return out, err
 }
 
-// OpenBody may be called without holding the evidence lock; see Binding.
+// OpenBody는 증거 잠금 없이 부를 수 있습니다. Binding을 보세요.
 func (s *Store) OpenBody(snapshot db.TrafficEvidenceSnapshot, side string) (*os.File, int64, error) {
 	hash, length := snapshot.ReqHash, snapshot.ReqLen
 	if side == "response" {
@@ -266,8 +268,9 @@ func (s *Store) OpenBody(snapshot db.TrafficEvidenceSnapshot, side string) (*os.
 	return f, length, err
 }
 
-// CopySnapshots is used by both report downloads and portable task archives.
-// The destination owns real copies, never links into either disposable store.
+// CopySnapshots는 보고서 다운로드와 옮길 수 있는 작업 보관이 함께 씁니다.
+// 목적지는 실제 사본을 갖고, 지워도 되는 어느 저장소로도 링크하지 않습니다.
+// 초보: 목적지는 사본이라, 트래픽 저장소나 이 증거 디렉터리가 지워져도 남습니다.
 func (s *Store) CopySnapshots(ctx context.Context, snapshots []db.TrafficEvidenceSnapshot, dest string) error {
 	return s.DB.WithEvidenceTx(ctx, func(*sql.Tx) error { return s.copySnapshots(snapshots, dest) })
 }
@@ -315,8 +318,9 @@ func (s *Store) InstallSnapshots(ctx context.Context, snapshots []db.TrafficEvid
 	return s.WithInstalledSnapshots(ctx, snapshots, source, func() error { return nil })
 }
 
-// WithInstalledSnapshots pins installed bodies until the metadata restore finishes.
-// The callback must not acquire another evidence advisory lock.
+// WithInstalledSnapshots는 메타데이터 복원이 끝날 때까지 설치한 본문을 붙듭니다.
+// 콜백은 PostgreSQL의 증거 advisory 잠금을 또 잡으면 안 됩니다.
+// 초보: 옮긴 작업의 증거 본문을 이 저장소에 다시 넣는 동안 붙잡아 둡니다.
 func (s *Store) WithInstalledSnapshots(ctx context.Context, snapshots []db.TrafficEvidenceSnapshot, source string, restore func() error) error {
 	return s.DB.WithEvidenceTx(ctx, func(*sql.Tx) error {
 		for _, v := range snapshots {

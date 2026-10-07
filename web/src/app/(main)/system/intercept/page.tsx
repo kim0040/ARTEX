@@ -1,5 +1,7 @@
 "use client";
 
+// 가드가 도구를 실행하기 전에 묻는 가로채기 규칙을 고칩니다.
+
 import * as React from "react";
 import { toast } from "sonner";
 import {
@@ -99,11 +101,11 @@ function JudgeSparkbars({ daily }: { daily: JudgeDayUsage[] }) {
   );
 }
 
-// ---- tool scope ----
+// ---- 도구 범위 ----
 
-// SDK tools are intentionally not seeded into the DB (they apply to every agent
-// and have no per-agent binding). We hardcode them here so they still appear in
-// the scope dialog.
+// SDK 도구는 일부러 DB에 심지 않습니다(모든 에이전트에 적용되고
+// 에이전트별 연결이 없음). 여기서 직접 적어 범위
+// 대화에도 나오게 합니다.
 function sdkTool(key: string, description: string): Tool {
   return { key, system: true, description, schema: {}, agents: [], enabled: true, kind: "builtin" };
 }
@@ -130,7 +132,7 @@ const SDK_KEYS = new Set([...SDK_EXEC, ...SDK_WRITE].map((t) => t.key));
 function groupTools(dbTools: Tool[]) {
   const sys: Tool[] = [], custom: Tool[] = [];
   for (const t of dbTools) {
-    if (SDK_KEYS.has(t.key)) continue; // already covered by hardcoded groups
+    if (SDK_KEYS.has(t.key)) continue; // 이미 고정된 묶음에 있음
     if (t.system) sys.push(t);
     else          custom.push(t);
   }
@@ -142,7 +144,7 @@ function groupTools(dbTools: Tool[]) {
   ].filter((g) => g.tools.length > 0);
 }
 
-// ---- form state ----
+// ---- 입력 상태 ----
 
 type RuleForm = {
   name: string;
@@ -172,7 +174,7 @@ const defaultForm = (): RuleForm => ({
   timeout_action: "deny",
 });
 
-// ---- small components ----
+// ---- 작은 컴포넌트 ----
 
 function ActionBadge({ action }: { action: InterceptAction }) {
   if (action === "allow") return <Badge variant="secondary">허용</Badge>;
@@ -191,7 +193,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-// ---- LLM fallback judge card ----
+// ---- LLM 최후 판정 카드 ----
 
 const FOLLOW_ACTIVE = "0"; // profile_id 0 = 활성/기본 설정을 따라감
 
@@ -437,7 +439,7 @@ function JudgeCard() {
   );
 }
 
-// ---- page ----
+// ---- 페이지 ----
 
 export default function InterceptPage() {
   const [rules, setRules]     = React.useState<InterceptRule[]>([]);
@@ -449,7 +451,7 @@ export default function InterceptPage() {
   const [regexErr, setRegexErr] = React.useState("");
   const [regexWarn, setRegexWarn] = React.useState(false); // true = JS는 해석할 수 없지만 합법적인 Go 문법일 수 있음
 
-  // ---- tool scope dialog ----
+  // ---- 도구 범위 대화 ----
   const [scopeOpen, setScopeOpen]       = React.useState(false);
   const [allTools, setAllTools]         = React.useState<Tool[]>([]);
   const [enabledTools, setEnabledTools] = React.useState<Set<string>>(new Set());
@@ -457,7 +459,7 @@ export default function InterceptPage() {
   const [scopeSaving, setScopeSaving]   = React.useState(false);
   const [scopeTools, setScopeTools]     = React.useState<string[]>([]); // 페이지 머리 안내 막대: 지금 가로채기에 들어온 도구
 
-  // ---- data ----
+  // ---- 데이터 ----
 
   const loadScope = React.useCallback(async () => {
     try {
@@ -495,7 +497,7 @@ export default function InterceptPage() {
     }
   }, [form.pattern, form.match_type]);
 
-  // ---- rule handlers ----
+  // ---- 규칙 처리 ----
 
   function set(patch: Partial<RuleForm>) { setForm(f => ({ ...f, ...patch })); }
 
@@ -560,7 +562,7 @@ export default function InterceptPage() {
     }
   }
 
-  // ---- scope handlers ----
+  // ---- 범위 처리 ----
 
   async function openScope() {
     setScopeOpen(true);
@@ -600,12 +602,12 @@ export default function InterceptPage() {
 
   const toolGroups = React.useMemo(() => groupTools(allTools), [allTools]);
 
-  // ---- render ----
+  // ---- 그리기 ----
 
   return (
     <div className="flex flex-1 flex-col gap-5 p-6">
 
-      {/* ---- header ---- */}
+      {/* ---- 머리 ---- */}
       <div className="flex items-center gap-2.5">
         <ShieldAlertIcon className="h-5 w-5 shrink-0" />
         <div>
@@ -759,7 +761,7 @@ export default function InterceptPage() {
         </TabsContent>
       </Tabs>
 
-      {/* ---- editor sheet ---- */}
+      {/* ---- 편집 패널 ---- */}
       <Sheet open={open} onOpenChange={setOpen}>
         <SheetContent side="right" className="flex flex-col gap-0 p-0 sm:max-w-md">
           <SheetHeader className="border-b px-6 py-4">
@@ -922,7 +924,7 @@ export default function InterceptPage() {
         </SheetContent>
       </Sheet>
 
-      {/* ---- scope dialog ---- */}
+      {/* ---- 범위 대화 ---- */}
       <Dialog open={scopeOpen} onOpenChange={setScopeOpen}>
         <DialogContent className="sm:max-w-lg flex flex-col overflow-hidden p-0 gap-0" style={{ maxHeight: "min(80vh, 560px)" }}>
           <DialogHeader className="shrink-0 border-b px-6 py-4">

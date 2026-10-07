@@ -10,9 +10,9 @@ import (
 	"github.com/Autumn-27/artex/llmrec"
 )
 
-// The transport is the only layer that still sees the wire bodies: norma builds
-// the request body internally and decodes the SSE response before the recorder
-// gets it. This checks the round trip preserves both directions untouched.
+// 이 전송 층만 아직 wire 본문을 봅니다. norma 는 요청 본문을 안에서 만들고,
+// SSE 응답을 푼 뒤에야 recorder 에 줍니다. 왕복이 양쪽을 건드리지 않고
+// 보존하는지 확인합니다.
 func TestRoundTripCapturesRawBodies(t *testing.T) {
 	const sse = "event: message_start\ndata: {\"type\":\"message_start\"}\n\nevent: message_stop\ndata: {}\n\n"
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -55,8 +55,8 @@ func TestRoundTripCapturesRawBodies(t *testing.T) {
 	}
 }
 
-// A 429 body is read and replaced in-place by the quota check. Capturing must
-// still see it, and the replacement body must remain readable downstream.
+// 429 본문은 할당량 검사가 읽고 그 자리에서 바꿉니다. 캡처는 그 본문을
+// 여전히 봐야 하고, 바꾼 본문은 뒤에서 읽을 수 있어야 합니다.
 func TestRoundTripCaptures429BodyAlongsideQuotaRewrite(t *testing.T) {
 	const body = `{"error":{"message":"insufficient_quota"}}`
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -82,7 +82,7 @@ func TestRoundTripCaptures429BodyAlongsideQuotaRewrite(t *testing.T) {
 	}
 	defer resp.Body.Close()
 
-	// Quota exhaustion is normalized to 402 so the router fails over.
+	// 할당량 소진은 402 로 바꿉니다. 라우터가 다른 provider 로 넘어가게 합니다.
 	if resp.StatusCode != http.StatusPaymentRequired {
 		t.Fatalf("status=%d want 402", resp.StatusCode)
 	}
@@ -98,8 +98,8 @@ func TestRoundTripCaptures429BodyAlongsideQuotaRewrite(t *testing.T) {
 	}
 }
 
-// Recording off = no Capture on the context. The transport must behave exactly
-// as before, including the quota rewrite.
+// 기록이 꺼지면 context 에 Capture 가 없습니다. 전송은 예전과 같아야 합니다.
+// 할당량 다시 쓰기도 포함합니다.
 func TestRoundTripWithoutCaptureIsUnchanged(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.WriteString(w, "ok")

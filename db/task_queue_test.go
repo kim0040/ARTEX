@@ -26,8 +26,8 @@ func TestTaskQueuePreservesBootstrapAndFIFOPosition(t *testing.T) {
 		t.Fatalf("first enqueue: task=%+v err=%v", first, err)
 	}
 
-	// A follow-up/rerun can try to admit an already queued task as resume. The
-	// original bootstrap mode and FIFO timestamp must remain authoritative.
+	// 후속/재실행이 이미 대기 중인 작업을 resume로 넣으려 할 수 있다.
+	// 원래 부트스트랩 모드와 FIFO 시각이 기준이어야 한다.
 	time.Sleep(time.Millisecond)
 	if err := d.Enqueue(task.ID, "resume"); err != nil {
 		t.Fatal(err)
@@ -43,8 +43,8 @@ func TestTaskQueuePreservesBootstrapAndFIFOPosition(t *testing.T) {
 		t.Fatalf("repeated enqueue moved FIFO position: first=%v second=%v", first.QueuedAt, second.QueuedAt)
 	}
 
-	// Pausing a queued task removes it from the queue but keeps its required
-	// startup mode. A later requeue receives a new tail position.
+	// 대기 중인 작업을 멈추면 대기열에서는 빠지지만 필요한
+	// 시작 모드는 남는다. 나중에 다시 넣으면 꼬리의 새 자리를 받는다.
 	if err := d.Dequeue(task.ID, false); err != nil {
 		t.Fatal(err)
 	}

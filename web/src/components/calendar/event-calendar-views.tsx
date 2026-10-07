@@ -19,7 +19,7 @@ const getShortDayCellBottomClass = (info: DayCellInfo) => cn(
 
 const dayRowCommonClasses: CalendarOptions = {
 
-  /* Day Row > List-Item Event
+  /* 하루 줄 > 목록 항목 일정
   ----------------------------------------------------------------------------------------------- */
 
   listItemEventClass: (info) => cn(
@@ -45,7 +45,7 @@ const dayRowCommonClasses: CalendarOptions = {
     info.timeText && 'text-ellipsis',
   ),
 
-  /* Day Row > Row Event
+  /* 하루 줄 > 줄 일정
   ----------------------------------------------------------------------------------------------- */
 
   rowEventClass: (info) => cn(
@@ -54,7 +54,7 @@ const dayRowCommonClasses: CalendarOptions = {
   ),
   rowEventInnerClass: (info) => cn(info.isNarrow ? 'py-px' : 'py-0.5'),
 
-  /* Day Row > More-Link
+  /* 하루 줄 > 더 보기 링크
   ----------------------------------------------------------------------------------------------- */
 
   rowMoreLinkClass: (info) => cn(
@@ -72,7 +72,7 @@ const dayRowCommonClasses: CalendarOptions = {
 
 export type EventCalendarViewProps =
   CalendarOptions &
-  Required<Pick<CalendarOptions, 'popoverCloseContent'>> // ensure callers define icons
+  Required<Pick<CalendarOptions, 'popoverCloseContent'>> // 호출하는 쪽이 아이콘을 꼭 넘기게 합니다
 
 export function EventCalendarViews({
   height,
@@ -83,7 +83,7 @@ export function EventCalendarViews({
     <FullCalendar
       height={height}
 
-        /* Abstract Event
+        /* 추상 일정
         ----------------------------------------------------------------------------------------- */
 
         eventShortHeight={50}
@@ -96,7 +96,7 @@ export function EventCalendarViews({
           'outline-ring/50',
         )}
 
-        /* Background Event
+        /* 배경 일정
         ----------------------------------------------------------------------------------------- */
 
         backgroundEventColor='var(--chart-3)'
@@ -108,12 +108,12 @@ export function EventCalendarViews({
             : 'p-2 text-xs',
         )}
 
-        /* List-Item Event
+        /* 목록 항목 일정
         ----------------------------------------------------------------------------------------- */
 
         listItemEventTimeClass='text-muted-foreground'
 
-        /* Block Event
+        /* 블록 일정
         ----------------------------------------------------------------------------------------- */
 
         blockEventClass={(info) => cn(
@@ -125,7 +125,7 @@ export function EventCalendarViews({
         blockEventTimeClass='whitespace-nowrap overflow-hidden shrink-1'
         blockEventTitleClass='whitespace-nowrap overflow-hidden shrink-100'
 
-        /* Row Event
+        /* 줄 일정
         ----------------------------------------------------------------------------------------- */
 
         rowEventClass={(info) => cn(
@@ -157,7 +157,7 @@ export function EventCalendarViews({
           'font-medium',
         )}
 
-        /* Column Event
+        /* 칸 일정
         ----------------------------------------------------------------------------------------- */
 
         columnEventClass={(info) => cn(
@@ -192,7 +192,7 @@ export function EventCalendarViews({
           'font-medium',
         )}
 
-        /* More-Link
+        /* 더 보기 링크
         ----------------------------------------------------------------------------------------- */
 
         moreLinkClass="focus-visible:outline-3 outline-ring/50"
@@ -204,7 +204,7 @@ export function EventCalendarViews({
             : 'p-1 text-xs',
         )}
 
-        /* Day Header
+        /* 날짜 머리
         ----------------------------------------------------------------------------------------- */
 
         dayHeaderClass={(info) => cn(
@@ -251,7 +251,7 @@ export function EventCalendarViews({
           )
         )}
 
-        /* Day Cell
+        /* 날짜 칸
         ----------------------------------------------------------------------------------------- */
 
         dayCellClass={(info) => cn(
@@ -309,13 +309,13 @@ export function EventCalendarViews({
         )}
         dayCellInnerClass={(info) => cn(info.inPopover && 'p-2')}
 
-        /* Popover
+        /* 팝오버
         ----------------------------------------------------------------------------------------- */
 
         popoverClass='border rounded-md overflow-hidden shadow-lg m-1 bg-popover text-popover-foreground min-w-55'
         popoverCloseClass="group absolute top-1.5 end-1.5 p-0.5 rounded-sm hover:bg-foreground/5 focus-visible:outline-3 outline-ring/50"
 
-        /* Lane
+        /* 레인
         ----------------------------------------------------------------------------------------- */
 
         dayLaneClass={(info) => cn(
@@ -333,7 +333,7 @@ export function EventCalendarViews({
           info.isMinor && 'border-dotted',
         )}
 
-        /* List Day
+        /* 목록의 하루
         ----------------------------------------------------------------------------------------- */
 
         listDayClass={(info) => cn(
@@ -353,7 +353,7 @@ export function EventCalendarViews({
         )}
         listDayBodyClass='mt-px px-1.5 py-2 gap-2'
 
-        /* Single Month (in Multi-Month)
+        /* 여러 달 속의 한 달
         ----------------------------------------------------------------------------------------- */
 
         singleMonthClass={(info) => cn(
@@ -369,7 +369,7 @@ export function EventCalendarViews({
           info.hasNavLink && 'hover:bg-foreground/5',
         )}
 
-        /* Misc Table
+        /* 기타 표
         ----------------------------------------------------------------------------------------- */
 
         tableBodyClass='bg-background'
@@ -380,7 +380,7 @@ export function EventCalendarViews({
         slotHeaderRowClass='border'
         slotHeaderInnerClass='text-muted-foreground'
 
-        /* Misc Content
+        /* 기타 내용
         ----------------------------------------------------------------------------------------- */
 
         navLinkClass="focus-visible:outline-3 outline-ring/50"
@@ -396,7 +396,7 @@ export function EventCalendarViews({
         nowIndicatorLineClass='-m-px border-1 border-destructive'
         nowIndicatorDotClass="-m-[6px] border-6 border-destructive size-0 rounded-full ring-2 ring-background"
 
-        /* View-Specific Options
+        /* 보기별 옵션
         ----------------------------------------------------------------------------------------- */
 
         views={{
@@ -429,7 +429,7 @@ export function EventCalendarViews({
             ),
             dayCellBottomClass: tallDayCellBottomClass,
 
-            /* TimeGrid > Week Number Header
+            /* 시간 격자 > 주 번호 머리
             ------------------------------------------------------------------------------------- */
 
             weekNumberHeaderClass: 'items-center justify-end',
@@ -439,7 +439,7 @@ export function EventCalendarViews({
               info.hasNavLink && 'hover:bg-foreground/5',
             ),
 
-            /* TimeGrid > All-Day Header
+            /* 시간 격자 > 하루 종일 머리
             ------------------------------------------------------------------------------------- */
 
             allDayHeaderClass: 'items-center',
@@ -449,7 +449,7 @@ export function EventCalendarViews({
             ),
             allDayDividerClass: 'border-b border-foreground/20 not-print:shadow-sm',
 
-            /* TimeGrid > Slot Header
+            /* 시간 격자 > 시간 칸 머리
             ------------------------------------------------------------------------------------- */
 
             slotHeaderClass: 'justify-end',
@@ -466,7 +466,7 @@ export function EventCalendarViews({
           },
           list: {
 
-            /* List-View > List-Item Event
+            /* 목록 보기 > 목록 항목 일정
             ------------------------------------------------------------------------------------- */
 
             listItemEventClass: (info) => cn(
@@ -481,7 +481,7 @@ export function EventCalendarViews({
               info.event.url && 'group-hover:underline',
             ),
 
-            /* No-Events Screen
+            /* 일정 없음 화면
             ------------------------------------------------------------------------------------- */
 
             noEventsClass: 'grow flex flex-col items-center justify-center',

@@ -36,7 +36,7 @@ export function GraphTab({ taskId }: { taskId: string }) {
           setEdges(es);
         })
         .catch(() => {
-          /* keep last good data */
+          /* 마지막으로 잘 받은 데이터를 유지 */
         });
     };
     load();

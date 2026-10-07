@@ -32,13 +32,13 @@ func TestWorkerControlRoutes(t *testing.T) {
 		return rec
 	}
 
-	// The single-worker route is still registered and reaches its JSON handler.
+	// 단일 워커 경로는 아직 등록돼 있고, JSON 처리기까지 갑니다.
 	single := request("/api/tasks/missing/intents/1/control")
 	if single.Code != http.StatusNotFound || !strings.Contains(single.Body.String(), `"error":"작업을 찾을 수 없습니다"`) {
 		t.Fatalf("single control route unavailable: status=%d body=%s", single.Code, single.Body.String())
 	}
 
-	// The former batch route must fall through the mux instead of reaching a task handler.
+	// 예전 일괄 경로는 작업 처리기에 닿지 않고 mux를 통과해 떨어져야 합니다.
 	batch := request("/api/tasks/missing/intents/control/batch")
 	if batch.Code != http.StatusNotFound || !strings.Contains(batch.Body.String(), "404 page not found") {
 		t.Fatalf("batch control route still registered: status=%d body=%s", batch.Code, batch.Body.String())

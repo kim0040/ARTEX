@@ -297,7 +297,7 @@ func TestChatMentionCatalogAndContext(t *testing.T) {
 			t.Fatalf("invalid search: %d", w.Code)
 		}
 	}
-	// Wildcards are literal input; no whole-table match for a '%' query.
+	// 와일드카드는 글자 그대로입니다. '%' 검색이 표 전체를 맞추면 안 됩니다.
 	items, err := pg.SearchChatMentions(t.Context(), "company", "%")
 	if err != nil || len(items) != 0 {
 		t.Fatalf("literal wildcard: %+v %v", items, err)

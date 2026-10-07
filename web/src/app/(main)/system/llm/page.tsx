@@ -790,7 +790,7 @@ export default function LLMPage() {
     try {
       setPool(await api.llmPool());
     } catch {
-      /* ignore */
+      /* 무시 */
     }
   }, []);
 
@@ -798,7 +798,7 @@ export default function LLMPage() {
     try {
       setProfiles(await api.llmProfiles());
     } catch {
-      /* ignore */
+      /* 무시 */
     }
     await loadPool();
   }, [loadPool]);

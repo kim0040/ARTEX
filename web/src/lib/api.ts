@@ -1,9 +1,9 @@
 // UI와 엔진 사이의 HTTP 클라이언트입니다.
 // 작업, 발견, 자산 그래프, 탐색 그래프를 읽고 씁니다.
-// Real backend client. /api/* is proxied to the Go backend (next.config rewrites).
-// Returns the domain types in lib/types.ts. Shapes match the backend handlers;
-// a few fields the backend serializes differently (e.g. created_at as a unix int)
-// are passed through and formatted at the call site.
+// 실제 백엔드 클라이언트. /api/* 는 Go 백엔드로 프록시됩니다(next.config 재작성).
+// lib/types.ts의 도메인 타입을 돌려줍니다. 모양은 백엔드 핸들러와 같고,
+// 백엔드가 다르게 직렬화하는 필드(예: created_at이 유닉스 정수)는
+// 그대로 넘겨 호출하는 곳에서 보기 좋게 바꿉니다.
 
 import type { ChatMention } from "@/lib/chat-mentions";
 import { MOCK } from "@/lib/mock/enabled";
@@ -141,7 +141,7 @@ export async function http<T>(path: string, init?: RequestInit): Promise<T> {
         message = payload.error.trim();
       }
     } catch {
-      // Keep the status-based fallback for empty or non-JSON error responses.
+      // 비었거나 JSON이 아닌 오류 응답은 상태 코드 기준으로 돌아갑니다.
     }
     throw new Error(message);
   }
@@ -149,23 +149,23 @@ export async function http<T>(path: string, init?: RequestInit): Promise<T> {
   return r.json();
 }
 
-// sseUrl builds a URL for Server-Sent Events streams.
+// sseUrl은 서버가 보내는 이벤트(SSE) 스트림 주소를 만듭니다.
 //
-// Production (static export / Docker): the Go backend serves the web UI *and* the
-// SSE streams on the same port, so we default to a same-origin (relative) URL.
-// This is what makes reverse-proxy deploys work: a page loaded from
-// https://<domain>/ connects to https://<domain>/api/..., which the proxy forwards
-// to the backend — no need to expose :8787 publicly. Hardcoding :8787 here used to
-// break exactly that (https://<domain>:8787/... is unreachable when only 443 is open).
+// 운영(정적 내보내기 / Docker): Go 백엔드가 웹 화면과
+// SSE 스트림을 같은 포트에서 제공하므로, 기본은 같은 출처(상대 주소)입니다.
+// 그래서 역방향 프록시 배포가 됩니다. 페이지를
+// https://<domain>/ 에서 열면 https://<domain>/api/... 로 붙고, 프록시가
+// 백엔드로 넘깁니다. :8787을 공개할 필요가 없습니다. 여기에 :8787을 고정하면
+// 바로 그 경우가 깨졌습니다(443만 열려 있으면 https://<domain>:8787/... 에 닿지 않음).
 //
-// Dev (next dev): SSE must NOT go through the Next.js `/api` rewrite — that proxy
-// buffers the streamed response, so event frames never reach the browser (the
-// EventSource opens but receives 0 messages). So in dev only we connect straight
-// to the Go backend on :8787, whose CORS is open.
+// 개발(next dev): SSE는 Next.js `/api` 재작성을 타면 안 됩니다. 그 프록시가
+// 스트림 응답을 버퍼링해서 이벤트 프레임이 브라우저에 안 갑니다.
+// EventSource는 열리지만 메시지가 0개). 그래서 개발에서만
+// CORS가 열린 Go 백엔드 :8787로 바로 붙습니다.
 //
-// Override either default with NEXT_PUBLIC_SSE_BASE (set it to "" to force same-origin).
-// Token is appended as ?token= because SSE can't carry cookies cross-origin.
-// mockReport returns a canned Markdown report for the demo.
+// 둘 중 어느 기본값이든 NEXT_PUBLIC_SSE_BASE로 덮을 수 있습니다(""이면 같은 출처).
+// SSE는 출처가 다르면 쿠키를 못 실어, 토큰을 ?token= 으로 붙입니다.
+// mockReport는 데모용으로 미리 만든 마크다운 보고서를 돌려줍니다.
 function mockReport(_task?: string): string {
   return `# ARTEX 점검 보고서 — Acme Corp
 
@@ -210,7 +210,7 @@ const patch = <T>(p: string, body?: unknown) =>
 const del = <T>(p: string, body?: unknown) =>
   http<T>(p, { method: "DELETE", body: body ? JSON.stringify(body) : undefined });
 
-// Go serializes nil slices as JSON null — coerce to [].
+// Go는 nil 슬라이스를 JSON null로 보냅니다. []로 바꿉니다.
 const arr = <T>(x: T[] | null | undefined): T[] => x ?? [];
 const tq = (task?: string, sep: "?" | "&" = "?") => (task ? `${sep}task=${encodeURIComponent(task)}` : "");
 
@@ -239,14 +239,14 @@ export const api = {
   // 백엔드 앱 버전 번호(release 때 ldflags로 주입, 기본 "dev").
   health: () => get<{ ok: boolean; service: string; version: string }>("/health"),
 
-  // ---- auth ----
+  // ---- 인증 ----
   authStatus: () => get<{ initialized: boolean }>("/auth/status"),
   login: (username: string, password: string) => post<{ token: string }>("/auth/login", { username, password }),
   initPassword: (password: string) => post<{ token: string }>("/auth/init", { password }),
   changePassword: (oldPassword: string, newPassword: string) =>
     post<{ ok: boolean }>("/auth/change-password", { old_password: oldPassword, new_password: newPassword }),
 
-  // ---- tasks ----
+  // ---- 작업 ----
   tasks: () =>
     get<{ tasks: Task[]; active: string }>("/tasks").then((r) => ({ tasks: arr(r.tasks), active: r.active ?? "" })),
   task: (id: string) => get<Task>(`/tasks/${encodeURIComponent(id)}`),
@@ -367,7 +367,7 @@ export const api = {
   // 이 작업의 blocked 의도를 일괄로 다시 실행(네트워크/LLM이 한 번 끊겨 여러 개가 blocked일 때 한 번에 모두 재시도).
   rerunBlocked: (taskId: string) => post<{ id: string; reopened: number }>(`/tasks/${taskId}/intents/rerun-blocked`),
   setActive: (id: string) => post<{ active: string }>("/active", { id }),
-  // ---- stats ----
+  // ---- 통계 ----
   stats: (task?: string) => get<Stats>(`/stats${tq(task)}`),
   // 자산 테스트 커버리지(거친 추정, 참고용): 범위 안 자산 중 fact가 닿은 비율 + 유형별 총수/테스트됨.
   taskCoverage: (id: string) =>
@@ -434,7 +434,7 @@ export const api = {
   // 어떤 자산이 이 작업에서 연결된 의도 / 사실 / 발견(커버리지 그림 노드 서랍용). （자산 그래프는 자산이 서로 어떻게 연결되는지 보여주는 그림입니다）
   taskAssetRefs: (id: string, assetId: number) => get<CoverageAssetRefs>(`/tasks/${id}/asset-refs?asset_id=${assetId}`),
 
-  // ---- workspace file manager (workDir) ----
+  // ---- 작업 폴더 파일 관리(workDir) ----
   workspaceList: (path = "") => get<WorkspaceListing>(`/workspace/list?path=${encodeURIComponent(path)}`),
   workspaceRead: (path: string) => get<WorkspaceFile>(`/workspace/read?path=${encodeURIComponent(path)}`),
   workspaceWrite: (path: string, content: string) =>
@@ -476,8 +476,8 @@ export const api = {
     URL.revokeObjectURL(objUrl);
   },
 
-  // ---- assets ----
-  // Server-side paginated: pass limit/offset, get back the page + full match total.
+  // ---- 자산 ----
+  // 서버가 페이지를 나눕니다. limit/offset을 넘기면 그 페이지와 전체 일치 수를 받습니다.
   assets: (type = "", limit = 50, offset = 0) =>
     get<{ count: number; total: number; assets: Asset[] }>(`/assets?type=${type}&limit=${limit}&offset=${offset}`).then(
       (r) => ({ assets: r?.assets ?? [], total: r?.total ?? r?.count ?? 0 }),
@@ -490,13 +490,13 @@ export const api = {
     get<Record<string, number>>(`/assets/counts${taskId ? `?task_id=${encodeURIComponent(taskId)}` : ""}`),
   deleteAssets: (ids: number[]) =>
     http<{ deleted: number }>("/assets", { method: "DELETE", body: JSON.stringify({ ids }) }),
-  // task-scoped view of the same endpoint — server-side paginated like `assets`
+  // 같은 주소의 작업 범위 보기. `assets`처럼 서버가 페이지를 나눕니다
   taskAssets: (taskId: string, type = "", limit = 50, offset = 0) =>
     get<{ count: number; total: number; assets: Asset[] }>(
       `/assets?task_id=${encodeURIComponent(taskId)}&type=${encodeURIComponent(type)}&limit=${limit}&offset=${offset}`,
     ).then((r) => ({ assets: r?.assets ?? [], total: r?.total ?? r?.count ?? 0 })),
-  // DSL search scoped to a task — the backend forces the task_id filter, so it
-  // always stays within that task's assets (same DSL grammar as `searchAssets`).
+  // 작업으로 한정한 DSL 검색. 백엔드가 task_id 필터를 강제해서
+  // 항상 그 작업의 자산 안에 머뭅니다(`searchAssets`와 같은 DSL 문법).
   searchTaskAssets: (taskId: string, dsl: string, type = "", limit = 50, offset = 0) =>
     get<{ count: number; total: number; assets: Asset[] }>(
       `/assets?task_id=${encodeURIComponent(taskId)}&dsl=${encodeURIComponent(dsl)}&type=${encodeURIComponent(type)}&limit=${limit}&offset=${offset}`,
@@ -539,7 +539,7 @@ export const api = {
       body: JSON.stringify({ delete_assets: deleteAssets }),
     }),
 
-  // ---- exploration (per task) ----
+  // ---- 탐색(작업마다) ----
   frontier: (task?: string) => get<TaskNode[]>(`/exploration/frontier${tq(task)}`).then(arr),
   findings: (task?: string) => get<Finding[]>(`/exploration/findings${tq(task)}`).then(arr),
   findingsPage: (q: FindingQuery) => {
@@ -733,11 +733,11 @@ export const api = {
     }));
   },
   activityDetail: (id: number, task?: string) => get<{ detail: string }>(`/exploration/activity/${id}${tq(task)}`),
-  // Reverse-paginated session history. session = "main" | "plan" | "intent:<id>".
-  // before=0 → latest page; before=<id> → the older page ending before that id.
-  // snapshotCursor is the TASK-level max id at query time — open the task SSE at
-  // since=snapshotCursor so history (id≤cursor) and the live tail (id>cursor) meet
-  // gap-free. hasMore = still-older steps exist (drives scroll-up loading).
+  // 거꾸로 페이지를 넘는 세션 기록. session = "main" | "plan" | "intent:<id>".
+  // before=0이면 최신 페이지, before=<id>이면 그 id 앞에서 끝나는 이전 페이지.
+  // snapshotCursor는 조회 시점의 작업 단위 최대 id입니다. 작업 SSE를
+  // since=snapshotCursor로 열면 기록(id≤커서)과 실시간 꼬리(id>커서)가
+  // 빈틈 없이 만납니다. hasMore는 더 오래된 단계가 있음(위로 스크롤 로딩).
   activityHistory: (task: string, session: string, before = 0, limit = 200) => {
     const q = new URLSearchParams({ session, limit: String(limit) });
     if (task) q.set("task", task);
@@ -751,30 +751,30 @@ export const api = {
       hasMore: !!r.has_more,
     }));
   },
-  // Paged worker (intent) session list — reaches past the legacy fixed 300 cap.
-  // before=0 → newest page; before=<id> → older page. has_more = older intents exist.
+  // 페이지로 나눈 워커(의도) 세션 목록. 예전 고정 300개 상한을 넘습니다.
+  // before=0이면 최신 페이지, before=<id>이면 이전 페이지. has_more는 더 오래된 의도가 있음.
   intentsPage: (task: string, before = 0, limit = 300) => {
     const q = new URLSearchParams({ limit: String(limit) });
     if (task) q.set("task", task);
     q.set("before", String(before > 0 ? before : 0));
-    q.set("page", "1"); // marker so the backend returns the paged {items,has_more} shape
+    q.set("page", "1"); // 표시. 백엔드가 페이지 모양 {items,has_more}를 돌려주게 합니다
     return get<{ items: TaskNode[]; has_more: boolean }>(`/exploration/intents?${q.toString()}`).then((r) => ({
       items: arr(r.items),
       hasMore: !!r.has_more,
     }));
   },
 
-  // Main-agent conversation segments of a task. Each segment is a resettable session
-  // (clean transcript/context) over the same task; `current` is the writable one.
+  // 작업의 메인 에이전트 대화 조각. 조각마다 기록을 비우고 다시 시작할 수 있는 세션이고
+  // (깨끗한 기록/맥락) 같은 작업 위에 있습니다. `current`만 쓸 수 있습니다.
   mainSessions: (task: string) =>
     get<{ sessions: { seq: number; created_at: string }[]; current: number }>(
       `/exploration/main-sessions${tq(task)}`,
     ).then((r) => ({ sessions: arr(r.sessions), current: r.current ?? 0 })),
-  // Start a fresh main-agent session segment (does not touch the task's graph/assets/goal).
+  // 새 메인 에이전트 세션 조각을 시작합니다(작업의 그래프/자산/목표는 건드리지 않음).
   newMainSession: (task: string) =>
     post<{ seq: number; created_at: string; current: number }>(`/exploration/main-session/new${tq(task)}`),
 
-  // ---- traffic / audit / report / chat ----
+  // ---- 트래픽 / 감사 / 보고서 / 채팅 ----
   audit: (task?: string) => get<Audit>(`/audit${tq(task)}`),
   traffic: (
     page = 0,
@@ -809,14 +809,14 @@ export const api = {
   trafficHosts: () => get<{ hosts: TrafficHost[] }>(`/traffic/hosts`),
   trafficDeleteHost: (host: string) => del<{ deleted: number }>(`/traffic?host=${encodeURIComponent(host)}`),
   trafficDeleteHosts: (hosts: string[]) => del<{ deleted: number }>(`/traffic/hosts`, { hosts }),
-  // Purges every exchange and compacts the index; `reclaimed` is the bytes of
-  // index handed back to the filesystem. Evidence bound to findings is kept.
+  // 모든 왕래를 지우고 인덱스를 압축합니다. `reclaimed`는
+  // 파일 시스템에 돌려준 인덱스 바이트입니다. 발견에 묶인 증거는 남깁니다.
   trafficDeleteAll: () => del<{ deleted: number; reclaimed: number }>(`/traffic/all`),
 
-  // ---- app settings (runtime toggles) ----
+  // ---- 앱 설정(실행 중 스위치) ----
   settings: () => get<Settings>(`/settings`),
   setSettings: (patch: Partial<Settings>) => put<Settings>(`/settings`, patch),
-  // Run a real "test" search with the given (or saved) config to verify it works.
+  // 주어진(또는 저장된) 설정으로 "test" 검색을 실제로 해 동작 여부를 확인합니다.
   testWebSearch: (patch: {
     web_search_backend?: string;
     web_search_proxy?: string;
@@ -960,13 +960,13 @@ export const api = {
     }),
   llmProfiles: () => get<{ profiles: LLMProfile[] }>("/llm/profiles").then((r) => arr(r.profiles)),
   saveLLMProfile: (p: {
-    id?: number; // omit/0 = create; set = update that profile
+    id?: number; // 생략하거나 0이면 만들기, 값이 있으면 그 프로필 수정
     name: string;
     format: string;
     model: string;
     base_url?: string;
     proxy?: string;
-    api_key?: string; // blank on update keeps the existing key
+    api_key?: string; // 수정할 때 비어 있으면 기존 키를 유지
     rate_per_second?: number;
     rate_per_minute?: number;
     context_window_k?: number;
@@ -998,7 +998,7 @@ export const api = {
       profile_id,
     }),
 
-  // ---- agents ----
+  // ---- 에이전트 ----
   agents: () => get<{ agents: Agent[] }>("/agents").then((r) => arr(r.agents)),
   getAgent: (key: string) => get<AgentDetail>(`/agents/${key}`),
   createAgent: (key: string, name: string, description = "") => post<Agent>("/agents", { key, name, description }),
@@ -1006,7 +1006,7 @@ export const api = {
     patch<{ ok: boolean }>(`/agents/${key}`, { name, description }),
   deleteAgent: (key: string) => del<{ deleted: string }>(`/agents/${key}`),
 
-  // ---- conversations (chat page) ----
+  // ---- 대화(채팅 화면) ----
   conversations: () => get<{ conversations: Conversation[] }>("/conversations").then((r) => arr(r.conversations)),
   createConversation: (agent_key: string, title = "", llm_profile_id?: number | null) =>
     post<Conversation>("/conversations", { agent_key, title, llm_profile_id: llm_profile_id ?? null }),
@@ -1019,13 +1019,13 @@ export const api = {
   deleteConversation: (id: number) => del<{ deleted: number }>(`/conversations/${id}`),
   deleteConversations: (ids: number[]) =>
     post<{ items: { id: number; ok: boolean; error?: string }[] }>("/conversations/delete/batch", { ids }),
-  // Incremental tail: steps after `since` (id ASC) — live poll + post-send fetch.
+  // 증분 꼬리: `since` 뒤의 단계(id 오름차순). 실시간 주기 조회와 보낸 뒤 조회.
   conversationMessages: (id: number, since = 0) =>
     get<{ items: Activity[]; cursor: number; running: boolean }>(`/conversations/${id}/messages?since=${since}`).then(
       (r) => ({ items: arr(r.items), cursor: r.cursor ?? 0, running: !!r.running }),
     ),
-  // Reverse pagination: the latest `limit` steps (before=0) or the page of older
-  // steps ending before id `before`. hasMore = still-older steps exist.
+  // 역방향 페이지: 최신 `limit` 단계(before=0) 또는 id `before` 앞에서 끝나는
+  // 더 오래된 단계 페이지. hasMore는 더 오래된 단계가 있음.
   conversationHistory: (id: number, before = 0, limit = 200) => {
     const q = new URLSearchParams({ limit: String(limit) });
     if (before > 0) q.set("before", String(before));
@@ -1150,7 +1150,7 @@ export const api = {
     mcps?: string[];
     instructions?: string;
   }) => post<{ name: string }>("/skills", s),
-  // uploadSkill installs a skill from a .zip (multipart). Surfaces the backend
+  // uploadSkill은 .zip으로 스킬을 설치합니다(multipart). 백엔드의
   // 오류 텍스트(예: 이미 있음 / SKILL.md 없음). UI가 정확한 메시지를 보여 주게 합니다.
   uploadSkill: async (file: File, overwrite = false): Promise<{ name: string; files: number }> => {
     if (MOCK) return { name: file.name.replace(/\.zip$/i, ""), files: 1 };
@@ -1183,7 +1183,7 @@ export const api = {
   missingSkills: (limit = 20) =>
     get<{ missing: MissingSkill[] }>(`/skills/missing?limit=${limit}`).then((r) => arr(r.missing)),
 
-  // ---- visibility (MCP resource side) ---- (agent ids are strings per spec)
+  // ---- 가시성(MCP 자원 쪽) ---- (명세상 에이전트 id는 문자열)
   resourceVisibility: (kind: string, id: number) =>
     get<{ agents: string[] }>(`/visibility/${kind}/${id}`).then((r) => arr(r.agents)),
   toggleVisibility: (agentId: string, kind: string, resourceId: number, visible: boolean) =>
@@ -1194,7 +1194,7 @@ export const api = {
   toggleSkillVisibility: (agentId: string, skillName: string, visible: boolean) =>
     post<{ ok: boolean }>("/visibility/skill/toggle", { agent_id: agentId, skill_name: skillName, visible }),
 
-  // ---- intercept rules ----
+  // ---- 가로채기 규칙 ----
   interceptRules: () => get<{ rules: InterceptRule[] }>("/intercept/rules").then((r) => arr(r.rules)),
   createInterceptRule: (rule: Omit<InterceptRule, "id" | "created_at" | "updated_at">) =>
     post<InterceptRule>("/intercept/rules", rule),
@@ -1214,7 +1214,7 @@ export const api = {
   toggleAssetInterceptRule: (id: number, enabled: boolean) =>
     post<{ ok: boolean; enabled: boolean }>(`/asset-intercept/rules/${id}/toggle`, { enabled }),
 
-  // ---- intercept pending (ask) ----
+  // ---- 가로채기 대기(물어보기) ----
   interceptPending: () => get<{ pending: InterceptPending[] }>("/intercept/pending").then((r) => arr(r.pending)),
   interceptGetOne: (id: number) => get<InterceptPending>(`/intercept/pending/${id}`),
   interceptDecide: (id: number, decision: "allowed" | "denied") =>
@@ -1271,7 +1271,7 @@ export const api = {
   interceptSetJudgeConfig: (cfg: JudgeConfig) => put<{ ok: boolean }>("/intercept/judge", cfg),
   interceptJudgeUsage: (days = 30) => get<JudgeUsage>(`/intercept/judge/usage?days=${days}`),
 
-  // ---- commands (tool execution history, any tool) ----
+  // ---- 명령(어떤 도구든 실행 기록) ----
   commands: (params?: { task?: string; q?: string; page?: number; size?: number }) => {
     const sp = new URLSearchParams();
     if (params?.task) sp.set("task", params.task);
@@ -1288,7 +1288,7 @@ export const api = {
     return get<{ stats: ToolStat[] }>(`/commands/stats?${sp}`);
   },
 
-  // ---- LLM records ----
+  // ---- LLM 기록 ----
   llmRecords: (params?: { model?: string; session?: string; task?: string; page?: number; size?: number }) => {
     const sp = new URLSearchParams();
     if (params?.model) sp.set("model", params.model);

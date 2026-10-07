@@ -28,7 +28,7 @@ import (
 const protocolVersion = "2025-06-18"
 const legacySSEProtocolVersion = "2024-11-05"
 
-// ToolName mirrors mcp.ToolName so remote tools share the mcp__server__tool scheme.
+// ToolName은 mcp.ToolName과 같아, 원격 도구도 mcp__서버__도구 이름을 씁니다.
 func ToolName(server, name string) string { return "mcp__" + server + "__" + name }
 
 type rpcRequest struct {
@@ -52,8 +52,8 @@ type rpcError struct {
 
 func (e *rpcError) Error() string { return fmt.Sprintf("mcp rpc error %d: %s", e.Code, e.Message) }
 
-// Client is a connection to one remote MCP server. New uses Streamable HTTP;
-// NewSSE uses the legacy GET /sse + POST /message transport.
+// Client는 원격 MCP 서버 하나와의 연결입니다. New는 Streamable HTTP를 쓰고,
+// NewSSE는 예전 GET /sse와 POST /message 전송을 씁니다.
 type Client struct {
 	server  string
 	url     string
@@ -64,7 +64,7 @@ type Client struct {
 	nextID    int
 	sessionID string
 
-	// legacySSE is the pre-2025 MCP SSE transport used by servers such as GSL5.
+	// legacySSE는 2025년 이전의 MCP SSE 전송이며, GSL5 같은 서버가 씁니다.
 	legacySSE    bool
 	messageURL   string
 	streamBody   io.ReadCloser
@@ -89,10 +89,10 @@ func normalizeHeaders(headers map[string]string) (map[string]string, error) {
 	return out, nil
 }
 
-// New connects to a remote MCP endpoint and performs the initialize handshake.
-// headers are sent on every request (Authorization, custom API keys, …).
-// When insecure is true, TLS certificate verification is skipped so servers that
-// present a self-signed certificate can still be reached (issue #108).
+// New는 원격 MCP 끝점에 접속해 initialize 핸드셰이크를 합니다.
+// headers는 매 요청에 보냅니다(Authorization, 사용자 API 키 등).
+// insecure가 참이면 TLS 인증서 검증을 건너뛰어, 자체 서명 인증서를
+// 내놓은 서버에도 닿을 수 있습니다(이슈 108).
 func New(ctx context.Context, server, url string, headers map[string]string, insecure bool) (*Client, error) {
 	cleanHeaders, err := normalizeHeaders(headers)
 	if err != nil {
@@ -115,15 +115,15 @@ func New(ctx context.Context, server, url string, headers map[string]string, ins
 	return c, nil
 }
 
-// NewSSE connects to the legacy MCP SSE transport: a long-lived GET /sse
-// announces a per-session POST /message endpoint, while JSON-RPC responses are
-// delivered asynchronously as SSE message events.
+// NewSSE는 예전 MCP SSE 전송에 접속합니다. 오래 여는 GET /sse가
+// 세션별 POST /message 끝점을 알리고, JSON-RPC 응답은
+// SSE message 이벤트로 비동기 도착합니다.
 func NewSSE(ctx context.Context, server, sseURL string, headers map[string]string, insecure bool) (*Client, error) {
 	cleanHeaders, err := normalizeHeaders(headers)
 	if err != nil {
 		return nil, err
 	}
-	hc := &http.Client{} // the SSE stream is intentionally long-lived.
+	hc := &http.Client{} // SSE 스트림은 일부러 오래 열어 둡니다.
 	if insecure {
 		hc.Transport = &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}
 	}
@@ -251,7 +251,7 @@ func (c *Client) initialize(ctx context.Context) error {
 	return c.notify(ctx, "notifications/initialized", map[string]any{})
 }
 
-// Tools lists the server's tools and adapts them to CoreTools.
+// Tools는 서버의 도구 목록을 CoreTools 모양으로 맞춥니다.
 func (c *Client) Tools(ctx context.Context) ([]actool.CoreTool, error) {
 	raw, err := c.call(ctx, "tools/list", map[string]any{})
 	if err != nil {
@@ -320,10 +320,11 @@ func (c *Client) wrap(rt remoteTool) actool.CoreTool {
 	})
 }
 
-// Call invokes one tool and returns the concatenated text of its content blocks
-// (ScopeSentry answers with a single JSON text block). Unlike the CoreTool wrapper
-// from Tools(), this bypasses the agent permission (AskUser) layer — it is meant
-// for backend batch jobs (e.g. asset sync) that call MCP tools programmatically.
+// Call은 도구 하나를 부르고, 내용 블록의 글을 이어 붙여 돌려줍니다
+// (ScopeSentry는 JSON 글 블록 하나로 답합니다). Tools()의 CoreTool 포장과
+// 달리 에이전트 허락(AskUser) 층을 건너뜁니다. 자산 동기화처럼 MCP 도구를
+// 프로그램으로 부르는 서버 일괄 작업용입니다.
+// 초보: 화면에서 사용자에게 묻지 않고 서버 작업이 도구를 부릅니다.
 func (c *Client) Call(ctx context.Context, tool string, args any) (string, error) {
 	raw, err := c.call(ctx, "tools/call", map[string]any{"name": tool, "arguments": args})
 	if err != nil {
@@ -349,8 +350,8 @@ func (c *Client) Call(ctx context.Context, tool string, args any) (string, error
 	return text.String(), nil
 }
 
-// Close terminates the MCP session best-effort (DELETE with the session id, per the
-// Streamable HTTP spec). Servers that don't track sessions simply ignore it.
+// Close는 MCP 세션을 최선을 다해 끝냅니다(세션 번호로 DELETE, Streamable HTTP 규격).
+// 세션을 추적하지 않는 서버는 그냥 무시합니다.
 func (c *Client) Close() error {
 	if c.legacySSE {
 		if c.streamCancel != nil {
@@ -385,7 +386,7 @@ func (c *Client) Close() error {
 	return nil
 }
 
-// --- JSON-RPC over Streamable HTTP ---
+// --- Streamable HTTP 위의 JSON-RPC ---
 
 func (c *Client) call(ctx context.Context, method string, params any) (json.RawMessage, error) {
 	c.mu.Lock()
@@ -410,9 +411,9 @@ func (c *Client) notify(ctx context.Context, method string, params any) error {
 	return err
 }
 
-// roundTrip POSTs one JSON-RPC frame. When expectResp is false (a notification) the
-// server replies 202 Accepted with no body. Otherwise the reply is parsed from JSON
-// or from an SSE stream, whichever the server chose.
+// roundTrip은 JSON-RPC 프레임 하나를 POST합니다. expectResp가 거짓(알림)이면
+// 서버는 본문 없이 202 Accepted로 답합니다. 아니면 서버가 고른 대로 JSON이나
+// SSE 스트림에서 응답을 읽습니다.
 func (c *Client) roundTrip(ctx context.Context, body rpcRequest, expectResp bool) (*rpcResponse, error) {
 	if c.legacySSE {
 		return c.legacyRoundTrip(ctx, body, expectResp)
@@ -448,7 +449,7 @@ func (c *Client) roundTrip(ctx context.Context, body rpcRequest, expectResp bool
 	}
 	defer resp.Body.Close()
 
-	// Capture the session id the server assigns on initialize.
+	// initialize에서 서버가 준 세션 번호를 받아 둡니다.
 	if sid == "" {
 		if got := resp.Header.Get("Mcp-Session-Id"); got != "" {
 			c.mu.Lock()
@@ -461,7 +462,7 @@ func (c *Client) roundTrip(ctx context.Context, body rpcRequest, expectResp bool
 		return nil, fmt.Errorf("mcp http %d: %s", resp.StatusCode, readSnippet(resp.Body))
 	}
 	if !expectResp {
-		return nil, nil // notification — no JSON-RPC body to parse
+		return nil, nil // 알림이라 파싱할 JSON-RPC 본문이 없습니다
 	}
 	if strings.HasPrefix(resp.Header.Get("Content-Type"), "text/event-stream") {
 		return parseSSE(resp.Body, body.ID)
@@ -473,11 +474,11 @@ func (c *Client) roundTrip(ctx context.Context, body rpcRequest, expectResp bool
 	return &out, nil
 }
 
-// legacyRoundTrip posts to the endpoint announced by GET /sse. The HTTP POST
-// only acknowledges receipt; the JSON-RPC response arrives on the SSE stream.
+// legacyRoundTrip은 GET /sse가 알린 끝점에 보냅니다. HTTP POST는
+// 접수만 확인하고, JSON-RPC 응답은 SSE 스트림으로 옵니다.
 func (c *Client) legacyRoundTrip(ctx context.Context, body rpcRequest, expectResp bool) (*rpcResponse, error) {
-	// Serializing calls keeps the first implementation deterministic while the
-	// shared SSE reader still handles asynchronous delivery.
+	// 호출을 직렬화하면, 공유 SSE 읽기가 비동기 전달을 해도
+	// 첫 구현의 순서가 정해집니다.
 	c.legacyMu.Lock()
 	defer c.legacyMu.Unlock()
 
@@ -527,8 +528,8 @@ func (c *Client) legacyRoundTrip(ctx context.Context, body rpcRequest, expectRes
 	}
 }
 
-// parseSSE reads an SSE stream and returns the first data frame that is a JSON-RPC
-// response matching wantID (server-to-client requests/notifications are skipped).
+// parseSSE는 SSE 스트림을 읽고, wantID와 맞는 JSON-RPC 응답인
+// 첫 data 프레임을 돌려줍니다(서버가 클라이언트로 보내는 요청·알림은 건너뜁니다).
 func parseSSE(r io.Reader, wantID int) (*rpcResponse, error) {
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
@@ -550,7 +551,7 @@ func parseSSE(r io.Reader, wantID int) (*rpcResponse, error) {
 	}
 	for sc.Scan() {
 		line := sc.Text()
-		if line == "" { // event boundary
+		if line == "" { // 이벤트 경계입니다
 			if resp, ok := flush(); ok {
 				return resp, nil
 			}

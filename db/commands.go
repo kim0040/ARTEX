@@ -6,8 +6,8 @@ import (
 	"time"
 )
 
-// CommandRecord is a paired tool_use + tool_result from the activity table
-// (any tool, not just Bash). Command holds the raw tool input (JSON).
+// CommandRecord는 activity 테이블의 tool_use와 tool_result 한 쌍이다
+// (Bash만이 아니라 모든 도구). Command는 도구에 넣은 원본 JSON이다.
 type CommandRecord struct {
 	ID        int64     `json:"id"`
 	ExpID     int64     `json:"exploration_id"`
@@ -19,9 +19,9 @@ type CommandRecord struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// commandFilter builds the WHERE clause shared by the tool-execution list and
-// its per-tool tally, so the summary always describes exactly the rows the table
-// pages through. Returns the clause, its args, and the next placeholder index.
+// commandFilter는 도구 실행 목록과 도구별 집계가 같이 쓰는 WHERE를 만든다.
+// 그래서 요약이 표가 넘기는 바로 그 행을 설명한다.
+// 절, 인자, 다음 자리표시자 번호를 돌려준다.
 func commandFilter(expID *int64, q string) (string, []any, int) {
 	where := `WHERE u.kind = 'tool_use'`
 	args := []any{}
@@ -40,16 +40,15 @@ func commandFilter(expID *int64, q string) (string, []any, int) {
 	return where, args, argN
 }
 
-// ToolStat is one tool's execution tally for the usage summary.
+// ToolStat은 사용 요약에 쓰는, 도구 하나의 실행 집계다.
 type ToolStat struct {
 	Tool   string `json:"tool"`
 	Total  int    `json:"total"`
 	Errors int    `json:"errors"`
 }
 
-// ToolStats counts executions grouped by tool under the same filters
-// ListCommands takes. Unpaginated on purpose: the tally describes the whole
-// filtered set, not the page currently on screen.
+// ToolStats는 ListCommands와 같은 필터로 도구별 실행 수를 센다.
+// 일부러 페이지를 나누지 않는다. 집계는 화면에 있는 쪽이 아니라 필터된 전체를 설명한다.
 func (d *DB) ToolStats(expID *int64, q string) ([]ToolStat, error) {
 	where, args, _ := commandFilter(expID, q)
 
@@ -77,9 +76,9 @@ ORDER BY total DESC, tool ASC`, args...)
 	return out, rows.Err()
 }
 
-// ListCommands returns tool executions (tool_use + paired tool_result) across all
-// explorations, with optional filtering and pagination. Covers every tool, not
-// just Bash; q matches the tool name or its input.
+// ListCommands는 모든 탐색의 도구 실행(tool_use와 짝인 tool_result)을
+// 필터와 페이지와 함께 돌려준다. Bash만이 아니라 모든 도구를 담는다.
+// q는 도구 이름이나 입력과 맞춘다.
 func (d *DB) ListCommands(expID *int64, q string, page, size int) ([]CommandRecord, int, error) {
 	if size <= 0 {
 		size = 50
@@ -91,14 +90,14 @@ func (d *DB) ListCommands(expID *int64, q string, page, size int) ([]CommandReco
 
 	where, args, argN := commandFilter(expID, q)
 
-	// count
+	// 개수
 	var total int
 	countQ := `SELECT COUNT(*) FROM activity u ` + where
 	if err := d.QueryRow(countQ, args...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
 
-	// data query: join tool_use with its tool_result
+	// 데이터 조회: tool_use와 그 tool_result를 잇는다
 	dataQ := `
 SELECT u.id, u.exploration_id, COALESCE(u.worker,''), COALESCE(u.tool,''), COALESCE(u.detail,''),
        COALESCE(r.detail,''), COALESCE(r.is_error, false), u.created_at
@@ -126,7 +125,7 @@ LIMIT $` + fmt.Sprintf("%d", argN) + ` OFFSET $` + fmt.Sprintf("%d", argN+1)
 	return out, total, rows.Err()
 }
 
-// LLMRecord is one recorded LLM API call (request + response).
+// LLMRecord는 기록된 LLM API 호출 하나다(요청과 응답).
 type LLMRecord struct {
 	ID           int64     `json:"id"`
 	Ts           time.Time `json:"ts"`
@@ -144,11 +143,10 @@ type LLMRecord struct {
 	Error        string    `json:"error,omitempty"`
 	RequestBody  string    `json:"request_body,omitempty"`
 	ResponseBody string    `json:"response_body,omitempty"`
-	// RawRequest / RawResponse are the untouched HTTP bodies exchanged with the
-	// provider — the request as buildBody() sent it (full tool schemas included)
-	// and the raw SSE frames. RequestBody/ResponseBody above are the normalized
-	// view, which drops tool schemas and tool_use blocks entirely. Empty for
-	// records written before this was added, or when the call never reached HTTP.
+	// RawRequest / RawResponse는 provider와 주고받은, 손대지 않은 HTTP 본문이다.
+	// 요청은 buildBody()가 보낸 그대로(도구 스키마 전체 포함)이고, 응답은 원본 SSE 프레임이다.
+	// 위의 RequestBody/ResponseBody는 정규화한 보기라 도구 스키마와 tool_use 블록을 아예 뺀다.
+	// 이 칸을 넣기 전에 쓴 기록, 또는 HTTP까지 가지 않은 호출은 비어 있다.
 	RawRequest  string `json:"raw_request,omitempty"`
 	RawResponse string `json:"raw_response,omitempty"`
 }
@@ -178,7 +176,7 @@ CREATE INDEX IF NOT EXISTS idx_llm_records_ts ON llm_records(ts);
 CREATE INDEX IF NOT EXISTS idx_llm_records_session ON llm_records(session_id);
 `
 
-// llmRecordsMigrate adds new columns to existing tables.
+// llmRecordsMigrate는 이미 있는 테이블에 새 열을 더한다.
 const llmRecordsMigrate = `
 ALTER TABLE llm_records ADD COLUMN IF NOT EXISTS task_id TEXT;
 ALTER TABLE llm_records ADD COLUMN IF NOT EXISTS worker TEXT;
@@ -187,7 +185,7 @@ ALTER TABLE llm_records ADD COLUMN IF NOT EXISTS raw_request TEXT;
 ALTER TABLE llm_records ADD COLUMN IF NOT EXISTS raw_response TEXT;
 `
 
-// EnsureLLMRecordsTable creates the llm_records table if it does not exist.
+// EnsureLLMRecordsTable은 llm_records 테이블이 없으면 만든다.
 func (d *DB) EnsureLLMRecordsTable() error {
 	tx, err := d.Begin()
 	if err != nil {
@@ -206,7 +204,7 @@ func (d *DB) EnsureLLMRecordsTable() error {
 	return tx.Commit()
 }
 
-// InsertLLMRecord stores one LLM call record.
+// InsertLLMRecord는 LLM 호출 기록 하나를 저장한다.
 func (d *DB) InsertLLMRecord(r *LLMRecord) error {
 	_, err := d.Exec(`
 INSERT INTO llm_records(model, profile_name, session_id, task_id, worker, latency_ms, input_tokens, output_tokens, cache_read, cache_write, status, error, request_body, response_body, raw_request, raw_response)
@@ -218,7 +216,7 @@ VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
 	return err
 }
 
-// ListLLMRecords returns paginated LLM records with optional filters.
+// ListLLMRecords는 필터를 선택해 페이지로 나눈 LLM 기록을 돌려준다.
 func (d *DB) ListLLMRecords(model, session, task string, page, size int) ([]LLMRecord, int, error) {
 	if size <= 0 {
 		size = 50
@@ -276,9 +274,8 @@ func (d *DB) ListLLMRecords(model, session, task string, page, size int) ([]LLMR
 	return out, total, rows.Err()
 }
 
-// ModelTokenStat is one model's aggregated token usage for a task, summed from the
-// llm_usage metering ledger (see db/llm_usage.go). Calls is the number of LLM calls
-// that hit this model.
+// ModelTokenStat은 한 작업에서 모델 하나의 토큰 사용 합계다. llm_usage 장부에서 더한다
+// (db/llm_usage.go). Calls는 이 모델을 친 LLM 호출 수다.
 type ModelTokenStat struct {
 	Model            string `json:"model"`
 	Calls            int    `json:"calls"`
@@ -288,14 +285,14 @@ type ModelTokenStat struct {
 	CacheWriteTokens int    `json:"cache_write_tokens"`
 }
 
-// LLMTask is one distinct task with its LLM-record count.
+// LLMTask는 LLM 기록 수를 가진, 서로 다른 작업 하나다.
 type LLMTask struct {
 	TaskID string `json:"task_id"`
 	Count  int    `json:"count"`
 }
 
-// LLMTasks returns distinct non-empty task_ids with record counts, most recent
-// first — powers the LLM-records page's task picker.
+// LLMTasks는 비어 있지 않은 task_id와 기록 수를, 최근 것부터 돌려준다.
+// LLM 기록 화면의 작업 선택 목록이 이 값을 쓴다.
 func (d *DB) LLMTasks() ([]LLMTask, error) {
 	rows, err := d.Query(`SELECT task_id, COUNT(*) AS n FROM llm_records
 WHERE COALESCE(task_id,'') <> '' GROUP BY task_id ORDER BY MAX(id) DESC`)
@@ -314,8 +311,8 @@ WHERE COALESCE(task_id,'') <> '' GROUP BY task_id ORDER BY MAX(id) DESC`)
 	return out, rows.Err()
 }
 
-// DeleteLLMRecords removes every LLM record for one exact task_id — the same
-// match the page's task picker/filter uses. Returns rows deleted.
+// DeleteLLMRecords는 task_id가 정확히 같은 LLM 기록을 모두 지운다.
+// 화면의 작업 선택·필터와 같은 조건이다. 지운 행 수를 돌려준다.
 func (d *DB) DeleteLLMRecords(task string) (int64, error) {
 	res, err := d.Exec(`DELETE FROM llm_records WHERE COALESCE(task_id,'') = $1`, task)
 	if err != nil {
@@ -324,7 +321,7 @@ func (d *DB) DeleteLLMRecords(task string) (int64, error) {
 	return res.RowsAffected()
 }
 
-// GetLLMRecord returns a single LLM record with full request/response bodies.
+// GetLLMRecord는 요청·응답 본문 전체를 담은 LLM 기록 하나를 돌려준다.
 func (d *DB) GetLLMRecord(id int64) (*LLMRecord, error) {
 	var r LLMRecord
 	var reqBody, respBody, rawReq, rawResp sql.NullString

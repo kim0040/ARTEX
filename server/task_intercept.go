@@ -15,7 +15,7 @@ import (
 
 type taskInterceptRuleReq struct {
 	Enabled bool   `json:"enabled"`
-	Action  string `json:"action"` // block | allow
+	Action  string `json:"action"` // block=차단 | allow=허용
 	Kind    string `json:"kind"`
 	Pattern string `json:"pattern"`
 	Note    string `json:"note"`

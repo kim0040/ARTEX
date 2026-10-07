@@ -16,7 +16,7 @@ import (
 // 자산 그래프는 이 표를 루트 도메인, 서브도메인, IP, 서비스의 공유 원장으로 쓴다.
 // =====================================================================
 
-// Asset is a row in the assets table.
+// Asset는 assets 표의 한 줄이다. 자산 그래프의 공유 원장이다.
 type Asset struct {
 	ID         int64   `json:"id"`
 	Type       string  `json:"type"`
@@ -28,19 +28,19 @@ type Asset struct {
 	CSegment   string  `json:"c_segment,omitempty"`
 	Port       *int    `json:"port,omitempty"`
 	ICP        string  `json:"icp,omitempty"`
-	// ip fields
+	// ip 필드
 	BoundDomains []string         `json:"bound_domains,omitempty"`
 	OpenPorts    []map[string]any `json:"open_ports,omitempty"`
-	// subdomain fields
+	// 서브도메인 필드
 	RecordType  string   `json:"record_type,omitempty"`
 	RecordValue []string `json:"record_value,omitempty"`
-	// app fields
+	// 앱 필드
 	BundleID       string `json:"bundle_id,omitempty"`
 	AppName        string `json:"app_name,omitempty"`
 	Category       string `json:"category,omitempty"`
 	AppDescription string `json:"app_description,omitempty"`
 	AppICP         string `json:"app_icp,omitempty"`
-	// service fields
+	// 서비스 필드
 	URL           string           `json:"url,omitempty"`
 	ServiceType   string           `json:"service_type,omitempty"`
 	ServiceName   string           `json:"service_name,omitempty"`
@@ -50,10 +50,10 @@ type Asset struct {
 	PageTitle     string           `json:"page_title,omitempty"`
 	Technologies  []string         `json:"technologies,omitempty"`
 	Auth          []map[string]any `json:"auth,omitempty"`
-	// endpoint fields
+	// 엔드포인트 필드
 	Method string           `json:"method,omitempty"`
 	Params []map[string]any `json:"params,omitempty"`
-	// meta
+	// 메타
 	Extra             map[string]any `json:"extra,omitempty"`
 	LastSeen          string         `json:"last_seen"`
 	TaskSource        string         `json:"task_source,omitempty"`
@@ -61,7 +61,7 @@ type Asset struct {
 	TaskSourceNodeID  *int64         `json:"task_source_node_id,omitempty"`
 }
 
-// AuthItem is one entry in the auth array.
+// AuthItem은 auth 배열의 항목 하나다.
 type AuthItem struct {
 	Type        string `json:"type,omitempty"`
 	Username    string `json:"username,omitempty"`
@@ -70,7 +70,7 @@ type AuthItem struct {
 	Description string `json:"description,omitempty"`
 }
 
-// ParamItem is one entry in the params array.
+// ParamItem은 params 배열의 항목 하나다.
 type ParamItem struct {
 	Location string `json:"location"`
 	Name     string `json:"name"`
@@ -78,30 +78,30 @@ type ParamItem struct {
 	Type     string `json:"type,omitempty"`
 }
 
-// PortService is one entry in open_ports: {"port":22,"service":"ssh"}.
+// PortService는 open_ports의 항목 하나다. 예: {"port":22,"service":"ssh"}.
 type PortService struct {
 	Port    int    `json:"port"`
 	Service string `json:"service,omitempty"`
 }
 
-// AssetStore operates on the assets table.
+// AssetStore는 assets 표를 다룬다. 자산 그래프에 읽고 쓴다.
 type AssetStore struct {
 	db      *DB
 	company *CompanyStore
 	tx      *sql.Tx
 }
 
-// Assets returns the asset store.
+// Assets는 자산 저장소를 돌려준다.
 func (d *DB) Assets() *AssetStore {
 	return &AssetStore{db: d, company: d.Companies()}
 }
 
-// Companies returns the company store associated with this asset store.
+// Companies는 이 자산 저장소에 붙은 회사 저장소를 돌려준다.
 func (s *AssetStore) Companies() *CompanyStore { return s.company }
 
-// withCompanyScopeMutation serializes scope resolution and every asset write
-// that consumes its result in one transaction. Nested asset side effects reuse
-// the same transaction through the scoped store.
+// withCompanyScopeMutation은 범위 판정과 그 결과를 쓰는 자산 쓰기를
+// 트랜잭션 하나로 직렬화한다. 중첩된 자산 부수 효과는
+// 범위가 잡힌 저장소의 같은 트랜잭션을 다시 쓴다.
 func (s *AssetStore) withCompanyScopeMutation(fn func(*AssetStore) (int64, error)) (int64, error) {
 	if s.tx != nil {
 		return fn(s)
@@ -133,10 +133,10 @@ func (s *AssetStore) resolveCompanyWithICP(rootDomain, ipStr, icp string) (*int6
 }
 
 // =====================================================================
-// Helpers
+// 도우미
 // =====================================================================
 
-// calcCSegment computes the /24 (IPv4) or /48 (IPv6) network for an IP string.
+// calcCSegment는 IP 문자열의 /24(IPv4) 또는 /48(IPv6) 네트워크를 계산한다.
 func calcCSegment(ipStr string) string {
 	if ipStr == "" {
 		return ""
@@ -146,14 +146,14 @@ func calcCSegment(ipStr string) string {
 		return ""
 	}
 	if ip.To4() != nil {
-		// IPv4 /24
+		// IPv4의 /24
 		parts := strings.Split(ipStr, ".")
 		if len(parts) == 4 {
 			return parts[0] + "." + parts[1] + "." + parts[2] + ".0/24"
 		}
 		return ""
 	}
-	// IPv6 /48
+	// IPv6의 /48
 	_, ipnet, err := net.ParseCIDR(ipStr + "/48")
 	if err != nil {
 		return ""
@@ -161,7 +161,7 @@ func calcCSegment(ipStr string) string {
 	return ipnet.String()
 }
 
-// normalizeURL lowercases scheme and host, strips trailing slash from bare roots.
+// normalizeURL은 스킴과 호스트를 소문자로 만들고, 맨 루트의 끝 슬래시를 뺀다.
 func normalizeURL(raw string) string {
 	u, err := url.Parse(raw)
 	if err != nil {
@@ -176,7 +176,7 @@ func normalizeURL(raw string) string {
 	return s
 }
 
-// parseURL extracts domain, port, service_name from a URL.
+// parseURL은 URL에서 domain, port, service_name을 뽑는다.
 func parseURL(raw string) (domain string, port int, serviceName string) {
 	u, err := url.Parse(raw)
 	if err != nil {
@@ -205,8 +205,8 @@ func marshalJSONBArray(items []map[string]any) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		// PostgreSQL array literal for jsonb[]: each element must be
-		// double-quoted with internal backslashes and double-quotes escaped.
+		// jsonb[]용 PostgreSQL 배열 리터럴. 각 원소는
+		// 큰따옴표로 감싸고, 안의 역슬래시와 큰따옴표는 이스케이프한다.
 		s := strings.ReplaceAll(string(b), `\`, `\\`)
 		s = strings.ReplaceAll(s, `"`, `\"`)
 		parts[i] = `"` + s + `"`
@@ -233,7 +233,7 @@ func marshalPortServices(ps []PortService) (string, error) {
 	return marshalJSONBArray(items)
 }
 
-// nullableInt64 returns sql.NullInt64.
+// nullableInt64는 sql.NullInt64를 돌려준다.
 func nullableInt(v int) interface{} {
 	if v == 0 {
 		return nil
@@ -242,17 +242,17 @@ func nullableInt(v int) interface{} {
 }
 
 // =====================================================================
-// UpsertRootDomain
+// 루트 도메인 upsert
 // =====================================================================
 
-// UpsertRootDomainReq is the input for UpsertRootDomain.
+// UpsertRootDomainReq는 UpsertRootDomain의 입력이다.
 type UpsertRootDomainReq struct {
 	Domain string
 	ICP    string
 	TaskID int64
 }
 
-// UpsertRootDomain idempotently inserts or merges a root domain asset.
+// UpsertRootDomain은 루트 도메인 자산을 넣거나 합친다. 여러 번 호출해도 한 줄이다.
 func (s *AssetStore) UpsertRootDomain(req UpsertRootDomainReq) (int64, error) {
 	domain := DomainKey(req.Domain)
 	if domain == "" {
@@ -302,17 +302,17 @@ RETURNING id`, domain, icpVal, companyID, taskIDs).Scan(&id)
 	return id, err
 }
 
-// ErrAssetIPInvalid marks a non-address value in an asset's ip field. Both
-// insert_assets and the asset API report it per item with the item index, so one
-// bad entry never costs the rest of the batch.
+// ErrAssetIPInvalid는 자산 ip 필드에 주소가 아닌 값이 있음을 표시한다.
+// insert_assets와 자산 API가 항목 인덱스와 함께 항목마다 알리므로,
+// 나쁜 항목 하나가 배치의 나머지를 버리지 않는다.
 var ErrAssetIPInvalid = errors.New("invalid asset ip")
 
-// ValidateAssetIP keeps hostnames out of assets.ip. Network attribution casts
-// that column to inet (see try_inet in schema.sql), so a hostname stored here is
-// silently invisible to every IP/CIDR scope rule — the asset simply never gets
-// attributed and nobody can tell why. The message states the fix rather than
-// just the fault, so an agent can correct the item on its next turn. An empty
-// value is accepted: the ip field is optional for service and endpoint assets.
+// ValidateAssetIP는 호스트 이름이 assets.ip에 들어가지 않게 한다. 네트워크 귀속은
+// 그 열을 inet으로 캐스팅한다(schema.sql의 try_inet). 여기에 호스트 이름을 넣으면
+// 모든 IP/CIDR 범위 규칙에서 조용히 안 보인다. 자산은 귀속되지 않고
+// 왜인지 알 수 없다. 메시지는 잘못만 말하지 않고 고치는 법을 말해,
+// 에이전트가 다음 턴에 항목을 고칠 수 있다. 빈
+// 값은 허용한다. 서비스와 엔드포인트 자산에서 ip는 선택이다.
 func ValidateAssetIP(value string) error {
 	if value == "" || net.ParseIP(value) != nil {
 		return nil
@@ -324,10 +324,10 @@ func ValidateAssetIP(value string) error {
 }
 
 // =====================================================================
-// UpsertIP
+// IP를 넣거나 합친다
 // =====================================================================
 
-// UpsertIPReq is the input for UpsertIP.
+// UpsertIPReq는 UpsertIP의 입력이다.
 type UpsertIPReq struct {
 	IP           string
 	BoundDomains []string
@@ -335,7 +335,7 @@ type UpsertIPReq struct {
 	TaskID       int64
 }
 
-// UpsertIP idempotently inserts or merges an IP asset.
+// UpsertIP는 IP 자산을 넣거나 합친다. 여러 번 호출해도 한 줄이다.
 func (s *AssetStore) UpsertIP(req UpsertIPReq) (int64, error) {
 	if req.IP == "" {
 		return 0, fmt.Errorf("ip 는 필수입니다")
@@ -402,7 +402,7 @@ RETURNING id`, req.IP, csegVal, boundDomains, openPortsJSON, companyID, taskIDs)
 	return id, err
 }
 
-// AppendIPPort appends a {port, service} entry to an existing IP asset's open_ports.
+// AppendIPPort는 있는 IP 자산의 open_ports에 {port, service} 항목을 붙인다.
 func (s *AssetStore) AppendIPPort(ipStr string, port int, serviceName string) error {
 	if ipStr == "" || port == 0 {
 		return nil
@@ -423,7 +423,7 @@ WHERE type = 'ip' AND ip = $2`, string(entry), ipStr)
 	return err
 }
 
-// AppendIPBoundDomain appends a domain to an existing IP asset's bound_domains.
+// AppendIPBoundDomain은 있는 IP 자산의 bound_domains에 도메인을 붙인다.
 func (s *AssetStore) AppendIPBoundDomain(ipStr, domain string) error {
 	if ipStr == "" || domain == "" {
 		return nil
@@ -437,10 +437,10 @@ WHERE type = 'ip' AND ip = $2`, domain, ipStr)
 }
 
 // =====================================================================
-// UpsertSubdomain
+// 서브도메인 upsert
 // =====================================================================
 
-// UpsertSubdomainReq is the input for UpsertSubdomain.
+// UpsertSubdomainReq는 UpsertSubdomain의 입력이다.
 type UpsertSubdomainReq struct {
 	Domain      string
 	RecordType  string
@@ -449,8 +449,8 @@ type UpsertSubdomainReq struct {
 	TaskID      int64
 }
 
-// UpsertSubdomain idempotently inserts or merges a subdomain asset and triggers
-// side effects: root_domain upsert + IP bound_domains update.
+// UpsertSubdomain은 서브도메인 자산을 넣거나 합치고 부수 효과를 일으킨다.
+// 루트 도메인 upsert와 IP bound_domains 갱신이다.
 func (s *AssetStore) UpsertSubdomain(req UpsertSubdomainReq) (id int64, err error) {
 	domain := DomainKey(req.Domain)
 	if domain == "" {
@@ -467,21 +467,21 @@ func (s *AssetStore) UpsertSubdomain(req UpsertSubdomainReq) (id int64, err erro
 		rootDomain = domain
 	}
 
-	// Resolve by root domain first, then the asset's exact normalized ICP.
+	// 먼저 루트 도메인으로 회사를 찾고, 그다음 자산의 정규화된 ICP를 그대로 맞춘다.
 	companyID, err := s.resolveCompanyWithICP(rootDomain, "", req.ICP)
 	if err != nil {
 		return 0, err
 	}
 
-	// side effect 1: ensure root domain exists
+	// 부수 효과 1: 루트 도메인 자산이 있게 한다
 	_, _ = s.UpsertRootDomain(UpsertRootDomainReq{
 		Domain: rootDomain,
 		TaskID: req.TaskID,
 	})
 
-	// side effect 2: if A/AAAA record, upsert each IP + bind domain.
-	// RecordValue is []string; each element may itself be comma-separated (legacy).
-	var ipStr string // first valid IP, used for the subdomain row itself
+	// 부수 효과 2: A/AAAA 레코드면 IP마다 upsert하고 도메인을 묶는다.
+	// RecordValue는 []string이다. 원소 하나가 쉼표로 또 나뉠 수 있다(예전 형식).
+	var ipStr string // 첫 유효 IP. 서브도메인 행 자체에 쓴다
 	if req.RecordType == "A" || req.RecordType == "AAAA" {
 		for _, rv := range req.RecordValue {
 			for _, part := range strings.Split(rv, ",") {
@@ -551,21 +551,21 @@ RETURNING id`, domain, rootDomain, recordType, recordValueArr, ipVal, csegVal, i
 }
 
 // =====================================================================
-// UpsertApp
+// 앱 upsert
 // =====================================================================
 
-// UpsertAppReq is the input for UpsertApp.
+// UpsertAppReq는 UpsertApp의 입력이다.
 type UpsertAppReq struct {
 	Name        string
 	BundleID    string
 	Category    string
 	Description string
 	ICP         string
-	CompanyID   *int64 // explicit override; nil = exact ICP auto-attribution when available
+	CompanyID   *int64 // 명시적 덮어쓰기. nil이면 가능하면 ICP를 그대로 맞춰 자동 귀속한다
 	TaskID      int64
 }
 
-// UpsertApp idempotently inserts or merges an app asset.
+// UpsertApp은 앱 자산을 넣거나 합친다. 여러 번 호출해도 한 줄이다.
 func (s *AssetStore) UpsertApp(req UpsertAppReq) (int64, error) {
 	if req.Name == "" {
 		return 0, fmt.Errorf("앱 이름은 필수입니다")
@@ -663,10 +663,10 @@ RETURNING id`, req.Name, catVal, descVal, icpVal, companyIDVal, companySource, t
 }
 
 // =====================================================================
-// UpsertHTTPService
+// HTTP 서비스 upsert
 // =====================================================================
 
-// UpsertHTTPServiceReq is the input for UpsertHTTPService.
+// UpsertHTTPServiceReq는 UpsertHTTPService의 입력이다.
 type UpsertHTTPServiceReq struct {
 	URL           string
 	Technologies  []string
@@ -675,12 +675,12 @@ type UpsertHTTPServiceReq struct {
 	PageTitle     string
 	FaviconMMH3   string
 	Auth          []map[string]any
-	IP            string // optional, from async DNS
+	IP            string // 선택. 비동기 DNS에서 온다
 	TaskID        int64
 }
 
-// UpsertHTTPService inserts or merges an HTTP service asset. Domain, port,
-// service_name, and root_domain are auto-extracted from URL.
+// UpsertHTTPService는 HTTP 서비스 자산을 넣거나 합친다. domain, port,
+// service_name, root_domain은 URL에서 자동으로 뽑는다.
 func (s *AssetStore) UpsertHTTPService(req UpsertHTTPServiceReq) (int64, error) {
 	if req.URL == "" {
 		return 0, fmt.Errorf("url 은 필수입니다")
@@ -782,7 +782,7 @@ RETURNING id`,
 		return 0, err
 	}
 
-	// side effects: register root_domain + subdomain as their own assets too
+	// 부수 효과: 루트 도메인과 서브도메인도 각자 자산으로 등록한다
 	s.linkHostAssets(domain, rootDomain, req.TaskID)
 	if req.IP != "" {
 		var boundDomains []string
@@ -804,12 +804,12 @@ RETURNING id`,
 }
 
 // =====================================================================
-// UpsertOtherService
+// 기타 서비스 upsert
 // =====================================================================
 
-// UpsertOtherServiceReq is the input for UpsertOtherService.
+// UpsertOtherServiceReq는 UpsertOtherService의 입력이다.
 type UpsertOtherServiceReq struct {
-	Domain      string // domain or ip required
+	Domain      string // 도메인 또는 ip가 필요하다
 	IP          string
 	Port        int
 	ServiceName string
@@ -817,7 +817,7 @@ type UpsertOtherServiceReq struct {
 	TaskID      int64
 }
 
-// UpsertOtherService inserts or merges a non-HTTP service asset.
+// UpsertOtherService는 HTTP가 아닌 서비스 자산을 넣거나 합친다.
 func (s *AssetStore) UpsertOtherService(req UpsertOtherServiceReq) (int64, error) {
 	if req.Domain == "" && req.IP == "" {
 		return 0, fmt.Errorf("도메인 또는 ip 는 필수입니다")
@@ -836,8 +836,8 @@ func (s *AssetStore) UpsertOtherService(req UpsertOtherServiceReq) (int64, error
 			return scoped.UpsertOtherService(req)
 		})
 	}
-	// normalize service_name (lowercase) so the (domain,ip,port,service_name)
-	// dedup key doesn't split "SSH" and "ssh" into separate rows.
+	// service_name을 소문자로 정규화한다. (domain,ip,port,service_name)
+	// 중복 키가 "SSH"와 "ssh"를 다른 행으로 나누지 않게 한다.
 	serviceName := strings.ToLower(strings.TrimSpace(req.ServiceName))
 
 	domain := DomainKey(req.Domain)
@@ -917,7 +917,7 @@ RETURNING id`,
 		return 0, err
 	}
 
-	// side effects
+	// 부수 효과
 	if req.IP != "" && req.Port > 0 {
 		var boundDomains []string
 		if domain != "" {
@@ -934,9 +934,9 @@ RETURNING id`,
 	return id, nil
 }
 
-// linkHostAssets ensures a service/endpoint's host is also registered as its own
-// root_domain and (when it's a real subdomain, not the apex or an IP) subdomain
-// asset — so those asset types stay populated and can anchor task scope. Best-effort.
+// linkHostAssets는 서비스/엔드포인트의 호스트도 자기 자산으로 등록되게 한다.
+// 루트 도메인과, 정점이나 IP가 아닌 진짜 서브도메인이면 서브도메인
+// 자산이다. 그 종류가 채워져 작업 범위의 앵커가 될 수 있다. 실패해도 본 쓰기는 계속한다.
 func (s *AssetStore) linkHostAssets(domain, rootDomain string, taskID int64) {
 	if rootDomain != "" {
 		_, _ = s.UpsertRootDomain(UpsertRootDomainReq{Domain: rootDomain, TaskID: taskID})
@@ -947,20 +947,20 @@ func (s *AssetStore) linkHostAssets(domain, rootDomain string, taskID int64) {
 }
 
 // =====================================================================
-// UpsertEndpoint
+// 엔드포인트 upsert
 // =====================================================================
 
-// UpsertEndpointReq is the input for UpsertEndpoint.
+// UpsertEndpointReq는 UpsertEndpoint의 입력이다.
 type UpsertEndpointReq struct {
 	URL    string
 	Method string
 	Params []map[string]any
-	IP     string // optional
+	IP     string // 선택
 	TaskID int64
 }
 
-// UpsertEndpoint inserts or merges an endpoint asset. Domain, port, root_domain
-// are auto-extracted from the URL.
+// UpsertEndpoint는 엔드포인트 자산을 넣거나 합친다. domain, port, root_domain은
+// URL에서 자동으로 뽑는다.
 func (s *AssetStore) UpsertEndpoint(req UpsertEndpointReq) (int64, error) {
 	if req.URL == "" {
 		return 0, fmt.Errorf("url 은 필수입니다")
@@ -1051,8 +1051,8 @@ RETURNING id`,
 	if err != nil {
 		return 0, err
 	}
-	// side effects: endpoint previously registered none — register its host as
-	// root_domain + subdomain(+IP) so those asset types get populated too.
+	// 부수 효과: 엔드포인트는 예전에 호스트를 등록하지 않았다. 이제 호스트를
+	// 루트 도메인과 서브도메인(+IP)으로 등록해 그 자산 종류도 채운다.
 	s.linkHostAssets(domain, rootDomain, req.TaskID)
 	if req.IP != "" {
 		_, _ = s.UpsertIP(UpsertIPReq{IP: req.IP, TaskID: req.TaskID})
@@ -1061,10 +1061,10 @@ RETURNING id`,
 }
 
 // =====================================================================
-// Query helpers
+// 조회 도우미
 // =====================================================================
 
-// QueryByType returns assets rows of a given type, newest first.
+// QueryByType은 주어진 종류의 자산 행을 최신순으로 돌려준다.
 func (s *AssetStore) QueryByType(typ string, limit, offset int) ([]*Asset, error) {
 	if limit <= 0 {
 		limit = 50
@@ -1094,15 +1094,15 @@ LIMIT $2 OFFSET $3`, typ, limit, offset)
 	return scanAssets(rows)
 }
 
-// CountByType returns the total number of assets of a type (for server-side pagination).
+// CountByType은 한 종류의 자산 총개수를 돌려준다. 서버 쪽 페이지에 쓴다.
 func (s *AssetStore) CountByType(typ string) (int, error) {
 	var n int
 	err := s.db.QueryRow(`SELECT count(*) FROM assets WHERE type = $1`, typ).Scan(&n)
 	return n, err
 }
 
-// QueryByCompany returns assets for a company, optionally filtered by type.
-// limit <= 0 means no limit.
+// QueryByCompany는 한 회사의 자산을 돌려준다. 종류로 거를 수 있다.
+// limit <= 0이면 개수 제한이 없다.
 func (s *AssetStore) QueryByCompany(companyID int64, typ string, limit, offset int) ([]*Asset, error) {
 	q := `SELECT id, type, company_id, array_to_json(task_ids)::text,
        COALESCE(domain,''), COALESCE(root_domain,''), COALESCE(ip,''),
@@ -1154,7 +1154,7 @@ func pageClause(args *[]any, limit, offset int) string {
 	return q
 }
 
-// QueryByTask returns assets rows that have a given task_id in task_ids.
+// QueryByTask는 task_ids에 그 task_id가 있는 자산 행을 돌려준다.
 func (s *AssetStore) QueryByTask(taskID int64, typ string, limit, offset int) ([]*Asset, error) {
 	q := `SELECT id, type, company_id, array_to_json(task_ids)::text,
        COALESCE(domain,''), COALESCE(root_domain,''), COALESCE(ip,''),
@@ -1209,10 +1209,10 @@ func (s *AssetStore) CountsByTypeForTask(taskID int64) (map[string]int, error) {
 	return scanTypeCounts(rows)
 }
 
-// DeleteByTaskID removes assets owned only by taskID and detaches taskID from
-// assets shared with other tasks. Full task deletion uses the coordinated
-// transaction in DeleteTaskCascadePrepared; this method remains for callers
-// that explicitly manage only asset associations.
+// DeleteByTaskID는 taskID만 소유한 자산을 지우고, 다른 작업과 공유하는 자산에서는
+// taskID만 떼어 낸다. 작업 전체 삭제는
+// DeleteTaskCascadePrepared의 조율된 트랜잭션을 쓴다. 이 메서드는
+// 자산 연결만 직접 다루는 호출자용으로 남긴다.
 func (s *AssetStore) DeleteByTaskID(taskID int64) (int64, error) {
 	res, err := s.db.Exec(`DELETE FROM assets WHERE task_ids = ARRAY[$1]::bigint[]`, taskID)
 	if err != nil {
@@ -1225,9 +1225,9 @@ func (s *AssetStore) DeleteByTaskID(taskID int64) (int64, error) {
 	return deleted, nil
 }
 
-// HostsByTask returns the exact HTTP host candidates attached to a task's
-// assets. Domain/IP columns cover root domains, subdomains and non-HTTP
-// services; URL covers HTTP services and endpoints.
+// HostsByTask는 작업 자산에 붙은 HTTP 호스트 후보를 그대로 돌려준다.
+// domain/ip 열은 루트 도메인, 서브도메인, HTTP가 아닌
+// 서비스를 덮고, URL은 HTTP 서비스와 엔드포인트를 덮는다.
 func (s *AssetStore) HostsByTask(taskID int64) ([]string, error) {
 	rows, err := s.db.Query(`
 SELECT COALESCE(domain,''), COALESCE(ip,''), COALESCE(url,'')
@@ -1266,11 +1266,11 @@ FROM assets WHERE $1 = ANY(task_ids)`, taskID)
 	return out, nil
 }
 
-// HostsForTaskDeletion returns hosts that belong to the task being deleted and
-// are not referenced by any other live task. Current-task candidates include
-// both task_ids ownership and exploration anchors so legacy seeded assets (which
-// were anchor-only) are covered. Protection is host-wide: if another live task
-// references any asset for a candidate host, that host's global traffic remains.
+// HostsForTaskDeletion은 지우는 작업의 호스트 중
+// 다른 살아 있는 작업이 참조하지 않는 것을 돌려준다. 이번 작업 후보에는
+// task_ids 소유와 탐색 앵커가 둘 다 들어간다. 앵커만 있던 예전 시드 자산도
+// 포함된다. 보호는 호스트 단위다. 다른 살아 있는 작업이
+// 그 호스트의 자산 하나라도 참조하면, 그 호스트의 전역 트래픽은 남긴다.
 func (s *AssetStore) HostsForTaskDeletion(taskID, explorationID int64) ([]string, error) {
 	return hostsForTaskDeletion(s.db, taskID, explorationID)
 }
@@ -1279,10 +1279,10 @@ type rowsQuerier interface {
 	Query(query string, args ...any) (*sql.Rows, error)
 }
 
-// hostsForTaskDeletion is shared by the read-only AssetStore API and the task
-// deletion transaction. Coordinated traffic deletion must call it through the
-// transaction path so asset/anchor writes stay locked until the task delete is
-// committed.
+// hostsForTaskDeletion은 읽기 전용 AssetStore API와 작업
+// 삭제 트랜잭션이 같이 쓴다. 조율된 트래픽 삭제는
+// 트랜잭션 경로로 호출해야 한다. 작업 삭제가
+// 커밋될 때까지 자산/앵커 쓰기가 잠긴 채로 남게 한다.
 func hostsForTaskDeletion(q rowsQuerier, taskID, explorationID int64) ([]string, error) {
 	rows, err := q.Query(`
 WITH current_assets AS (
@@ -1366,7 +1366,7 @@ const assetSelectCols = `SELECT id, type, company_id, array_to_json(task_ids)::t
        COALESCE(method,''), array_to_json(params)::text, extra, last_seen::text
 FROM assets`
 
-// GetByIDs returns assets with the given ids (order preserved by id array order).
+// GetByIDs는 주어진 id의 자산을 돌려준다. 순서는 id 배열 순서를 유지한다.
 func (s *AssetStore) GetByIDs(ids []int64) ([]*Asset, error) {
 	if len(ids) == 0 {
 		return nil, nil
@@ -1386,7 +1386,7 @@ func (s *AssetStore) GetByIDs(ids []int64) ([]*Asset, error) {
 	return scanAssets(rows)
 }
 
-// DeleteByCompanyID hard-deletes all assets belonging to a company. Returns rows deleted.
+// DeleteByCompanyID는 회사에 속한 자산을 모두 하드 삭제한다. 지운 행 수를 돌려준다.
 func (s *AssetStore) DeleteByCompanyID(companyID int64) (int64, error) {
 	res, err := s.db.Exec(`DELETE FROM assets WHERE company_id = $1`, companyID)
 	if err != nil {
@@ -1395,14 +1395,14 @@ func (s *AssetStore) DeleteByCompanyID(companyID int64) (int64, error) {
 	return res.RowsAffected()
 }
 
-// DeleteByHost hard-deletes every asset whose host exactly matches the given value:
-// root_domain / subdomain / service / endpoint (they carry the host in domain or
-// root_domain) plus an ip asset and its services/endpoints (ip column). The host is
-// normalized the same way it is stored (DomainKey: lowercase/trim/strip trailing dot)
-// so matching is exact, not fuzzy. Passing a root domain also removes its subdomains
-// and their services/endpoints (they carry root_domain = that host); passing a
-// subdomain/IP removes only that host's own assets. Referencing exploration_anchors
-// rows are cleaned by ON DELETE CASCADE. Returns rows deleted, grouped by type.
+// DeleteByHost는 호스트가 주어진 값과 정확히 같은 자산을 모두 하드 삭제한다.
+// root_domain / subdomain / service / endpoint(호스트는 domain 또는
+// root_domain에 있다)와 ip 자산 및 그 서비스/엔드포인트(ip 열)다. 호스트는
+// 저장할 때와 같이 정규화한다(DomainKey: 소문자, 앞뒤 공백 제거, 끝의 점 제거).
+// 맞추기는 퍼지가 아니라 정확 일치다. 루트 도메인을 넘기면 그 서브도메인과
+// 그 서비스/엔드포인트도 지운다(root_domain이 그 호스트). 서브도메인이나 IP를 넘기면
+// 그 호스트 자신의 자산만 지운다. 가리키는 exploration_anchors
+// 행은 ON DELETE CASCADE로 정리된다. 지운 행 수를 종류별로 돌려준다.
 func (s *AssetStore) DeleteByHost(host string) (map[string]int64, error) {
 	h := DomainKey(host)
 	if h == "" {
@@ -1427,7 +1427,7 @@ RETURNING type`, h)
 	return counts, rows.Err()
 }
 
-// DeleteByIDs hard-deletes assets by their IDs. Returns the number of rows deleted.
+// DeleteByIDs는 id로 자산을 하드 삭제한다. 지운 행 수를 돌려준다.
 func (s *AssetStore) DeleteByIDs(ids []int64) (int64, error) {
 	if len(ids) == 0 {
 		return 0, nil
@@ -1445,7 +1445,7 @@ func (s *AssetStore) DeleteByIDs(ids []int64) (int64, error) {
 	return res.RowsAffected()
 }
 
-// CountsByType returns asset counts per type.
+// CountsByType은 종류별 자산 개수를 돌려준다.
 func (s *AssetStore) CountsByType() (map[string]int, error) {
 	rows, err := s.db.Query(`SELECT type, COUNT(*) FROM assets GROUP BY type`)
 	if err != nil {
@@ -1468,7 +1468,7 @@ func scanTypeCounts(rows *sql.Rows) (map[string]int, error) {
 	return out, rows.Err()
 }
 
-// scanAssets scans the wide SELECT that covers all type columns.
+// scanAssets는 모든 종류 열을 덮는 넓은 SELECT 결과를 읽는다.
 func scanAssets(rows *sql.Rows) ([]*Asset, error) {
 	var out []*Asset
 	for rows.Next() {
@@ -1506,7 +1506,7 @@ func scanAssets(rows *sql.Rows) ([]*Asset, error) {
 			cl := contentLength.Int64
 			a.ContentLength = &cl
 		}
-		// parse arrays
+		// 배열을 해석한다
 		if len(taskIDsRaw) > 0 {
 			_ = json.Unmarshal(taskIDsRaw, &a.TaskIDs)
 		}

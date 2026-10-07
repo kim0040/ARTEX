@@ -1,20 +1,21 @@
 package agent
 
-// cold-digest §4/§5/§7: the Compactor ties the pure algorithms (coldgraph.go)
-// to the store (db/digest.go) and the LLM. It runs in two modes:
+// cold-digest §4/§5/§7: Compactor 는 순수한 알고리즘(coldgraph.go)을
+// 저장소(db/digest.go)와 LLM 에 잇습니다. 두 방식으로 돕니다.
 //
-//	maintain — cheap, synchronous, once per planner round: bump round_no,
-//	           recompute hot/cold, stamp/clear cold_since_round (§2.3). This is
-//	           the bookkeeping the planner does anyway; it never calls the LLM.
-//	minor/major — background, off the planner hot path (§7): group cold nodes
-//	           and compress each ≥2 block into a digest via the LLM. minor folds
-//	           only the not-yet-covered cold set (tiered append); major re-derives
-//	           the whole grouping from source and merges fragments (§5.1/§5.2),
-//	           reusing bodies whose signature is unchanged (§5.3).
+//	maintain — 싸고, 동기이며, 플래너 라운드마다 한 번: round_no 를 올리고,
+//	           hot/cold 를 다시 계산하고, cold_since_round 를 찍거나 지웁니다(§2.3).
+//	           플래너가 어차피 하는 장부입니다. LLM 을 부르지 않습니다.
+//	minor/major — 백그라운드이고, 플래너의 바쁜 경로 밖입니다(§7). cold 노드를 묶고
+//	           크기 2 이상 block 을 LLM 으로 digest 로 압축합니다. minor 는
+//	           아직 안 덮인 cold 집합만 접습니다(층층이 덧붙임). major 는
+//	           원본에서 묶음을 다시 만들고 조각을 합칩니다(§5.1/§5.2).
+//	           서명이 안 바뀐 본문은 재사용합니다(§5.3).
 //
-// Concurrency: one compaction per task at a time (mutex), ≥cooldown between runs,
-// and a commit-time liveness recheck drops any member that revived while the body
-// was being generated so a digest never covers a hot node.
+// 동시성: 작업마다 압축은 한 번에 하나(뮤텍스), 실행 사이는 cooldown 이상,
+// 커밋 때 살아 있는지 다시 봐서, 본문을 만드는 동안 다시 살아난 구성원은 뺍니다.
+// digest 가 hot 노드를 덮지 않게 합니다.
+// 초보: 탐색 그래프가 커지면, 식은 사실과 끝난 의도를 플래너가 읽기 쉬운 요약으로 여기서 접습니다.
 
 import (
 	"context"
@@ -31,22 +32,22 @@ import (
 	"github.com/Autumn-27/norma/transcript"
 )
 
-// Compactor performs background cold-node compaction for many explorations.
+// Compactor 는 여러 탐색의 cold 노드를 백그라운드에서 압축합니다.
 type Compactor struct {
 	prov     llm.Provider
 	model    string
 	params   coldParams
-	n, m     int           // minor / major thresholds (§7 N=20, M=8)
-	cooldown time.Duration // min gap between compactions per task (§7 60s)
-	maxDur   time.Duration // hard cap on one background compaction
+	n, m     int           // minor / major 문턱(§7 N=20, M=8)
+	cooldown time.Duration // 작업마다 압축 사이 최소 간격(§7 60초)
+	maxDur   time.Duration // 백그라운드 압축 한 번의 하드 상한
 
 	mu      sync.Mutex
 	running map[int64]bool
 	lastRun map[int64]time.Time
 }
 
-// NewCompactor builds a compactor. prov/model are used for the §4 body LLM call
-// (same model the agent runs on, per §4). A nil Compactor is a safe no-op.
+// NewCompactor 는 압축기를 만듭니다. prov/model 은 §4 본문 LLM 호출에 씁니다
+// (§4 대로, 에이전트가 도는 것과 같은 모델). nil Compactor 는 안전하게 아무 일도 하지 않습니다.
 func NewCompactor(prov llm.Provider, model string) *Compactor {
 	return &Compactor{
 		prov:     prov,
@@ -61,10 +62,9 @@ func NewCompactor(prov llm.Provider, model string) *Compactor {
 	}
 }
 
-// OnPlannerRound is the single entry the planner calls each wake-up. It bumps the
-// round, maintains the cold stamps synchronously, then (if a threshold is hit and
-// no compaction is running / cooling down) launches a background compaction that
-// outlives this planner round.
+// OnPlannerRound 는 플래너가 깨어날 때마다 부르는 유일한 입구입니다. 라운드를 올리고,
+// cold 도장을 동기적으로 유지한 뒤, 문턱에 닿고 압축이 안 돌고 식는 중이 아니면
+// 이 플래너 라운드보다 오래 사는 백그라운드 압축을 띄웁니다.
 func (c *Compactor) OnPlannerRound(ctx context.Context, ts *db.ExplorationStore) {
 	if c == nil || c.prov == nil || ts == nil {
 		return
@@ -101,10 +101,10 @@ func (c *Compactor) OnPlannerRound(ctx context.Context, ts *db.ExplorationStore)
 	_ = round
 }
 
-// maintain bumps round_no, recomputes hot/cold over the whole graph, and applies
-// the cold_since_round stamp/clear ops (§2.3). Returns the new round plus the
-// counts that drive the trigger: how many eligible-cold nodes are not yet covered
-// (minor) and how many active digests exist (major).
+// maintain 은 round_no 를 올리고, 그래프 전체의 hot/cold 를 다시 계산하고,
+// cold_since_round 도장/지우기를 적용합니다(§2.3). 새 라운드와, 트리거를 움직이는
+// 개수를 돌려줍니다. 아직 안 덮인 eligible-cold 노드 수(minor)와
+// 활성 digest 수(major)입니다.
 func (c *Compactor) maintain(ts *db.ExplorationStore) (round int64, uncompressed, activeDigests int, err error) {
 	round, err = ts.BumpRound()
 	if err != nil {
@@ -143,8 +143,8 @@ func (c *Compactor) maintain(ts *db.ExplorationStore) (round int64, uncompressed
 	return
 }
 
-// minor folds the not-yet-covered eligible-cold set into new digest segments
-// (tiered append, §5). Existing digests are untouched.
+// minor 는 아직 안 덮인 eligible-cold 집합을 새 digest 조각으로 접습니다
+// (층층이 덧붙임, §5). 기존 digest 는 건드리지 않습니다.
 func (c *Compactor) minor(ctx context.Context, ts *db.ExplorationStore) {
 	round, err := ts.RoundNo()
 	if err != nil {
@@ -176,22 +176,22 @@ func (c *Compactor) minor(ctx context.Context, ts *db.ExplorationStore) {
 	}
 	blocks := g.group(uncompressed, c.params)
 	if len(blocks) == 0 {
-		return // this batch has no ≥2 connected/shared-parent block — nothing to fold (§7)
+		return // 이 묶음에는 연결됐거나 부모를 공유하는 크기 2 이상 block 이 없습니다. 접을 것이 없습니다(§7)
 	}
 	for _, b := range blocks {
 		c.foldBlock(ctx, ts, g, b, nodeByID, cvers, c.generationFor(b, nil))
 	}
-	// A minor may have pushed the segment count over M → merge in the same run.
+	// minor 가 조각 수를 M 넘게 밀었을 수 있습니다. 같은 실행에서 합칩니다.
 	if ad, e := ts.ActiveDigests(); e == nil && len(ad) >= c.m {
 		c.major(ctx, ts)
 	}
 }
 
-// major re-derives the whole grouping from source over ALL eligible-cold nodes
-// (§5.1 원본으로 돌아가 다시 압축), then reconciles against the active digests by signature:
-// unchanged blocks keep their digest (no LLM), stale digests are superseded, and
-// new/changed blocks are compressed afresh. This is where tiered fragments of one
-// direction merge and where "later became connected" blocks unify (§5.2).
+// major 는 모든 eligible-cold 노드에 대해 원본에서 묶음을 다시 만듭니다
+// (§5.1 원본으로 돌아가 다시 압축). 그다음 서명으로 활성 digest 와 맞춥니다.
+// 안 바뀐 block 은 digest 를 유지합니다(LLM 없음). 낡은 digest 는 밀려나고,
+// 새것이거나 바뀐 block 은 새로 압축합니다. 한 방향의 층층이 쌓인 조각이 합쳐지고,
+// "나중에 연결됨" block 이 하나로 모이는 곳입니다(§5.2).
 func (c *Compactor) major(ctx context.Context, ts *db.ExplorationStore) {
 	round, err := ts.RoundNo()
 	if err != nil {
@@ -228,12 +228,12 @@ func (c *Compactor) major(ctx context.Context, ts *db.ExplorationStore) {
 		sig := blockSignature(b, cvers)
 		desired[sig] = true
 		if _, ok := bySig[sig]; ok {
-			continue // unchanged → reuse the existing digest, skip LLM (§5.3)
+			continue // 안 바뀜 → 기존 digest 를 재사용하고 LLM 을 건너뜁니다(§5.3)
 		}
 		toCreate = append(toCreate, b)
 	}
-	// Supersede stale digests FIRST (atomic drop of their covers edges) so a member
-	// is never covered by both an old and a new digest (§5.1 one-member-one-digest).
+	// 낡은 digest 를 먼저 밀어 냅니다(covers 간선을 원자적으로 끊음). 구성원이
+	// 옛 digest 와 새 digest 에 동시에 덮이지 않게 합니다(§5.1 구성원 하나에 digest 하나).
 	var stale []int64
 	for _, d := range active {
 		sig, _ := digestSigGen(d)
@@ -249,17 +249,17 @@ func (c *Compactor) major(ctx context.Context, ts *db.ExplorationStore) {
 	}
 }
 
-// foldBlock compresses one block and writes its digest — with a commit-time
-// liveness recheck (§ concurrency): between grouping and write the graph may have
-// changed, so any member that has since gone hot (revived) is dropped from the
-// covers set. If the block dissolves below K it is skipped.
+// foldBlock 은 block 하나를 압축하고 digest 를 씁니다. 커밋 때 살아 있는지를
+// 다시 봅니다(동시성): 묶기와 쓰기 사이에 그래프가 바뀌었을 수 있으므로,
+// 그 사이 hot 이 된(다시 살아난) 구성원은 covers 집합에서 뺍니다.
+// block 이 K 밑으로 녹으면 건너뜁니다.
 func (c *Compactor) foldBlock(ctx context.Context, ts *db.ExplorationStore, g *coldGraph, b block, nodeByID map[int64]*db.Node, cvers map[int64]int, generation int) {
 	body, err := c.compress(ctx, g, b, nodeByID)
 	if err != nil {
 		log.Printf("[compaction] compress exp=%d block=%v: %v", ts.ID(), b.Members, err)
 		return
 	}
-	// Re-read fresh state and drop any member that revived while we compressed.
+	// 새 상태를 다시 읽고, 압축하는 동안 다시 살아난 구성원은 뺍니다.
 	fresh, _, err := loadColdGraph(ts)
 	if err != nil {
 		return
@@ -272,7 +272,7 @@ func (c *Compactor) foldBlock(ctx context.Context, ts *db.ExplorationStore, g *c
 		}
 	}
 	if len(members) < c.params.K {
-		return // block revived out from under us — leave those nodes hot, don't fold
+		return // block 이 밑에서 다시 살아났습니다. 그 노드는 hot 으로 두고 접지 않습니다
 	}
 	final := block{Members: members, Anchors: b.Anchors}
 	payload := digestPayload(body, final, nodeByID, generation, blockSignature(final, cvers))
@@ -281,9 +281,8 @@ func (c *Compactor) foldBlock(ctx context.Context, ts *db.ExplorationStore, g *c
 	}
 }
 
-// generationFor computes a digest's 다시 압축한 세대 (§1): 1 for a fresh fold; for a major
-// merge, max(generation) over the active digests that overlap this block's
-// members, +1.
+// generationFor 는 digest 의 다시 압축한 세대(§1)를 계산합니다. 새 접기는 1 입니다.
+// major 병합이면, 이 block 의 구성원과 겹치는 활성 digest 의 generation 최댓값에 1 을 더합니다.
 func (c *Compactor) generationFor(b block, active []*db.Node) int {
 	if len(active) == 0 {
 		return 1
@@ -307,7 +306,7 @@ func (c *Compactor) generationFor(b block, active []*db.Node) int {
 	return best + 1
 }
 
-// tryStart acquires the per-task compaction lock, honoring the cooldown.
+// tryStart 는 작업마다의 압축 잠금을 잡습니다. cooldown 을 지킵니다.
 func (c *Compactor) tryStart(expID int64) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -328,13 +327,13 @@ func (c *Compactor) finish(expID int64) {
 	c.lastRun[expID] = time.Now()
 }
 
-// --- helpers: db ↔ coldgraph ---
+// --- 도우미: db ↔ coldgraph ---
 
-// loadColdGraph reads the exploration's nodes + edges and builds the cold-graph
-// view plus an id→node index (for summaries/payload during compression).
+// loadColdGraph 는 탐색의 노드와 간선을 읽어 cold 그래프 보기와
+// id→노드 색인을 만듭니다(압축 중 요약/payload 용).
 func loadColdGraph(ts *db.ExplorationStore) (*coldGraph, map[int64]*db.Node, error) {
-	// Compaction must see the WHOLE graph, not the default row caps — pass a very
-	// high limit so the LIMIT clause is effectively unbounded for real task sizes.
+	// 압축은 기본 행 상한이 아니라 그래프 전체를 봐야 합니다. 한계를 아주 크게 넣어
+	// 실제 작업 크기에서는 LIMIT 이 사실상 없게 합니다.
 	const allRows = 1 << 30
 	nodes, err := ts.Nodes(allRows)
 	if err != nil {
@@ -365,8 +364,8 @@ func toDBStampOps(ops []stampOp) []db.StampOp {
 	return out
 }
 
-// applyStampsInPlace folds the just-applied ops into the in-memory stamp map so
-// eligibility can be computed immediately without a re-read.
+// applyStampsInPlace 는 방금 적용한 연산을 메모리 도장 맵에 접어,
+// 다시 읽지 않고 바로 자격 여부를 계산하게 합니다.
 func applyStampsInPlace(stamps map[int64]*int64, ops []stampOp) {
 	for _, o := range ops {
 		if o.Set {
@@ -378,11 +377,11 @@ func applyStampsInPlace(stamps map[int64]*int64, ops []stampOp) {
 	}
 }
 
-// --- helpers: digest payload ---
+// --- 도우미: digest payload ---
 
-// digestPayload builds the digest node payload (cold-digest §1): the body, the
-// member ids split by kind (restore cache; source of truth is the covers edges),
-// the anchor ids, the generation, and the change-detection signature.
+// digestPayload 는 digest 노드 payload 를 만듭니다(cold-digest §1). 본문,
+// 종류별로 나눈 구성원 id(복원 캐시. 진실의 원천은 covers 간선),
+// 앵커 id, 세대, 변경 감지 서명입니다.
 func digestPayload(body string, b block, nodeByID map[int64]*db.Node, generation int, signature string) map[string]any {
 	var facts, intents []int64
 	for _, m := range b.Members {
@@ -421,7 +420,7 @@ func digestMemberIDs(n *db.Node) []int64 {
 	return append(append([]int64{}, p.MemberIDs.Facts...), p.MemberIDs.Intents...)
 }
 
-// --- helpers: compression input + LLM (§4) ---
+// --- 도우미: 압축 입력과 LLM (§4) ---
 
 func nodeSummary(n *db.Node) string {
 	if n == nil {
@@ -452,10 +451,10 @@ func nodeConfidence(n *db.Node) string {
 	return ""
 }
 
-// buildCompressionInput renders the connected sub-graph for the §4 prompt:
-// member nodes (summary + id + kind + state + confidence), the internal blood
-// edges among members, and — for a §3.1 shared-parent group — the anchor parents
-// as context ("공통 부모 #p"), which are NOT members.
+// buildCompressionInput 은 §4 프롬프트용 연결된 부분 그래프를 그립니다.
+// 구성원 노드(요약 + id + 종류 + 상태 + 확신), 구성원 사이의 혈통 간선,
+// 그리고 §3.1 공통 부모 묶음이면 앵커 부모를 맥락으로 넣습니다("공통 부모 #p").
+// 앵커는 구성원이 아닙니다.
 func buildCompressionInput(g *coldGraph, b block, nodeByID map[int64]*db.Node) string {
 	memberSet := make(map[int64]bool, len(b.Members))
 	for _, m := range b.Members {
@@ -480,7 +479,7 @@ func buildCompressionInput(g *coldGraph, b block, nodeByID map[int64]*db.Node) s
 		sb.WriteString(line)
 		sb.WriteByte('\n')
 	}
-	// internal edges among members
+	// 구성원 사이의 내부 간선
 	var edgeLines []string
 	for _, m := range b.Members {
 		for _, to := range g.children[m] {
@@ -509,8 +508,8 @@ func buildCompressionInput(g *coldGraph, b block, nodeByID map[int64]*db.Node) s
 	return sb.String()
 }
 
-// compress runs the §4 body LLM call on one block. Uses the same model the agent
-// runs on; thinking disabled (a pure summarization step).
+// compress 는 block 하나에 §4 본문 LLM 호출을 돌립니다. 에이전트가 도는 것과 같은 모델을 씁니다.
+// 생각은 끕니다(순수한 요약 단계).
 func (c *Compactor) compress(ctx context.Context, g *coldGraph, b block, nodeByID map[int64]*db.Node) (string, error) {
 	req := llm.CompletionRequest{
 		System:    []string{compressionSystemPrompt},
@@ -529,7 +528,7 @@ func (c *Compactor) compress(ctx context.Context, g *coldGraph, b block, nodeByI
 	return body, nil
 }
 
-// compressionSystemPrompt is the §4 body prompt.
+// compressionSystemPrompt 는 §4 본문 프롬프트입니다.
 const compressionSystemPrompt = `你在压缩一组【彼此关联】的探索节点，产出一段综合结论(body)，供规划者快速掌握"这一片已经探明了什么"。
 
 输入是一个连通子图：

@@ -13,8 +13,8 @@ import (
 
 const MaxTaskCategoryNameRunes = 80
 
-// MaxTaskCategoryBatchSize bounds one batch move so a single request cannot lock
-// an unbounded number of task rows.
+// MaxTaskCategoryBatchSize는 한 번의 일괄 이동 상한이다.
+// 요청 하나가 작업 행을 끝없이 잠그지 못하게 한다.
 const MaxTaskCategoryBatchSize = 100
 
 var (
@@ -24,7 +24,7 @@ var (
 	ErrTaskCategoryTaskNotFound = errors.New("작업을 찾을 수 없습니다")
 )
 
-// TaskCategory is a globally reusable task grouping label.
+// TaskCategory는 전역으로 다시 쓰는 작업 묶음 이름이다. 작업 목록 UI가 이 라벨로 작업을 가른다.
 type TaskCategory struct {
 	ID        int64     `json:"id"`
 	Name      string    `json:"name"`
@@ -146,8 +146,8 @@ FROM updated`, id, name, nkey))
 	return &category, nil
 }
 
-// DeleteTaskCategory moves affected tasks to the uncategorized bucket through
-// the tasks.category_id ON DELETE SET NULL foreign key.
+// DeleteTaskCategory는 해당 작업을 미분류로 옮긴다.
+// tasks.category_id의 ON DELETE SET NULL 외래 키가 그렇게 한다.
 func (d *DB) DeleteTaskCategory(id int64) (bool, error) {
 	result, err := d.Exec(`DELETE FROM task_categories WHERE id=$1`, id)
 	if err != nil {
@@ -157,7 +157,7 @@ func (d *DB) DeleteTaskCategory(id int64) (bool, error) {
 	return rows > 0, err
 }
 
-// SetTaskCategory updates one live task. A nil category means uncategorized.
+// SetTaskCategory는 살아있는 작업 하나의 분류를 고친다. category가 nil이면 미분류다.
 func (d *DB) SetTaskCategory(taskID int64, categoryID *int64) (*TaskCategory, error) {
 	if categoryID == nil {
 		result, err := d.Exec(`UPDATE tasks SET category_id=NULL WHERE id=$1 AND deleted_at IS NULL`, taskID)
@@ -204,11 +204,10 @@ FROM selected, updated`, taskID, *categoryID))
 	return &category, nil
 }
 
-// SetTasksCategory moves several tasks into one category (nil = uncategorized)
-// inside a single transaction, so a half-applied batch is never observable.
-// It returns the ids that were actually updated — ids missing from that slice
-// were deleted between selection and submit — plus the refreshed category row
-// whose task_count already reflects this move.
+// SetTasksCategory는 여러 작업을 한 분류로 옮긴다(nil이면 미분류).
+// 트랜잭션 하나라 절반만 적용된 묶음이 보이지 않는다.
+// 실제로 고친 id를 돌려준다. 그 목록에 없는 id는 고르기와 제출 사이에 지워진 것이다.
+// 갱신된 분류 행도 함께 돌려주며, task_count는 이미 이번 이동을 반영한다.
 func (d *DB) SetTasksCategory(taskIDs []int64, categoryID *int64) ([]int64, *TaskCategory, error) {
 	if len(taskIDs) == 0 {
 		return nil, nil, fmt.Errorf("%w: task ids are required", ErrTaskCategoryInvalid)
@@ -230,8 +229,8 @@ func (d *DB) SetTasksCategory(taskIDs []int64, categoryID *int64) ([]int64, *Tas
 	}
 	defer tx.Rollback() //nolint:errcheck
 
-	// Checking the category inside the transaction keeps a concurrent delete from
-	// turning the UPDATE below into a foreign key violation.
+	// 트랜잭션 안에서 분류를 확인한다. 동시에 지워져도
+	// 아래 UPDATE가 외래 키 위반이 되지 않게 한다.
 	if categoryID != nil {
 		var exists bool
 		if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM task_categories WHERE id=$1)`, *categoryID).Scan(&exists); err != nil {

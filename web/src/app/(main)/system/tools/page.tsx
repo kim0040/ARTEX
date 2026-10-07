@@ -38,21 +38,21 @@ import { api } from "@/lib/api";
 import type { Agent, Tool } from "@/lib/types";
 
 // 트래픽 도구는 전역 트래픽 캡처 스위치로 막는 호스트 도구입니다. 연결할 수는 있지만, （기록 프록시는 오가는 트래픽을 잡아 두는 중간 서버입니다）
-// only usable when capture is on. Keep in sync with traffic.SeedToolMetas.
+// 캡처가 켜져 있을 때만 쓸 수 있습니다. traffic.SeedToolMetas와 목록을 맞추세요.
 const TRAFFIC_TOOL_KEYS = new Set(["traffic_search", "traffic_get"]);
 
-// paramRows flattens schema.properties into an ordered row list for editing.
-// name/type/required are read-only (welded to the Go handler); description/default
-// are editable. Non-scalar params (array/object) can't carry an editable default.
-// parentKey is set for rows that live inside an array param's items.properties.
+// paramRows는 schema.properties를 편집용 순서 있는 줄로 펼칩니다.
+// name/type/required는 읽기 전용(Go 핸들러에 고정)이고, description/default는
+// 고칠 수 있습니다. 배열/객체 매개변수는 고칠 수 있는 기본값을 못 갖습니다.
+// parentKey는 배열 매개변수의 items.properties 안에 있는 줄에 설정됩니다.
 type ParamRow = {
   name: string;
   type: string;
   required: boolean;
   description: string;
-  defaultStr: string; // "" = no default declared
+  defaultStr: string; // ""이면 기본값이 선언되지 않음
   scalar: boolean;
-  parentKey?: string; // set when this is a sub-field of an array param's items
+  parentKey?: string; // 배열 매개변수의 items 하위 필드일 때 설정
 };
 
 // 데모 기록입니다. 영향만 적었고 명령과 자격 증명은 생략했습니다.
@@ -70,7 +70,7 @@ function toRows(schema: Record<string, any>): ParamRow[] {
       defaultStr: hasDefault ? String((p as Record<string, unknown>).default) : "",
       scalar: ["string", "integer", "number", "boolean"].includes(type),
     });
-    // Expand items.properties for array params so sub-fields are editable.
+    // 배열 매개변수는 items.properties를 펼쳐 하위 필드를 고칠 수 있게 합니다.
     if (type === "array") {
       // 데모 기록입니다. 영향만 적었고 명령과 자격 증명은 생략했습니다.
       const itemProps = (p as any)?.items?.properties as Record<string, Record<string, unknown>> | undefined;
@@ -95,8 +95,8 @@ function toRows(schema: Record<string, any>): ParamRow[] {
   return rows;
 }
 
-// coerceDefault turns the edited default string back into a typed JSON value, or
-// undefined to drop the "default" key entirely.
+// coerceDefault는 고친 기본값 문자열을 타입이 있는 JSON 값으로 되돌리거나,
+// undefined면 "default" 키를 아예 뺍니다.
 function coerceDefault(type: string, raw: string): unknown {
   const s = raw.trim();
   if (s === "") return undefined;
@@ -108,14 +108,14 @@ function coerceDefault(type: string, raw: string): unknown {
   return raw;
 }
 
-// applyRows writes edited rows back into a deep-copied schema (structure untouched).
+// applyRows는 고친 줄을 깊게 복사한 스키마에 다시 씁니다(구조는 그대로).
 // 데모 기록입니다. 영향만 적었고 명령과 자격 증명은 생략했습니다.
 function applyRows(schema: Record<string, any>, rows: ParamRow[]): Record<string, any> {
   const next = structuredClone(schema ?? {});
   const props = (next.properties ?? {}) as Record<string, Record<string, unknown>>;
   for (const r of rows) {
     if (r.parentKey) {
-      // Sub-field of an array param's items.properties
+      // 배열 매개변수 items.properties의 하위 필드
       // 데모 기록입니다. 영향만 적었고 명령과 자격 증명은 생략했습니다.
       const parent = props[r.parentKey] as any;
       const subP = parent?.items?.properties?.[r.name] as Record<string, unknown> | undefined;
@@ -140,7 +140,7 @@ function applyRows(schema: Record<string, any>, rows: ParamRow[]): Record<string
   return next;
 }
 
-// ToolEditor is the full edit form for one tool, rendered inside the drawer.
+// ToolEditor는 도구 하나의 전체 편집 폼이고, 서랍 안에 그립니다.
 function ToolEditor({
   tool,
   agents,
@@ -204,7 +204,7 @@ function ToolEditor({
             이 도구는 다음에 의존합니다<b>트래픽 캡처</b>. 먼저 "시스템 설정"에서 트래픽 캡처를 켜야 Agent에 묶고 사용할 수 있습니다.
           </div>
         )}
-        {/* binding + switch */}
+        {/* 연결 + 스위치 */}
         <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
           <div className="grid gap-1.5">
             <Label className="text-muted-foreground text-xs">Agent 연결(이 도구를 어떤 Agent에 줄지 정합니다)</Label>
@@ -231,7 +231,7 @@ function ToolEditor({
           </div>
         </div>
 
-        {/* description */}
+        {/* 설명 */}
         <div className="grid gap-1.5">
           <Label className="text-muted-foreground text-xs">도구 설명(모델에게 보냄)</Label>
           <Textarea
@@ -242,7 +242,7 @@ function ToolEditor({
           />
         </div>
 
-        {/* params */}
+        {/* 매개변수 */}
         <div className="grid gap-2">
           <Label className="text-muted-foreground text-xs">
             매개변수(이름 / 유형 / 필수는 읽기 전용. 설명과 기본값은 수정 가능)
@@ -309,7 +309,7 @@ function ToolEditor({
   );
 }
 
-// ToolGridCard is one clickable tile in the catalog grid.
+// ToolGridCard는 목록 격자의 누를 수 있는 칸 하나입니다.
 function ToolGridCard({ tool, onClick }: { tool: Tool; onClick: () => void }) {
   return (
     <button
@@ -395,7 +395,7 @@ export default function ToolsPage() {
   const customTools = tools.filter((t) => !t.system && matchTool(t));
   const allSystemCount = tools.filter((t) => t.system).length;
   const allCustomCount = tools.filter((t) => !t.system).length;
-  // clicking a built-in tool opens the binding drawer; a custom tool opens its full editor.
+  // 내장 도구를 누르면 연결 서랍이, 사용자 도구를 누르면 전체 편집기가 열립니다.
   const openTool = (t: Tool) => (t.system ? setSelectedKey(t.key) : setCustomEdit(t));
 
   return (
@@ -561,7 +561,7 @@ function CustomToolDialog({
   const [testing, setTesting] = React.useState(false);
   const [testResult, setTestResult] = React.useState<{ output: string; is_error: boolean } | null>(null);
 
-  // (re)load form state when opening.
+  // 열 때 폼 상태를 (다시) 불러옵니다.
   React.useEffect(() => {
     if (!edit) return;
     setParamsText(""); setTestResult(null);
@@ -602,7 +602,7 @@ function CustomToolDialog({
     if (kind === "script") return { code: ex.code, timeout_ms: t };
     let headers: Record<string, string> = {};
     if (ex.headers.trim()) {
-      try { headers = JSON.parse(ex.headers); } catch { /* validated on save */ }
+      try { headers = JSON.parse(ex.headers); } catch { /* 저장할 때 검사 */ }
     }
     return { method: ex.method, url: ex.url, headers, body: ex.body, timeout_ms: t, proxy: ex.proxy, use_recording_proxy: ex.use_recording_proxy };
   }
@@ -649,8 +649,8 @@ function CustomToolDialog({
       toast.error("삭제 실패:" + (e as Error).message);
     }
   }
-  // runTest dry-runs the CURRENT form (unsaved) with the sample params, so a
-  // template/script/request can be debugged before saving.
+  // runTest는 저장하지 않은 지금 폼을 예시 매개변수로 시험 실행해서
+  // 저장 전에 템플릿/스크립트/요청을 고칠 수 있게 합니다.
   async function runTest() {
     let params: Record<string, unknown> = {};
     if (paramsText.trim()) {

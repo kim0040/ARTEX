@@ -9,7 +9,7 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Finding asset tree — 전역 발견 목록의 「자산별」 뷰.
+// 발견 자산 트리 — 전역 발견 목록의 「자산별」 뷰.
 //
 // 계층은 BuildCoverageGraph와 같은 출처다(company → root_domain/ip/app → subdomain →
 // service → endpoint). 그쪽은 「한 작업 범위 안의 자산」을 그리는 힘 방향 그래프이고, 이쪽은
@@ -31,7 +31,7 @@ const findingAssetTreeMaxNodes = 3000
 type FindingAssetNode struct {
 	Key       string `json:"key"`
 	Parent    string `json:"parent,omitempty"`
-	Kind      string `json:"kind"` // company|root_domain|subdomain|ip|service|app|endpoint|none
+	Kind      string `json:"kind"` // company|root_domain|subdomain|ip|service|app|endpoint|none(미연결)
 	Label     string `json:"label"`
 	AssetID   int64  `json:"asset_id,omitempty"`
 	CompanyID int64  `json:"company_id,omitempty"`
@@ -374,7 +374,7 @@ func keysOf(m map[string]bool) []string {
 // isIPLiteral은 host가 IP 리터럴인지 대략 판별한다(호스트를 ip 표에서 찾을지 subdomain 표에서 찾을지 정하는 데 쓴다).
 func isIPLiteral(host string) bool {
 	if strings.Contains(host, ":") {
-		return true // IPv6
+		return true // IPv6 주소
 	}
 	if host == "" {
 		return false

@@ -35,7 +35,7 @@ type customToolReq struct {
 	Schema      json.RawMessage `json:"schema"`
 	Agents      []string        `json:"agents"`
 	Enabled     bool            `json:"enabled"`
-	Kind        string          `json:"kind"` // command | script | http
+	Kind        string          `json:"kind"` // command=명령 | script=스크립트 | http=HTTP
 	Exec        json.RawMessage `json:"exec"`
 	Deferred    bool            `json:"deferred"`
 }
@@ -130,19 +130,19 @@ func (s *Server) pgDeleteCustomTool(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"deleted": key})
 }
 
-// testToolReq is a dry-run request from the editor: run the given (possibly unsaved)
-// exec spec with sample params, without persisting the tool. Same executor path as a
-// real tool call — it runs arbitrary command/script/http on the server, which the
-// custom-tool feature already allows, so no new capability is granted.
+// testToolReq는 편집기의 연습 실행 요청입니다. 저장하지 않은
+// exec 사양도 샘플 매개변수로 돌립니다. 도구는 저장하지 않습니다. 실행 경로는
+// 진짜 도구 호출과 같습니다. 서버에서 임의 명령/스크립트/http를 돌리는데,
+// 사용자 정의 도구 기능이 이미 허용한 일이라 새 능력은 생기지 않습니다.
 type testToolReq struct {
-	Kind   string          `json:"kind"` // command | script | http
+	Kind   string          `json:"kind"` // command=명령 | script=스크립트 | http=HTTP
 	Exec   json.RawMessage `json:"exec"`
 	Params map[string]any  `json:"params"`
 }
 
-// pgTestCustomTool executes an exec spec once and returns its raw output + error
-// flag, so the editor can debug a tool before saving it. Per-kind timeouts still
-// apply from the exec spec (with defaults); the outer ceiling is a hard backstop.
+// pgTestCustomTool은 exec 사양을 한 번 돌리고, 원문 출력과 오류
+// 여부를 돌려줍니다. 저장 전에 편집기에서 도구를 디버그할 때 씁니다. 종류별 시간 제한은
+// exec 사양(기본값 포함)을 그대로 쓰고, 바깥 상한은 하드 안전장치입니다.
 func (s *Server) pgTestCustomTool(w http.ResponseWriter, r *http.Request) {
 	pg := s.pg(w)
 	if pg == nil {
@@ -159,7 +159,7 @@ func (s *Server) pgTestCustomTool(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Minute)
 	defer cancel()
-	tc := &actool.ToolContext{WorkingDir: s.m.dir} // run in the project dir, like a real call
+	tc := &actool.ToolContext{WorkingDir: s.m.dir} // 진짜 호출처럼 프로젝트 디렉터리에서 돌립니다.
 	var res actool.Result
 	switch req.Kind {
 	case "command":
@@ -182,7 +182,7 @@ func (s *Server) pgTestCustomTool(w http.ResponseWriter, r *http.Request) {
 
 const settingPythonInterp = "python_interpreter"
 
-// detectPython finds a python interpreter absolute path (python3 preferred).
+// detectPython은 파이썬 해석기의 절대 경로를 찾습니다(python3를 우선).
 func detectPython() string {
 	for _, c := range []string{"python3", "python"} {
 		if p, err := exec.LookPath(c); err == nil {
@@ -192,8 +192,8 @@ func detectPython() string {
 	return ""
 }
 
-// pythonInterpreter resolves the interpreter: user-set > stored auto-detect > live
-// detect. "" only when truly none found.
+// pythonInterpreter는 해석기를 고릅니다. 사용자가 지정 > 저장해 둔 자동 탐지 > 지금
+// 탐지. 정말 없을 때만 빈 문자열입니다.
 func (s *Server) pythonInterpreter() string {
 	if v, ok, _ := s.m.pg.GetSetting(settingPythonInterp); ok && strings.TrimSpace(v) != "" {
 		return strings.TrimSpace(v)
@@ -201,8 +201,8 @@ func (s *Server) pythonInterpreter() string {
 	return detectPython()
 }
 
-// seedPythonInterpreter stores the auto-detected interpreter on startup if unset
-// (never clobbers a user-set value).
+// seedPythonInterpreter는 시작 때, 아직 없으면 자동으로 찾은 해석기를 저장합니다
+// (사용자가 넣은 값은 덮지 않습니다).
 func (s *Server) seedPythonInterpreter() {
 	if v, ok, _ := s.m.pg.GetSetting(settingPythonInterp); ok && strings.TrimSpace(v) != "" {
 		return
@@ -242,9 +242,9 @@ func timeoutOr(ms, def int) time.Duration {
 
 // ---------- 공통 도구 생성 ----------
 
-// customTools builds CoreTools for every user-defined (system=false) tool row.
-// shell-kind tools are environment hints only — they surface in the Bash tool
-// description via ToolResolve and do NOT create callable tool entries here.
+// customTools는 사용자가 만든(system=false) 도구 행마다 CoreTool을 만듭니다.
+// shell 종류는 환경 힌트일 뿐입니다. ToolResolve가 Bash 도구
+// 설명에 넣고, 여기서 호출 가능한 도구 항목은 만들지 않습니다.
 func (s *Server) customTools() ([]actool.CoreTool, error) {
 	rows, err := s.m.pg.ListCustomTools()
 	if err != nil {
@@ -253,14 +253,14 @@ func (s *Server) customTools() ([]actool.CoreTool, error) {
 	out := make([]actool.CoreTool, 0, len(rows))
 	for _, t := range rows {
 		if t.Kind == "shell" {
-			continue // shell hints are handled by ToolResolve → Bash description
+			continue // shell 힌트는 ToolResolve가 Bash 설명으로 처리합니다.
 		}
 		out = append(out, s.buildCustomTool(t))
 	}
 	return out, nil
 }
 
-// buildCustomTool turns one custom-tool row into a CoreTool. Empty schema → a thin
+// buildCustomTool은 사용자 정의 도구 행 하나를 CoreTool로 바꿉니다. 스키마가 비면
 // {args:string} (얇은 껍질 도구), so command/http templates can use {args}.
 func (s *Server) buildCustomTool(t *db.Tool) actool.CoreTool {
 	schema := ensureSchema(t.Schema)
@@ -293,9 +293,9 @@ func (s *Server) buildCustomTool(t *db.Tool) actool.CoreTool {
 	})
 }
 
-// hasSchemaProps reports whether raw is a JSON-Schema object with ≥1 property.
-// http tools require an explicit schema (the auto {args} shell can't name the
-// {param} placeholders in URL/headers/body), so an empty schema is rejected.
+// hasSchemaProps는 raw가 속성이 1개 이상인 JSON 스키마 객체인지 알려 줍니다.
+// http 도구는 스키마가 명시돼야 합니다(자동 {args} 껍질은 URL/헤더/본문의
+// {param} 자리를 이름으로 못 채움). 그래서 빈 스키마는 거절합니다.
 func hasSchemaProps(raw json.RawMessage) bool {
 	if len(raw) == 0 {
 		return false
@@ -308,7 +308,7 @@ func hasSchemaProps(raw json.RawMessage) bool {
 	return len(props) > 0
 }
 
-// ensureSchema returns the tool's schema, or a thin {args:string} when none given.
+// ensureSchema는 도구 스키마를 돌려줍니다. 없으면 얇은 {args:string}을 줍니다.
 func ensureSchema(raw json.RawMessage) map[string]any {
 	var m map[string]any
 	if len(raw) > 0 {
@@ -373,9 +373,9 @@ func (s *Server) runScriptTool(ctx context.Context, key string, execRaw json.Raw
 	return actool.Text(actool.Capture(tc, body)), nil
 }
 
-// execPython writes the code to a temp .py under workDir/.tools, runs it via interp
-// with the params JSON on stdin + scalar params mirrored to TOOL_<NAME> env, and
-// returns combined stdout+stderr (with a timeout/exit note). Standalone + testable.
+// execPython은 코드를 workDir/.tools 아래 임시 .py에 쓰고, interp로 돌립니다.
+// 매개변수 JSON은 stdin으로, 스칼라 매개변수는 TOOL_<NAME> 환경 변수로도 넘깁니다.
+// stdout과 stderr를 합쳐 돌려줍니다(시간 초과/종료 메모 포함). 따로 떼어 테스트할 수 있습니다.
 func execPython(ctx context.Context, interp, key, code string, params map[string]any, workDir string, sessionEnv []string, timeout time.Duration) (string, error) {
 	toolsDir := filepath.Join(workDir, ".tools")
 	if err := os.MkdirAll(toolsDir, 0o755); err != nil {
@@ -456,8 +456,9 @@ func (s *Server) runHTTPTool(ctx context.Context, execRaw json.RawMessage, param
 	return actool.Text(actool.Capture(tc, string(b))), nil
 }
 
-// httpProxyTransport builds a Transport for the http tool's proxy config, or nil
-// (direct). use_recording_proxy routes through the recording proxy + trusts its CA.
+// httpProxyTransport는 http 도구의 프록시 설정으로 Transport를 만듭니다. 없으면 nil
+// (직접 연결). use_recording_proxy면 기록 프록시를 타고, 그 CA를 신뢰합니다.
+// 초보용: 사용자 정의 http 도구가 기록 프록시로 나가게 하는 자리입니다. 자산 그래프와는 별개입니다.
 func (s *Server) httpProxyTransport(spec httpExec) *http.Transport {
 	proxyStr := strings.TrimSpace(spec.Proxy)
 	var caFile string
@@ -486,14 +487,14 @@ func (s *Server) httpProxyTransport(spec httpExec) *http.Transport {
 	return tr
 }
 
-// ---------- helpers ----------
+// ---------- 도우미 ----------
 
 func identity(s string) string { return s }
 
-// shellQuote single-quotes a value for safe shell interpolation.
+// shellQuote는 셸에 안전하게 넣으려고 값을 작은따옴표로 감쌉니다.
 func shellQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
 
-// renderTemplate replaces {name} placeholders with each param's rendered value.
+// renderTemplate은 {name} 자리를 각 매개변수의 그린 값으로 바꿉니다.
 func renderTemplate(tmpl string, params map[string]any, quote func(string) string) string {
 	out := tmpl
 	for k, v := range params {
@@ -502,7 +503,7 @@ func renderTemplate(tmpl string, params map[string]any, quote func(string) strin
 	return out
 }
 
-// valToStr renders a param value: scalars as-is, arrays/objects as compact JSON.
+// valToStr는 매개변수 값을 글로 바꿉니다. 스칼라는 그대로, 배열/객체는 짧은 JSON입니다.
 func valToStr(v any) string {
 	if sv, ok := scalarStr(v); ok {
 		return sv
@@ -511,7 +512,7 @@ func valToStr(v any) string {
 	return string(b)
 }
 
-// scalarStr returns (string, true) for scalar values, ("", false) for arrays/objects.
+// scalarStr는 스칼라면 (문자열, true), 배열/객체면 ("", false)를 돌려줍니다.
 func scalarStr(v any) (string, bool) {
 	switch x := v.(type) {
 	case string:

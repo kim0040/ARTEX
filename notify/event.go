@@ -65,6 +65,6 @@ type Message struct {
 	// WindowMinutes 는 요약 주기(분)입니다. Batch=true일 때 「최근 N분」 문구에 씁니다.
 	// 렌더 시점에 time.Since로 계산하지 않고 설정에서 넘깁니다. 렌더가 결정적이어야 테스트가 됩니다.
 	WindowMinutes int
-	// HomeURL 은 플랫폼 화면 주소(전역 public_base_url)입니다. 비면 입장 링크를 빼니다.
+	// HomeURL 은 플랫폼 화면 주소(전역 public_base_url)입니다. 비면 입장 링크를 뺍니다.
 	HomeURL string
 }

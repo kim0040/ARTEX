@@ -148,7 +148,7 @@ func TestRetestActiveStatusLifecycle(t *testing.T) {
 			if err := s.m.pg.RecordFindingRetestResult(t.Context(), c.ID, "fixed", "summary", "proof"); err != nil {
 				t.Fatal(err)
 			}
-			check("running", c.ID) // A staged verdict is still running until the turn ends.
+			check("running", c.ID) // 올려 둔 판정은 턴이 끝날 때까지 아직 실행 중입니다.
 		}
 		if err := s.m.pg.FinishFindingRetest(r.ID, terminal, ""); err != nil {
 			t.Fatal(err)
@@ -279,7 +279,7 @@ func TestRetestFixedUpdatesFindingThroughConversation(t *testing.T) {
 	if err != nil || f.Status != db.FindingFixed || f.Evidence != "original proof" {
 		t.Fatalf("fixed finding=%+v err=%v", f, err)
 	}
-	// The new manual status is also accepted by the existing update API.
+	// 새 수동 상태도 기존 수정 API가 받습니다.
 	w = retestRequest(s.patchFinding, "PATCH", fid, `{"status":"fixed"}`)
 	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"status":"fixed"`) {
 		t.Fatalf("manual fixed: %d %s", w.Code, w.Body)

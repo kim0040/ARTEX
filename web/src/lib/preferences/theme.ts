@@ -8,7 +8,7 @@ export const THEME_MODE_VALUES = THEME_MODE_OPTIONS.map((o) => o.value);
 export type ThemeMode = (typeof THEME_MODE_VALUES)[number];
 export type ResolvedThemeMode = "light" | "dark";
 
-// --- generated:themePresets:start ---
+// --- generated:themePresets:start --- 자동 생성 구간 시작
 
 export const THEME_PRESET_OPTIONS = [
   {
@@ -49,4 +49,4 @@ export const THEME_PRESET_VALUES = THEME_PRESET_OPTIONS.map((p) => p.value);
 
 export type ThemePreset = (typeof THEME_PRESET_OPTIONS)[number]["value"];
 
-// --- generated:themePresets:end ---
+// --- generated:themePresets:end --- 자동 생성 구간 끝

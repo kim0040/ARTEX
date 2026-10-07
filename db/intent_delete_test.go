@@ -2,7 +2,7 @@ package db
 
 import "testing"
 
-// mustIntent / mustNode / mustLink are terse builders for the delete-cascade tests.
+// mustIntent / mustNode / mustLink는 삭제 연쇄 테스트용 짧은 빌더다.
 func mustIntent(t *testing.T, es *ExplorationStore, summary string) int64 {
 	t.Helper()
 	id, err := es.AddIntent(map[string]any{"summary": summary}, 1, nil, "planner")

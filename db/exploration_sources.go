@@ -5,18 +5,17 @@ import (
 	"sort"
 )
 
-// DirectSourceStore binds one directly related task to its exploration store.
-// It is intentionally a read-side helper: callers keep using the receiver store
-// for every graph mutation, frontier lookup, and intent claim.
+// DirectSourceStore는 직접 연결된 작업 하나를 그 탐색 저장소에 묶는다.
+// 일부러 읽기 전용 도우미다. 그래프를 고치거나, 프론티어를 찾거나, 의도를 집을 때는
+// 호출자가 받는 쪽 저장소를 그대로 쓴다.
 type DirectSourceStore struct {
 	Task  TaskSource
 	Store *ExplorationStore
 }
 
-// DirectSourceStores resolves the live, direct task relations for this
-// exploration. It deliberately queries on every call: relations disappear when
-// a source task is deleted, and inherited context must not retain stale rows.
-// Sources of a source are never expanded.
+// DirectSourceStores는 이 탐색의 살아있는 직접 작업 관계를 찾는다.
+// 호출마다 일부러 다시 조회한다. 원본 작업이 지워지면 관계도 사라지고,
+// 물려받은 맥락이 낡은 행을 남기면 안 된다. 원본의 원본은 펼치지 않는다.
 func (s *ExplorationStore) DirectSourceStores() ([]DirectSourceStore, error) {
 	rows, err := s.db.Query(`
 SELECT source.id, source.exploration_id, source.description, source.goal, source.status
@@ -40,8 +39,8 @@ ORDER BY relation.created_at, source.id`, s.expID)
 	return out, rows.Err()
 }
 
-// TaskID returns the live task bound to this exploration. Explorations created
-// directly in tests or maintenance code have no task and return zero.
+// TaskID는 이 탐색에 묶인 살아있는 작업을 돌려준다.
+// 테스트나 유지보수 코드가 직접 만든 탐색은 작업이 없어 0을 돌려준다.
 func (s *ExplorationStore) TaskID() (int64, error) {
 	var id int64
 	err := s.db.QueryRow(`SELECT id FROM tasks WHERE exploration_id=$1 AND deleted_at IS NULL`, s.expID).Scan(&id)
@@ -80,10 +79,9 @@ func inheritedIntentTerminal(state string) bool {
 	}
 }
 
-// ListByKindWithSources returns local nodes followed by nodes from each direct
-// source in relation order. The limit remains per exploration, matching the
-// existing ListByKind contract while ensuring one large task cannot hide all
-// inherited context from another source.
+// ListByKindWithSources는 로컬 노드를 먼저, 그다음 각 직접 원본의 노드를 관계 순으로 돌려준다.
+// 상한은 탐색마다 그대로다. 기존 ListByKind와 같고, 큰 작업 하나가
+// 다른 원본의 물려받은 맥락을 전부 가리지 않게 한다.
 func (s *ExplorationStore) ListByKindWithSources(kind string, limit int) ([]*Node, error) {
 	out, err := s.ListByKind(kind, limit)
 	if err != nil {
@@ -108,12 +106,11 @@ func (s *ExplorationStore) ListByKindWithSources(kind string, limit int) ([]*Nod
 	return out, nil
 }
 
-// ListByKindPageWithSources is the paginated, keyword-filterable sibling of
-// ListByKindWithSources: it returns one newest-first page (id < before, before<=0
-// = newest) spanning this exploration and its direct sources, plus hasMore and the
-// filtered total across all of them. Node ids are globally unique, so merging each
-// store's own page and re-sorting by id DESC yields the true global page; fetching
-// limit+1 per store guarantees the merged top-`limit` is complete.
+// ListByKindPageWithSources는 ListByKindWithSources의 페이지·키워드 버전이다.
+// 이 탐색과 직접 원본을 가로질러 최신 먼저 페이지 하나를 돌려준다
+// (id < before, before가 0 이하면 최신). hasMore와 필터된 전체 개수도 함께다.
+// 노드 id는 전역으로 유일하다. 저장소마다 자기 페이지를 모아 id 내림차순으로 다시 정렬하면
+// 진짜 전역 페이지가 된다. 저장소마다 limit+1을 읽어야 합친 상위 limit이 빠지지 않는다.
 func (s *ExplorationStore) ListByKindPageWithSources(kind string, before int64, limit int, q string) (nodes []*Node, hasMore bool, total int, err error) {
 	if limit <= 0 {
 		limit = 20
@@ -155,9 +152,8 @@ func (s *ExplorationStore) ListByKindPageWithSources(kind string, before int64, 
 	return merged, hasMore, total, nil
 }
 
-// GetNodeWithSources reads a node only when it belongs to this exploration or
-// one of its direct sources. Inherited nodes are tagged so tool callers can keep
-// them read-only and show their provenance.
+// GetNodeWithSources는 노드가 이 탐색이거나 직접 원본 중 하나일 때만 읽는다.
+// 물려받은 노드는 표시를 달아, 도구 호출자가 읽기 전용으로 두고 출처를 보여 주게 한다.
 func (s *ExplorationStore) GetNodeWithSources(id int64) (*Node, error) {
 	node, err := s.GetNode(id)
 	if err != nil || node != nil {
@@ -182,8 +178,8 @@ func (s *ExplorationStore) GetNodeWithSources(id int64) (*Node, error) {
 	return nil, nil
 }
 
-// FindingIntentsWithSources combines finding lineage for the current
-// exploration and each direct source. Node ids are globally unique.
+// FindingIntentsWithSources는 현재 탐색과 각 직접 원본의 발견 계보를 합친다.
+// 노드 id는 전역으로 유일하다.
 func (s *ExplorationStore) FindingIntentsWithSources() (map[int64]int64, error) {
 	out, err := s.FindingIntents()
 	if err != nil {
@@ -205,8 +201,8 @@ func (s *ExplorationStore) FindingIntentsWithSources() (map[int64]int64, error) 
 	return out, nil
 }
 
-// ActivityTraceWithSources returns a work trace when its intent belongs to the
-// current exploration or a direct source. It never searches indirect sources.
+// ActivityTraceWithSources는 의도가 현재 탐색이거나 직접 원본일 때 작업 흔적을 돌려준다.
+// 간접 원본은 찾지 않는다.
 func (s *ExplorationStore) ActivityTraceWithSources(nodeID int64, limit int) ([]Activity, error) {
 	acts, err := s.ActivityTrace(nodeID, limit)
 	if err != nil || len(acts) > 0 {
@@ -235,9 +231,8 @@ func (s *ExplorationStore) ActivityTraceWithSources(nodeID int64, limit int) ([]
 	return []Activity{}, nil
 }
 
-// ActivityListWithSources is the source-aware equivalent used by
-// get_worker_output. Node ids are global, so the first owning exploration is
-// unambiguous even when the work has not emitted any activity yet.
+// ActivityListWithSources는 get_worker_output이 쓰는, 원본을 아는 목록이다.
+// 노드 id는 전역이라, 아직 활동이 없어도 처음 소유한 탐색이 분명하다.
 func (s *ExplorationStore) ActivityListWithSources(nodeID, sinceID int64, limit int) ([]Activity, int64, error) {
 	node, err := s.GetNode(nodeID)
 	if err != nil {
@@ -267,10 +262,9 @@ func (s *ExplorationStore) ActivityListWithSources(nodeID, sinceID int64, limit 
 	return []Activity{}, sinceID, nil
 }
 
-// ActivityDetailWithSources keeps the legacy local-task lookup (including local
-// thinking rows), while inherited details are restricted to terminal worker
-// intents. Source planner/main rows have no node id and must never become part of
-// inherited context.
+// ActivityDetailWithSources는 예전 로컬 작업 조회(로컬 생각 행 포함)를 유지한다.
+// 물려받은 자세한 내용은 끝난 워커 의도만 본다.
+// 원본의 플래너·메인 행은 노드 id가 없어, 물려받은 맥락에 들어가면 안 된다.
 func (s *ExplorationStore) ActivityDetailWithSources(id int64) (string, error) {
 	detail, err := s.ActivityDetail(id)
 	if err != nil || detail != "" {
@@ -283,9 +277,8 @@ func (s *ExplorationStore) ActivityDetailWithSources(id int64) (string, error) {
 	return acts[0].Detail, nil
 }
 
-// ActivityTraceSearchWithSources performs the scoped worker-trace search used
-// by get_worker_trace. A node id resolves to at most one exploration because
-// exploration node ids are global.
+// ActivityTraceSearchWithSources는 get_worker_trace가 쓰는, 범위가 있는 워커 흔적 검색이다.
+// 탐색 노드 id는 전역이라 노드 id는 탐색 하나에만 속한다.
 func (s *ExplorationStore) ActivityTraceSearchWithSources(nodeID int64, q string, limit int) ([]Activity, error) {
 	acts, err := s.ActivityTraceSearch(&nodeID, q, limit)
 	if err != nil || len(acts) > 0 {
@@ -314,9 +307,8 @@ func (s *ExplorationStore) ActivityTraceSearchWithSources(nodeID int64, q string
 	return []Activity{}, nil
 }
 
-// ActivityTraceSearchAllWithSources searches local worker traces plus every
-// direct source. The local owner is excluded only from the current exploration;
-// inherited traces are immutable historical context.
+// ActivityTraceSearchAllWithSources는 로컬 워커 흔적과 모든 직접 원본을 검색한다.
+// 로컬 소유자 제외는 현재 탐색에만 적용된다. 물려받은 흔적은 고칠 수 없는 과거 맥락이다.
 func (s *ExplorationStore) ActivityTraceSearchAllWithSources(excludeNodeID int64, q string, limit int) ([]Activity, error) {
 	if limit <= 0 {
 		limit = 100
@@ -343,9 +335,9 @@ func (s *ExplorationStore) ActivityTraceSearchAllWithSources(excludeNodeID int64
 	return out, nil
 }
 
-// ActivityByIDsWithSources loads local step details with the legacy behavior. For
-// direct sources it only returns rows attached to terminal intents, preventing an
-// arbitrary global activity id from exposing source planner/main transcripts.
+// ActivityByIDsWithSources는 로컬 단계 자세한 내용을 예전 방식으로 읽는다.
+// 직접 원본은 끝난 의도에 붙은 행만 돌려준다. 아무 전역 활동 id로
+// 원본 플래너·메인 기록을 보지 못하게 한다.
 func (s *ExplorationStore) ActivityByIDsWithSources(ids []int64) ([]Activity, error) {
 	out, err := s.ActivityByIDs(ids)
 	if err != nil {
@@ -366,9 +358,8 @@ func (s *ExplorationStore) ActivityByIDsWithSources(ids []int64) ([]Activity, er
 	return out, nil
 }
 
-// AssetRefsWithSources returns anchored nodes from this exploration and each
-// direct source. Inherited entries retain their owning task id so API/UI callers
-// can present them as immutable context.
+// AssetRefsWithSources는 이 탐색과 각 직접 원본에서 앵커된 노드를 돌려준다.
+// 물려받은 항목은 소유 작업 id를 남겨, API와 UI가 고칠 수 없는 맥락으로 보여 주게 한다.
 func (s *ExplorationStore) AssetRefsWithSources(assetID int64) ([]AssetRef, error) {
 	out, err := s.AssetRefs(assetID)
 	if err != nil {

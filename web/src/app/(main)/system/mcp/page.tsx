@@ -49,7 +49,7 @@ export default function MCPPage() {
   const [visibility, setVisibility] = React.useState<Record<number, string[]>>({});
 
   const [open, setOpen] = React.useState(false);
-  const [editing, setEditing] = React.useState<MCPServer | null>(null); // null = add mode
+  const [editing, setEditing] = React.useState<MCPServer | null>(null); // null이면 추가 모드
   const [tab, setTab] = React.useState<"config" | "tools">("config");
   const [form, setForm] = React.useState<FormState>(emptyForm);
   const [saving, setSaving] = React.useState(false);

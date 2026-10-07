@@ -1,10 +1,10 @@
 /**
- * Boot script that reads user preference values (theme mode, theme preset,
- * content layout, navbar style) from cookies or localStorage based on the
- * configured persistence mode.
+ * 부팅 스크립트. 테마 모드, 테마 프리셋,
+ * 본문 배치, 위 막대 스타일을 설정된 저장 방식에 따라
+ * 쿠키 또는 localStorage에서 읽습니다.
  *
- * Runs early in <head> to apply the correct data attributes before hydration,
- * preventing layout or theme flicker and keeping RootLayout fully static.
+ * 수화(hydration) 전에 <head>에서 일찍 실행해 올바른 data 속성을 붙여,
+ * 배치나 테마가 깜빡이지 않게 하고 RootLayout을 완전히 정적으로 유지합니다.
  */
 import { PREFERENCE_DEFAULTS, PREFERENCE_PERSISTENCE } from "@/lib/preferences/preferences-config";
 
@@ -108,6 +108,6 @@ export function ThemeBootScript() {
     })();
   `;
 
-  /* biome-ignore lint/security/noDangerouslySetInnerHtml: required for pre-hydration boot script */
+  /* biome-ignore lint/security/noDangerouslySetInnerHtml: 수화 전에 부트 스크립트를 넣어야 합니다 */
   return <script dangerouslySetInnerHTML={{ __html: code }} />;
 }

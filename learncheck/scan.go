@@ -20,7 +20,7 @@ type Hit struct {
 	Path string
 	Line int
 	Text string
-	Kind string // doc, comment, string, ui
+	Kind string // 종류: doc, comment, string, ui
 }
 
 func (h Hit) String() string {

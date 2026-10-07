@@ -27,24 +27,25 @@ import (
 type jobKind int
 
 const (
-	jobDNS  jobKind = iota // resolve a domain
-	jobHTTP                // probe a web asset (site)
+	jobDNS  jobKind = iota // 도메인을 해석
+	jobHTTP                // 웹 자산(사이트)을 조회
 )
 
 type job struct {
 	kind jobKind
-	id   int64  // asset id (domain for DNS, site for HTTP)
-	arg  string // host (DNS) or url (HTTP)
+	id   int64  // 자산 id. DNS 는 도메인, HTTP 는 사이트
+	arg  string // DNS 는 host, HTTP 는 url
 }
 
-// Engine owns the resolver, the proxy-routed HTTP client, and the worker pool.
+// Engine 은 해석기, 기록 프록시를 거치는 HTTP 클라이언트, 워커 풀을 가집니다.
+// 초보: 여기 워커는 에이전트 워커가 아닙니다. DNS·HTTP 조회만 처리하는 고루틴입니다.
 type Engine struct {
 	as     *db.AssetStore
 	resolv *dnsx.DNSX
 	client *http.Client
 
 	jobs   chan job
-	cool   sync.Map // dedup/cooldown: "kind:id" -> time.Time (last run)
+	cool   sync.Map // 중복·쉬는 시간. "kind:id" → 마지막 실행 시각
 	once   sync.Once
 	closed chan struct{}
 }
@@ -55,10 +56,10 @@ const (
 	queueSize   = 1024
 )
 
-// New builds the engine. proxy() returns the recording-proxy address to route HTTP
-// probes through (so they land in the traffic store), evaluated per request so the
-// runtime traffic-capture toggle takes effect live; "" = direct. Returns a usable
-// engine even if the resolver fails to init (DNS becomes a no-op).
+// New 는 엔진을 만듭니다. proxy() 는 HTTP 조회가 거칠 기록 프록시 주소입니다.
+// 트래픽 저장소에 남기 위해서이고, 요청마다 다시 봐서 실행 중 캡처 토글이
+// 바로 적용됩니다. "" 이면 직접 연결입니다. 해석기 초기화가 실패해도 쓸 수 있는
+// 엔진을 돌려줍니다. 그때 DNS 는 아무 일도 하지 않습니다.
 func New(as *db.AssetStore, proxy func() string, workers int) *Engine {
 	if workers <= 0 {
 		workers = 4
@@ -86,10 +87,9 @@ func New(as *db.AssetStore, proxy func() string, workers int) *Engine {
 	return e
 }
 
-// buildClient returns an HTTP client that dials via the recording proxy (resolved
-// per-request via proxy(), so the traffic-capture toggle applies live) and skips
-// TLS verification (the proxy re-signs with its MITM CA; targets are often
-// self-signed — this is a pentest probe).
+// buildClient 는 기록 프록시로 접속하는 HTTP 클라이언트를 만듭니다. proxy() 로
+// 요청마다 주소를 다시 봐서 캡처 토글이 바로 적용됩니다. TLS 검증은 건너뜁니다.
+// 프록시가 자기 CA 로 다시 서명하고, 대상 인증서도 자체 서명인 경우가 많습니다.
 func buildClient(proxy func() string) *http.Client {
 	tr := &http.Transport{
 		TLSClientConfig:     &tls.Config{InsecureSkipVerify: true},
@@ -100,7 +100,7 @@ func buildClient(proxy func() string) *http.Client {
 		tr.Proxy = func(*http.Request) (*url.URL, error) {
 			p := proxy()
 			if p == "" {
-				return nil, nil // direct
+				return nil, nil // 직접 연결
 			}
 			return url.Parse(p)
 		}
@@ -108,16 +108,16 @@ func buildClient(proxy func() string) *http.Client {
 	return &http.Client{
 		Transport: tr,
 		Timeout:   httpTimeout,
-		// cap redirects; keep them within scope by re-checking at probe time
+		// 리다이렉트는 여기서 끊습니다. 범위 안인지는 조회 시점에 다시 확인합니다.
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}
 }
 
-// ResolveDomain enqueues a DNS resolution for a domain asset (ungated). host is the
-// FQDN. No-op for an empty engine.
+// ResolveDomain 은 도메인 자산의 DNS 해석을 큐에 넣습니다. 가로채기를 거치지 않습니다.
+// host 는 FQDN 입니다. 엔진이 비어 있으면 아무 일도 하지 않습니다.
 func (e *Engine) ResolveDomain(id int64, host string) { e.enqueue(job{jobDNS, id, host}) }
 
-// ProbeSite enqueues an HTTP probe for a web-asset (site). rawURL is the site URL.
+// ProbeSite 는 웹 자산(사이트)의 HTTP 조회를 큐에 넣습니다. rawURL 은 사이트 주소입니다.
 func (e *Engine) ProbeSite(id int64, rawURL string) { e.enqueue(job{jobHTTP, id, rawURL}) }
 
 func (e *Engine) enqueue(j job) {
@@ -126,14 +126,14 @@ func (e *Engine) enqueue(j job) {
 	}
 	select {
 	case e.jobs <- j:
-	default: // queue full → drop (best-effort enrichment)
+	default: // 큐가 가득 차면 버림. 채우기는 최선을 다할 뿐
 		log.Printf("[enrich] 큐가 가득 차 작업을 버립니다 kind=%d id=%d", j.kind, j.id)
 	}
 }
 
 func id0(id int64) bool { return id <= 0 }
 
-// Close stops the workers (idempotent).
+// Close 는 워커를 멈춥니다. 여러 번 호출해도 한 번만 동작합니다.
 func (e *Engine) Close() {
 	if e == nil {
 		return
@@ -160,7 +160,7 @@ func (e *Engine) worker() {
 	}
 }
 
-// onCooldown returns true (skip) if this (kind,id) ran within the cooldown window.
+// onCooldown 은 이 (kind, id) 가 쉬는 시간 안에 이미 돌았으면 true(건너뜀)입니다.
 func (e *Engine) onCooldown(j job) bool {
 	key := string(rune(j.kind)) + ":" + itoa(j.id)
 	if v, ok := e.cool.Load(key); ok {
@@ -174,7 +174,7 @@ func (e *Engine) onCooldown(j job) bool {
 
 func itoa(n int64) string { return strconv.FormatInt(n, 10) }
 
-// ---- DNS ----
+// ---- DNS 해석 ----
 
 func (e *Engine) doDNS(id int64, host string) {
 	if e.resolv == nil {
@@ -185,14 +185,14 @@ func (e *Engine) doDNS(id int64, host string) {
 		return
 	}
 	ips := uniq(append(append([]string{}, data.A...), data.AAAA...))
-	// Upsert resolved IPs into the asset store.
+	// 해석된 IP 를 자산 그래프에 넣거나 갱신합니다.
 	for _, ip := range ips {
 		_, _ = e.as.UpsertIP(db.UpsertIPReq{
 			IP:           ip,
 			BoundDomains: []string{host},
 		})
 	}
-	// Record A records as subdomains if host looks like a subdomain.
+	// A 레코드를 서브도메인으로 자산 그래프에 남깁니다. host 가 서브도메인처럼 보일 때입니다.
 	for _, a := range data.A {
 		_, _ = e.as.UpsertSubdomain(db.UpsertSubdomainReq{
 			Domain:      host,
@@ -216,7 +216,7 @@ func (e *Engine) doDNS(id int64, host string) {
 	}
 }
 
-// ---- HTTP probe ----
+// ---- HTTP 조회 ----
 
 var reTitle = regexp.MustCompile(`(?is)<title[^>]*>(.*?)</title>`)
 
@@ -235,7 +235,7 @@ func (e *Engine) doHTTP(id int64, rawURL string) {
 		return
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20)) // cap 1 MiB
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20)) // 본문은 1 MiB 에서 자름
 	statusCode := resp.StatusCode
 	bodyLen := int64(len(body))
 	title := extractTitle(body)

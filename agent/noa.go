@@ -8,8 +8,8 @@ import (
 	"github.com/Autumn-27/norma/noaadapter"
 )
 
-// noaWarn returns a diagnostics sink tagging non-fatal noa messages with the
-// session, routed through the package logger (agents have no per-instance one).
+// noaWarn 은 치명적이지 않은 noa 메시지를 세션 이름과 함께 패키지 로거로 보냅니다.
+// 에이전트에는 인스턴스마다의 로거가 없습니다.
 func noaWarn(session string) func(string) {
 	return func(msg string) { log.Printf("[noa] %s: %s", session, msg) }
 }

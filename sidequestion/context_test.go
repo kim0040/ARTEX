@@ -186,7 +186,7 @@ func TestSideOverflowRecoveryOnceAndFailureUsage(t *testing.T) {
 			}
 		})
 	}
-	// A stream that already exposed text must never replay it as a fresh answer.
+	// 이미 글을 내보낸 스트림은 그 글을 새 답으로 다시 재생하면 안 됩니다.
 	count := 0
 	p := fakeProvider{stream: func(context.Context, llm.CompletionRequest) iter.Seq2[llm.StreamEvent, error] {
 		return func(y func(llm.StreamEvent, error) bool) {

@@ -1,5 +1,7 @@
 "use client";
 
+// 자산 그래프의 대상을 가로채거나 허용하는 규칙을 고칩니다.
+
 import * as React from "react";
 
 import { BanIcon, PencilIcon, PlusIcon, Trash2Icon } from "lucide-react";
@@ -66,7 +68,7 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
   );
 }
 
-// ---- form state ----
+// ---- 입력 상태 ----
 
 type RuleForm = {
   enabled: boolean;
@@ -87,7 +89,7 @@ function frontValidate(form: RuleForm): string | null {
   return null;
 }
 
-// ---- page ----
+// ---- 페이지 ----
 
 export default function AssetInterceptPage() {
   const [rules, setRules] = React.useState<AssetInterceptRule[]>([]);
@@ -176,7 +178,7 @@ export default function AssetInterceptPage() {
 
   return (
     <div className="flex flex-1 flex-col gap-5 p-6">
-      {/* header */}
+      {/* 머리 */}
       <div className="flex items-center gap-2.5">
         <BanIcon className="h-5 w-5 shrink-0" />
         <div>
@@ -268,7 +270,7 @@ export default function AssetInterceptPage() {
         </CardContent>
       </Card>
 
-      {/* editor sheet */}
+      {/* 편집 패널 */}
       <Sheet open={open} onOpenChange={setOpen}>
         <SheetContent side="right" className="flex flex-col gap-0 p-0 sm:max-w-md">
           <SheetHeader className="border-b px-6 py-4">

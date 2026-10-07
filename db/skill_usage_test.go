@@ -4,10 +4,10 @@ import (
 	"testing"
 )
 
-// TestSkillUsageLedger writes a few rows and checks the three aggregates the
-// skills page relies on: per-skill totals (resolved calls only), the miss list,
-// and the recent-call list. Rows are namespaced by a unique skill name so the
-// shared dev DB stays usable and the test cleans up after itself.
+// TestSkillUsageLedger는 행 몇 개를 쓰고 스킬 화면이 쓰는 집계 셋을 확인한다.
+// 스킬별 합계(해결된 호출만), 실패 목록,
+// 최근 호출 목록이다. 유일한 스킬 이름으로 행을 갈라
+// 공유 개발 DB를 쓸 수 있게 하고, 테스트가 끝나면 치운다.
 func TestSkillUsageLedger(t *testing.T) {
 	d, err := Open(testDSN(t))
 	if err != nil {
@@ -58,7 +58,7 @@ func TestSkillUsageLedger(t *testing.T) {
 	if got.Calls != 4 {
 		t.Errorf("calls: want 4, got %d", got.Calls)
 	}
-	// 991 + 992; the chat row has a NULL task_id and COUNT(DISTINCT) skips NULLs.
+	// 991 + 992. 채팅 행의 task_id는 NULL이고 COUNT(DISTINCT)는 NULL을 건너뛴다.
 	if got.Tasks != 2 {
 		t.Errorf("tasks: want 2, got %d", got.Tasks)
 	}
@@ -90,7 +90,7 @@ func TestSkillUsageLedger(t *testing.T) {
 	if len(calls) != 4 {
 		t.Fatalf("recent calls: want 4, got %d", len(calls))
 	}
-	// newest first
+	// 최신순
 	for i := 1; i < len(calls); i++ {
 		if calls[i].TS.After(calls[i-1].TS) {
 			t.Errorf("recent calls not newest-first at %d", i)

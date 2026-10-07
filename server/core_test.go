@@ -15,8 +15,8 @@ import (
 	"github.com/Autumn-27/artex/db"
 )
 
-// TestCoreTaskLifecyclePG exercises the migrated core (tasks/exploration on PG)
-// through the real HTTP mux: create → goal nodes seeded → list → delete cascade.
+// TestCoreTaskLifecyclePG는 PG로 옮긴 핵심(작업/탐색)을
+// 실제 HTTP mux로 봅니다. 만들기 → 목표 노드 심기 → 목록 → 삭제 연쇄.
 func TestCoreTaskLifecyclePG(t *testing.T) {
 	m, err := NewManager(t.TempDir(), "")
 	if err != nil {
@@ -47,7 +47,7 @@ func TestCoreTaskLifecyclePG(t *testing.T) {
 		return rec.Code, out
 	}
 
-	// doRetry retries on 5xx (transient DB conflicts from parallel test packages).
+	// doRetry는 5xx면 다시 시도합니다(테스트 패키지가 병렬로 돌 때 DB가 잠깐 부딪힘).
 	doRetry := func(method, path string, body any) (int, map[string]any) {
 		var code int
 		var out map[string]any
@@ -61,7 +61,7 @@ func TestCoreTaskLifecyclePG(t *testing.T) {
 		return code, out
 	}
 
-	// create a task → 201, returns PG task (string id + exploration_id)
+	// 작업을 만들면 201이고, PG 작업을 돌려줍니다(문자열 id와 exploration_id).
 	code, out := doRetry("POST", "/api/tasks", map[string]string{"description": "smoke", "goal": "SQLi/XSS 테스트"})
 	if code != 201 {
 		t.Fatalf("create task: %d (%v)", code, out)
@@ -72,7 +72,7 @@ func TestCoreTaskLifecyclePG(t *testing.T) {
 		t.Fatalf("bad task payload: %v", out)
 	}
 
-	// the exploration owns goal node(s) — goal seeding is async, poll briefly
+	// 그 탐색은 목표 노드를 가집니다. 목표 심기는 비동기라 잠깐 기다립니다.
 	var goals []*db.Node
 	for i := 0; i < 30; i++ {
 		goals, err = m.pg.Exploration(expID).ListByKind("goal", 10)
@@ -88,14 +88,14 @@ func TestCoreTaskLifecyclePG(t *testing.T) {
 		t.Fatalf("expected goal nodes seeded, got %d", len(goals))
 	}
 
-	// it shows in the task list
+	// 작업 목록에 나타납니다.
 	code, out = doRetry("GET", "/api/tasks", nil)
 	if code != 200 {
 		t.Fatalf("list tasks: %d", code)
 	}
 
-	// The task detail header consumes the top-level engine mode while some clients
-	// read the active-task snapshot. Keep both representations in sync.
+	// 작업 상세 머리는 최상위 엔진 모드를 쓰고, 어떤 클라이언트는
+	// 활성 작업 스냅샷을 읽습니다. 두 표현을 같이 유지합니다.
 	code, out = doRetry("GET", "/api/stats?task="+id, nil)
 	if code != 200 {
 		t.Fatalf("task stats: %d (%v)", code, out)
@@ -105,7 +105,7 @@ func TestCoreTaskLifecyclePG(t *testing.T) {
 		t.Fatalf("engine mode mismatch: top=%v active_task=%v", out["engine_mode"], activeTask)
 	}
 
-	// delete → cascade removes the exploration subgraph and selected related data
+	// 삭제하면 연쇄로 탐색 부분 그래프와 고른 관련 데이터가 지워집니다.
 	taskDir := filepath.Join(m.dir, "tasks", id)
 	if err := os.MkdirAll(taskDir, 0o755); err != nil {
 		t.Fatal(err)
@@ -136,8 +136,8 @@ func TestCoreTaskLifecyclePG(t *testing.T) {
 	if err := m.pg.InsertLLMRecord(&db.LLMRecord{TaskID: id, SessionID: "delete-test", Status: "ok", RequestBody: "secret"}); err != nil {
 		t.Fatal(err)
 	}
-	// A non-canonical path still resolves to the one canonical task key for the
-	// barrier, workspace, in-memory registry and DB delete.
+	// 정규가 아닌 경로도, 장벽·작업 폴더·메모리 레지스트리·DB 삭제에서는
+	// 그 작업의 정규 키 하나로 모입니다.
 	code, out = doRetry("DELETE", "/api/tasks/000"+id, map[string]bool{
 		"delete_files":       true,
 		"delete_findings":    true,

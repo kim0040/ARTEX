@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// InterceptRule is one row of intercept_rules.
+// InterceptRule은 intercept_rules의 한 줄이다. 도구 이름·입력을 맞추는 가로채기 규칙이다.
 type InterceptRule struct {
 	ID             int64     `json:"id"`
 	Name           string    `json:"name"`
@@ -26,7 +26,7 @@ type InterceptRule struct {
 	UpdatedAt      time.Time `json:"updated_at"`
 }
 
-// InterceptPending is one row of intercept_pending.
+// InterceptPending은 intercept_pending의 한 줄이다. 사람이 결정할 가로채기 대기 건이다.
 type InterceptPending struct {
 	ID             int64           `json:"id"`
 	RuleID         *int64          `json:"rule_id"`
@@ -53,7 +53,7 @@ func scanInterceptRule(row interface{ Scan(...any) error }) (InterceptRule, erro
 	return r, err
 }
 
-// ListInterceptRules returns all rules ordered by priority DESC then id.
+// ListInterceptRules는 규칙을 우선순위 내림차순, 그다음 id 순으로 모두 돌려준다.
 func (d *DB) ListInterceptRules() ([]InterceptRule, error) {
 	rows, err := d.Query(`SELECT ` + interceptRuleCols + ` FROM intercept_rules ORDER BY priority DESC, id`)
 	if err != nil {
@@ -71,7 +71,7 @@ func (d *DB) ListInterceptRules() ([]InterceptRule, error) {
 	return out, rows.Err()
 }
 
-// CreateInterceptRule inserts a new rule.
+// CreateInterceptRule은 규칙을 새로 넣는다.
 func (d *DB) CreateInterceptRule(name, matchTarget, matchType, pattern, action, message string, priority int, enabled bool, timeoutEnabled bool, timeoutSeconds int, timeoutAction string) (InterceptRule, error) {
 	row := d.QueryRow(`
 INSERT INTO intercept_rules(name, enabled, priority, match_target, match_type, pattern, action, message, timeout_enabled, timeout_seconds, timeout_action)
@@ -81,7 +81,7 @@ RETURNING `+interceptRuleCols,
 	return scanInterceptRule(row)
 }
 
-// UpdateInterceptRule replaces all editable fields of an existing rule.
+// UpdateInterceptRule은 기존 규칙에서 고칠 수 있는 필드를 모두 바꾼다.
 func (d *DB) UpdateInterceptRule(id int64, name, matchTarget, matchType, pattern, action, message string, priority int, enabled bool, timeoutEnabled bool, timeoutSeconds int, timeoutAction string) (InterceptRule, error) {
 	row := d.QueryRow(`
 UPDATE intercept_rules
@@ -94,21 +94,21 @@ RETURNING `+interceptRuleCols,
 	return scanInterceptRule(row)
 }
 
-// DeleteInterceptRule removes a rule.
+// DeleteInterceptRule은 규칙을 지운다.
 func (d *DB) DeleteInterceptRule(id int64) error {
 	_, err := d.Exec(`DELETE FROM intercept_rules WHERE id=$1`, id)
 	return err
 }
 
-// ToggleInterceptRule flips the enabled state of a rule.
+// ToggleInterceptRule은 규칙의 켜짐/꺼짐을 바꾼다.
 func (d *DB) ToggleInterceptRule(id int64, enabled bool) error {
 	_, err := d.Exec(`UPDATE intercept_rules SET enabled=$2 WHERE id=$1`, id, enabled)
 	return err
 }
 
-// CreateInterceptPending inserts a pending approval record and returns its ID.
-// convID == 0 → conversation_id stored as NULL (background task).
-// taskID == "" → task_id stored as NULL.
+// CreateInterceptPending은 승인 대기 기록을 넣고 ID를 돌려준다.
+// convID가 0이면 conversation_id는 NULL이다(백그라운드 작업).
+// taskID가 빈 문자열이면 task_id는 NULL이다.
 func (d *DB) CreateInterceptPending(ruleID, convID int64, taskID, agentName, toolName string, input []byte, reason string, audits ...*InterceptAudit) (int64, error) {
 	raw := json.RawMessage(input)
 	if len(raw) == 0 {
@@ -122,7 +122,7 @@ func (d *DB) CreateInterceptPending(ruleID, convID int64, taskID, agentName, too
 	if taskID != "" {
 		taskIDPtr = &taskID
 	}
-	// ruleID == 0 → NULL: the LLM fallback judge has no owning rule.
+	// ruleID가 0이면 NULL. LLM 폴백 판정기는 소유 규칙이 없다.
 	var ruleIDPtr *int64
 	if ruleID != 0 {
 		ruleIDPtr = &ruleID
@@ -135,16 +135,16 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
 	return id, err
 }
 
-// DecideInterceptPending updates a pending record's status (allowed/denied/timeout).
+// DecideInterceptPending은 대기 기록의 상태를 고친다(allowed/denied/timeout).
 func (d *DB) DecideInterceptPending(id int64, status string) error {
 	_, err := d.Exec(`UPDATE intercept_pending SET status=$2, decided_at=NOW() WHERE id=$1`, id, status)
 	return err
 }
 
-// CreateDecidedIntercept inserts an intercept_pending row ALREADY in a final state
-// (status = 'allowed' | 'denied'), decided_at stamped now. Used to log allow/deny
-// rule matches for observability — they don't block and need no user action, so unlike
-// CreateInterceptPending (which starts 'pending') this records the outcome directly.
+// CreateDecidedIntercept는 이미 끝난 상태의 intercept_pending 행을 넣는다
+// (status는 'allowed' 또는 'denied'). decided_at은 지금으로 찍는다.
+// 허용/거부 규칙이 맞은 것을 관찰용으로 남긴다. 막지 않고 사용자 동작도 필요 없다.
+// 'pending'으로 시작하는 CreateInterceptPending과 달리, 결과를 바로 기록한다.
 func (d *DB) CreateDecidedIntercept(ruleID, convID int64, taskID, agentName, toolName string, input []byte, status, reason string, audits ...*InterceptAudit) (int64, error) {
 	raw := json.RawMessage(input)
 	if len(raw) == 0 {
@@ -158,7 +158,7 @@ func (d *DB) CreateDecidedIntercept(ruleID, convID int64, taskID, agentName, too
 	if taskID != "" {
 		taskIDPtr = &taskID
 	}
-	// ruleID == 0 → NULL: the LLM fallback judge has no owning rule.
+	// ruleID가 0이면 NULL. LLM 폴백 판정기는 소유 규칙이 없다.
 	var ruleIDPtr *int64
 	if ruleID != 0 {
 		ruleIDPtr = &ruleID
@@ -178,7 +178,7 @@ func scanInterceptPending(s interface{ Scan(...any) error }, p *InterceptPending
 		&p.ToolName, &p.ToolInput, &p.Status, &p.Reason, &p.DecidedAt, &p.CreatedAt, &p.DecisionSource)
 }
 
-// ListPendingIntercepts returns all unresolved approval requests, newest first.
+// ListPendingIntercepts는 아직 결정되지 않은 승인 요청을 최신 순으로 모두 돌려준다.
 func (d *DB) ListPendingIntercepts() ([]InterceptPending, error) {
 	rows, err := d.Query(`SELECT ` + interceptPendingCols + ` FROM intercept_pending WHERE status='pending' ORDER BY created_at DESC`)
 	if err != nil {
@@ -196,7 +196,7 @@ func (d *DB) ListPendingIntercepts() ([]InterceptPending, error) {
 	return out, rows.Err()
 }
 
-// GetInterceptPending returns one pending record (nil if absent).
+// GetInterceptPending은 대기 기록 하나를 돌려준다. 없으면 nil이다.
 func (d *DB) GetInterceptPending(id int64) (*InterceptPending, error) {
 	var p InterceptPending
 	err := scanInterceptPending(
@@ -209,7 +209,7 @@ func (d *DB) GetInterceptPending(id int64) (*InterceptPending, error) {
 	return &p, err
 }
 
-// InterceptApprovalRow is intercept_pending enriched with conversation and rule info.
+// InterceptApprovalRow는 대화와 규칙 정보를 더한 intercept_pending이다. UI 승인 목록이 이 행을 보여 준다.
 type InterceptApprovalRow struct {
 	InterceptPending
 	ConvTitle    string `json:"conv_title"`
@@ -225,7 +225,7 @@ func scanInterceptApprovalRow(rows interface{ Scan(...any) error }, r *Intercept
 	)
 }
 
-// Keep legacy rows without decision_source consistent with their displayed source.
+// decision_source가 없는 옛 행도 화면에 보이는 출처와 같게 맞춘다.
 const approvalDecisionSource = `COALESCE(NULLIF(ip.decision_source,''), CASE
  WHEN ip.rule_id IS NOT NULL THEN 'rule'
  WHEN ip.reason LIKE '` + "[模型]" + `%' THEN 'model' ELSE 'unknown' END)` // han-allow 프로토콜 접두사
@@ -265,8 +265,8 @@ func firstAudit(audits []*InterceptAudit) any {
 	return raw
 }
 
-// ListAllIntercepts returns up to limit intercept_pending rows (newest first)
-// joined with conversation and rule info.
+// ListAllIntercepts는 intercept_pending을 최대 limit개, 최신 순으로 돌려준다.
+// 대화와 규칙 정보를 붙여 온다.
 func (d *DB) ListAllIntercepts(limit int) ([]InterceptApprovalRow, error) {
 	rows, err := d.Query(approvalRowSelect+` ORDER BY ip.created_at DESC LIMIT $1`, limit)
 	if err != nil {
@@ -284,19 +284,19 @@ func (d *DB) ListAllIntercepts(limit int) ([]InterceptApprovalRow, error) {
 	return out, rows.Err()
 }
 
-// InterceptApprovalFilter combines exact status and decision-source filters.
-// Empty fields include all values.
+// InterceptApprovalFilter는 상태와 결정 출처를 정확히 맞추는 필터다.
+// 빈 필드는 모든 값을 포함한다.
 type InterceptApprovalFilter struct {
 	Status         string
 	DecisionSource string
 }
 
-// ListAllInterceptsPage returns one 1-based page and the total matching count.
+// ListAllInterceptsPage는 1부터 세는 페이지 하나와, 맞는 전체 개수를 돌려준다.
 func (d *DB) ListAllInterceptsPage(page, size int, filter InterceptApprovalFilter) ([]InterceptApprovalRow, int, error) {
 	return d.listInterceptsPage("", page, size, filter)
 }
 
-// ListTaskIntercepts returns all intercept_pending rows for a specific task (newest first).
+// ListTaskIntercepts는 특정 작업의 intercept_pending을 최신 순으로 모두 돌려준다.
 func (d *DB) ListTaskIntercepts(taskID string) ([]InterceptApprovalRow, error) {
 	rows, err := d.Query(approvalRowSelect+` WHERE ip.task_id=$1 ORDER BY ip.created_at DESC`, taskID)
 	if err != nil {
@@ -314,7 +314,7 @@ func (d *DB) ListTaskIntercepts(taskID string) ([]InterceptApprovalRow, error) {
 	return out, rows.Err()
 }
 
-// ListTaskInterceptsPage is the paginated variant of ListTaskIntercepts.
+// ListTaskInterceptsPage는 ListTaskIntercepts의 페이지 버전이다.
 func (d *DB) ListTaskInterceptsPage(taskID string, page, size int, filter InterceptApprovalFilter) ([]InterceptApprovalRow, int, error) {
 	return d.listInterceptsPage(taskID, page, size, filter)
 }

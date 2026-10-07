@@ -29,7 +29,7 @@ export function ChangePasswordDialog({
   const [confirmPassword, setConfirmPassword] = React.useState("");
   const [saving, setSaving] = React.useState(false);
 
-  // reset fields whenever the dialog closes
+  // 대화창이 닫힐 때마다 입력칸을 비웁니다
   React.useEffect(() => {
     if (!open) {
       setOldPassword("");

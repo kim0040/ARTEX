@@ -15,7 +15,7 @@ import (
 	actool "github.com/Autumn-27/norma/tool"
 )
 
-// jsonResult marshals v to a JSON tool result.
+// jsonResult는 v를 JSON 도구 결과로 바꿉니다.
 func jsonResult(v any) (actool.Result, error) {
 	b, err := json.Marshal(v)
 	if err != nil {
@@ -30,11 +30,12 @@ func jsonResult(v any) (actool.Result, error) {
 // 해당 도구를 Call한다). 그래서 완전히 같은 로직을 재사용한다. 제어류(spawn/pause)는 Manager/Engine을 직접 호출한다.
 // 트래픽 도구처럼 tools 테이블에 seed하고 agent에 바인딩한다(오케스트레이션 agent에만 묶어야 보인다).
 
-// hostTools is the runtime host-tool provider fed to ToolAugment: traffic tools
-// (gated by capture) + cross-task orchestration tools + user-defined custom tools.
-// The second return is the names of custom tools flagged `deferred` (schema
-// withheld, routed via SearchExtraTools/ExecuteExtraTool). Per-agent binding still
-// decides who actually sees any of them.
+// hostTools는 ToolAugment에 넣는 실행 중 host 도구 제공자입니다. 트래픽 도구
+// (캡처가 켤 때만)와 작업 사이 오케스트레이션 도구, 사용자가 만든 도구입니다.
+// 두 번째 반환은 `deferred`로 표시된 사용자 정의 도구 이름입니다(스키마는
+// 감추고 SearchExtraTools/ExecuteExtraTool로 갑니다). 에이전트별 바인딩이
+// 누가 실제로 보는지를 여전히 정합니다.
+// 초보용: 캡처·작업 사이 도구·사용자 정의 도구를 에이전트 실행에 넣는 입구입니다.
 //
 //nolint:unused // used as the hostTools provider in wireAgentAugment
 func (s *Server) hostTools() ([]actool.CoreTool, map[string][]string) {
@@ -47,9 +48,9 @@ func (s *Server) hostTools() ([]actool.CoreTool, map[string][]string) {
 		return tools, nil
 	}
 	tools = append(tools, custom...)
-	// deferred custom tools → name -> its bound agent keys. ToolAugment turns a
-	// name into a deferred entry only for agents it's actually bound to (so we don't
-	// advertise a tool the per-agent binding will drop from the callable set).
+	// deferred 사용자 정의 도구 → 이름에서 묶인 에이전트 키로. ToolAugment는
+	// 실제로 묶인 에이전트에게만 deferred 항목으로 바꿉니다(바인딩이 호출 집합에서
+	// 뺄 도구를 광고하지 않으려고요).
 	deferred := map[string][]string{}
 	rows, _ := s.m.pg.ListCustomTools()
 	for _, t := range rows {
@@ -60,8 +61,9 @@ func (s *Server) hostTools() ([]actool.CoreTool, map[string][]string) {
 	return tools, deferred
 }
 
-// orchestrationTools returns the cross-task tool set. Bound per-agent via the
-// tools table (default: no binding — opt-in for orchestration agents).
+// orchestrationTools는 작업을 가로지르는 도구 묶음입니다. tools 표로 에이전트마다 묶습니다
+// (기본은 바인딩 없음. 오케스트레이션 에이전트만 골라 켬).
+// 초보용: 엔진이 다른 작업의 자산 그래프와 탐색 그래프를 읽게 하는 host 도구입니다.
 func (s *Server) orchestrationTools() []actool.CoreTool {
 	return []actool.CoreTool{
 		s.toolListTasks(),
@@ -81,14 +83,14 @@ func (s *Server) orchestrationTools() []actool.CoreTool {
 	}
 }
 
-// --- schema helpers ---
+// --- 스키마 도우미 ---
 
 func strParam(desc string) map[string]any {
 	return map[string]any{"type": "string", "description": desc}
 }
 
-// parseProfileID reads an LLM profile id from a tool arg that may arrive as a JSON
-// number (5) or a numeric string ("5"); returns 0 when absent/unparseable.
+// parseProfileID는 도구 인자에서 LLM 설정 id를 읽습니다. JSON
+// 숫자(5)나 숫자 문자열("5")일 수 있습니다. 없거나 못 읽으면 0입니다.
 func parseProfileID(raw json.RawMessage) int64 {
 	if len(raw) == 0 {
 		return 0
@@ -143,9 +145,10 @@ func wrTool(name, desc string, schema map[string]any, run func(context.Context, 
 	})
 }
 
-// delegateToTask resolves the `task_id` in the input, builds a ToolSet bound to
-// that task's store, strips task_id, and calls the chosen per-task tool — so the
-// cross-task read reuses the exact in-task logic against another task.
+// delegateToTask는 입력의 task_id를 찾고, 그 작업의 저장소에 묶인 ToolSet을 만든 뒤
+// task_id를 빼고 고른 작업별 도구를 부릅니다. 그래서
+// 작업 사이 읽기가 다른 작업에 대해 작업 안 로직을 그대로 재사용합니다.
+// 초보용: 다른 작업의 탐색 그래프를, 그 작업 안에서 쓰는 것과 같은 도구로 읽습니다.
 func (s *Server) delegateToTask(ctx context.Context, in json.RawMessage, pick func(*agent.ToolSet) actool.CoreTool) (actool.Result, error) {
 	var head struct {
 		TaskID string `json:"task_id"`
@@ -171,7 +174,7 @@ func (s *Server) delegateToTask(ctx context.Context, in json.RawMessage, pick fu
 	return pick(tsx).Call(ctx, inner, nil)
 }
 
-// --- tools ---
+// --- 도구 ---
 
 func (s *Server) toolListTasks() actool.CoreTool {
 	return roTool("list_tasks",
@@ -179,7 +182,7 @@ func (s *Server) toolListTasks() actool.CoreTool {
 		objSchema(map[string]any{}),
 		func(context.Context, json.RawMessage) (actool.Result, error) {
 			lastAct, _ := s.m.PG().LastActivityAll()
-			// id -> name to resolve each task's pinned LLM profile.
+			// id에서 이름으로, 각 작업이 고정한 LLM 설정을 풀 때 씁니다.
 			profName := map[int64]string{}
 			if profs, err := s.m.pg.ListProfiles(); err == nil {
 				for _, p := range profs {
@@ -217,8 +220,8 @@ func (s *Server) toolListTasks() actool.CoreTool {
 		})
 }
 
-// toolListLLMProfiles lists the available LLM profiles (name/model/active) so an
-// orchestration agent can pick one for spawn_task's llm_profile. Never leaks keys.
+// toolListLLMProfiles는 쓸 수 있는 LLM 설정(이름/모델/활성)을 나열합니다. 오케스트레이션
+// 에이전트가 spawn_task의 llm_profile을 고르게 합니다. 키는 절대 새지 않습니다.
 func (s *Server) toolListLLMProfiles() actool.CoreTool {
 	return roTool("list_llm_profiles",
 		"사용 가능한 LLM 설정(profile)을 나열합니다: id, 이름, 모델, 형식, 현재 활성 설정 여부. id로 spawn_task의 llm_profile_id 인자에 하위 작업 전용 LLM을 지정합니다(예: 정찰에는 저렴한 모델, 이용에는 강한 모델). API Key는 포함하지 않습니다.",
@@ -289,7 +292,7 @@ func (s *Server) toolSpawnTask() actool.CoreTool {
 				seenSources[id] = true
 				sourceIDs = append(sourceIDs, id)
 			}
-			// LLM profile resolution: explicit id > inherit parent's pin > active(nil).
+			// LLM 설정 고르기: 명시적 id > 부모의 고정 상속 > 활성(nil).
 			var pin *int64
 			if id := parseProfileID(a.LLMProfileID); id > 0 {
 				if _, ok := s.loadProfileConfig(id); !ok {
@@ -419,10 +422,10 @@ func (s *Server) toolGetTaskNodeDetail() actool.CoreTool {
 		})
 }
 
-// toolUpdateFindingReport writes/overwrites a finding's detailed Markdown report.
-// finding_id is the id report_finding returned ("finding recorded: <id>", the
-// finding node id). The write (SetFindingReportByNodeID) is keyed by node_id and
-// task-agnostic, so this host tool needs no task_id / exploration store.
+// toolUpdateFindingReport는 발견의 상세 Markdown 보고서를 쓰거나 덮어씁니다.
+// finding_id는 report_finding이 돌려준 id입니다("finding recorded: <id>",
+// 발견 노드 id). 쓰기(SetFindingReportByNodeID)는 node_id로 하고
+// 작업과 무관해서, 이 host 도구는 task_id나 탐색 저장소가 필요 없습니다.
 func (s *Server) toolUpdateFindingReport() actool.CoreTool {
 	return wrTool("update_finding_report",
 		"이미 등록된 발견(finding)에 【상세 보고서】를 쓰거나 갱신합니다(Markdown 전문, 통째로 이전 내용을 덮어씀). finding_id에는 report_finding이 반환한 id를 넘깁니다(\"finding recorded: <id>\" 안의 숫자). 보고서에는 발견(finding) 개요, 영향과 피해, 재현 단계, 증거/PoC, 수정 제안을 포함하는 것을 권합니다.",
@@ -453,7 +456,7 @@ func (s *Server) toolUpdateFindingReport() actool.CoreTool {
 		})
 }
 
-// deriveTaskStatus mirrors listTasks' status derivation for the list_tasks tool.
+// deriveTaskStatus는 list_tasks 도구를 위해 listTasks의 상태 계산을 그대로 씁니다.
 func (s *Server) deriveTaskStatus(t *Task) string {
 	lifecycle := t.lifecycleSnapshot()
 	switch {
@@ -467,9 +470,9 @@ func (s *Server) deriveTaskStatus(t *Task) string {
 	return "created"
 }
 
-// orchestrationToolSeeds seeds the cross-task tools into the tools table so they
-// are bindable per-agent (default: bound to nobody — opt-in for orchestration
-// agents). First-insert only, like the traffic seeds.
+// orchestrationToolSeeds는 작업 사이 도구를 tools 표에 심어,
+// 에이전트마다 묶을 수 있게 합니다(기본은 아무에게도 안 묶임. 오케스트레이션
+// 에이전트만 골라 켬). 트래픽 씨앗처럼 처음 한 번만 넣습니다.
 func (s *Server) seedOrchestrationTools() {
 	// task-op + platform tools default-bind to the built-in Auto agent (이 agent는 원래
 	// 플랫폼을 조작하는 용도이다). SeedTool은 첫 삽입만 적용된다. 이미 seed된 옛 라이브러리 행은 seedAutoDefaultBindings가 바인딩을 보완한다.
@@ -508,11 +511,11 @@ func (s *Server) seedOrchestrationTools() {
 	// pentest와 함께 seed해 두었다(프로젝트에 아직 옛 라이브러리가 없어 마이그레이션하지 않는다).
 }
 
-// refreshBuiltinToolSchemas propagates code schema/description changes on the
-// orchestration + platform tools into already-seeded rows ONCE per version flag —
+// refreshBuiltinToolSchemas는 코드의 스키마/설명 변경을
+// 이미 심긴 오케스트레이션·플랫폼 도구 행에, 버전 플래그마다 한 번 반영합니다.
 // SeedTool is first-insert-only, so a new param (e.g. spawn_task의 llm_profile) never
-// reaches an old DB otherwise. Preserves each tool's agent binding + enabled flag.
-// Bump the flag whenever these tools' schemas/descriptions change in code.
+// 옛 DB에는 반영되지 않습니다. 각 도구의 에이전트 바인딩과 켜짐 표시는 그대로 둡니다.
+// 코드에서 이 도구들의 스키마나 설명이 바뀌면 이 플래그를 올립니다.
 func (s *Server) refreshBuiltinToolSchemas() {
 	const flag = "tool_schema_refresh_v7_list_facts_paging"
 	if v, _, _ := s.m.pg.GetSetting(flag); v == "true" {
@@ -546,11 +549,11 @@ func (s *Server) refreshBuiltinToolSchemas() {
 	log.Printf("[tools] orchestration/platform 도구 schema를 코드 기본값으로 새로고침했습니다(일회성)")
 }
 
-// unbindGoalMetDefault removes goal_met's default "planner" binding ONCE (guarded by
-// a settings flag), so existing DBs match the new default of NO agent. goal_met bypasses
-// per-goal prove_goal to declare the whole task done — powerful/risky and redundant with
-// the prove_goal→auto-complete path — so it ships unbound; users can re-bind it per agent
-// in the UI. A user's own binding to another agent is untouched (we only strip planner).
+// unbindGoalMetDefault는 goal_met의 기본 "planner" 바인딩을 한 번 뗍니다
+// (설정 플래그로 지킴). 기존 DB도 새 기본(에이전트 없음)과 같게 합니다. goal_met는
+// 목표별 prove_goal을 건너뛰고 작업 전체를 끝났다고 선언합니다. 세고 위험하며
+// prove_goal에서 자동 완료로 가는 길과 겹칩니다. 그래서 안 묶인 채 나갑니다. 사용자는 에이전트마다
+// 화면에서 다시 묶을 수 있습니다. 다른 에이전트에 사용자가 묶은 것은 안 건드립니다(planner만 뗍니다).
 func (s *Server) unbindGoalMetDefault() {
 	const flag = "goal_met_unbind_default_v1"
 	if v, _, _ := s.m.pg.GetSetting(flag); v == "true" {
@@ -779,8 +782,8 @@ func (s *Server) seedReporterAgent() {
 	log.Printf("[reporter] 「보고서 작성」 에이전트 + finding 트리거를 미리 구성했습니다")
 }
 
-// seedAutoReportFindingBinding adds "auto" to report_finding's binding ONCE so
-// conversation-context agents can call it without requiring an intent_id.
+// seedAutoReportFindingBinding은 report_finding 바인딩에 "auto"를 한 번 더합니다.
+// 대화 맥락 에이전트가 intent_id 없이도 부를 수 있게 합니다.
 func (s *Server) seedAutoReportFindingBinding() {
 	const flag = "auto_report_finding_v1"
 	if v, _, _ := s.m.pg.GetSetting(flag); v == "true" {
@@ -793,10 +796,10 @@ func (s *Server) seedAutoReportFindingBinding() {
 	_ = s.m.pg.SetSetting(flag, "true")
 }
 
-// seedPlannerDefaultBindings adds "planner" to report_finding's binding ONCE
-// (guarded by a settings flag), so existing DBs — whose report_finding row was
-// seeded as worker-only — also let the planner record findings. Fresh DBs already
-// get it via PlannerTools(); this only backfills without overriding a user unbind.
+// seedPlannerDefaultBindings는 report_finding 바인딩에 "planner"를 한 번 더합니다
+// (설정 플래그로 지킴). 기존 DB의 report_finding 행이
+// 워커 전용으로 심겼어도, 플래너가 발견을 기록하게 합니다. 새 DB는 이미
+// PlannerTools()로 받습니다. 이것은 사용자가 푼 것을 덮지 않고 빈칸만 채웁니다.
 func (s *Server) seedPlannerDefaultBindings() {
 	const flag = "planner_report_finding_v1"
 	if v, _, _ := s.m.pg.GetSetting(flag); v == "true" {
@@ -809,11 +812,11 @@ func (s *Server) seedPlannerDefaultBindings() {
 	_ = s.m.pg.SetSetting(flag, "true")
 }
 
-// seedPlannerListAssetsBinding adds "planner" to list_assets's binding ONCE
-// (guarded by a settings flag), so existing DBs — whose list_assets row was seeded
-// as auto/pentest-only — also let the planner query the asset store by DSL. Fresh
-// DBs already get it via PlannerTools(); this only backfills without overriding a
-// user unbind.
+// seedPlannerListAssetsBinding은 list_assets 바인딩에 "planner"를 한 번 더합니다
+// (설정 플래그로 지킴). 기존 DB의 list_assets 행이
+// auto/pentest 전용으로 심겼어도, 플래너가 DSL로 자산 저장소를 조회하게 합니다. 새
+// DB는 이미 PlannerTools()로 받습니다. 이것은 사용자가 푼 것을 덮지 않고
+// 빈칸만 채웁니다.
 func (s *Server) seedPlannerListAssetsBinding() {
 	const flag = "planner_list_assets_v1"
 	if v, _, _ := s.m.pg.GetSetting(flag); v == "true" {
@@ -826,12 +829,12 @@ func (s *Server) seedPlannerListAssetsBinding() {
 	_ = s.m.pg.SetSetting(flag, "true")
 }
 
-// seedCompanyScopeRebind changes add_company_scope's default binding ONCE on
-// existing DBs (guarded by a settings flag): the tool moves off worker and onto
-// planner — defining a company's asset scope is a planning/main/auto concern, not
-// something a worker does mid-exploration. Fresh DBs already get planner via
-// PlannerTools() and lack worker via WorkerTools(); this only backfills old rows.
-// One-shot + flag-guarded so a user who later re-binds worker isn't overridden.
+// seedCompanyScopeRebind는 기존 DB에서 add_company_scope의 기본 바인딩을 한 번 바꿉니다
+// (설정 플래그로 지킴). 도구를 워커에서 떼어
+// 플래너에 붙입니다. 기업의 자산 범위를 정하는 일은 계획/메인/auto의 일이고,
+// 워커가 탐색 중에 할 일이 아닙니다. 새 DB는 이미 PlannerTools()로 플래너를 받고
+// WorkerTools()에는 이 도구의 워커 바인딩이 없습니다. 이것은 옛 행만 채웁니다.
+// 한 번만, 플래그로 지켜, 나중에 사용자가 워커를 다시 묶어도 덮지 않습니다.
 func (s *Server) seedCompanyScopeRebind() {
 	const flag = "company_scope_rebind_v1" // 워커(의도 하나를 실행한 뒤 정지)→플래너(의도만 생성) 기본 바인딩 전환
 	if v, _, _ := s.m.pg.GetSetting(flag); v == "true" {
@@ -848,18 +851,18 @@ func (s *Server) seedCompanyScopeRebind() {
 	_ = s.m.pg.SetSetting(flag, "true")
 }
 
-// seedWorkerReadToolsUnbind strips the read-context tools off worker's default
-// binding ONCE on existing DBs (guarded by a settings flag): a worker executes one
-// intent and writes back — reading facts/companies and listing all workers' traces is
-// a planning/main concern, not the executor's. Fresh DBs already lack these via
-// WorkerTools(); this only backfills old rows without overriding a user who
-// deliberately re-binds worker. Each RemoveAgentFromTool is per-tool +
-// membership-guarded, so planner/mainagent bindings of the same tool are untouched.
+// seedWorkerReadToolsUnbind는 기존 DB에서 읽기 맥락 도구를 워커 기본
+// 바인딩에서 한 번 뗍니다(설정 플래그로 지킴). 워커는 의도 하나를 실행하고
+// 결과를 씁니다. 사실/기업을 읽고 모든 워커의 흔적을 나열하는 것은
+// 계획/메인의 일이고, 실행자의 일이 아닙니다. 새 DB는 이미 WorkerTools()에 이것들이 없습니다.
+// 이것은 옛 행만 채우고, 워커를 일부러 다시 묶은 사용자는
+// 덮지 않습니다. RemoveAgentFromTool은 도구마다,
+// 소속만 확인하므로, 같은 도구의 플래너/메인 에이전트 바인딩은 안 건드립니다.
 //
-// NOTE: search_all_worker_traces / get_worker_trace / node_detail are intentionally NOT
-// unbound — worker owns them for cross-work look-back + node drill-down (see WorkerTools).
-// They used to be in this list back when worker lacked them; seedWorkerReadbackRebind
-// repairs DBs whose old run stripped them.
+// 참고: search_all_worker_traces / get_worker_trace / node_detail은 일부러 안
+// 뗍니다. 워커가 작업 사이 되돌아보기와 노드 드릴다운에 씁니다(WorkerTools를 보세요).
+// 예전에는 워커에게 없어서 이 목록에 있었습니다. seedWorkerReadbackRebind가
+// 옛 실행이 벗겨 버린 DB를 고칩니다.
 func (s *Server) seedWorkerReadToolsUnbind() {
 	const flag = "worker_readtools_unbind_v1"
 	if v, _, _ := s.m.pg.GetSetting(flag); v == "true" {
@@ -876,12 +879,12 @@ func (s *Server) seedWorkerReadToolsUnbind() {
 	_ = s.m.pg.SetSetting(flag, "true")
 }
 
-// seedWorkerReadbackRebind re-binds the cross-work look-back / drill-down tools onto
-// worker ONCE (guarded by a settings flag): an earlier seedWorkerReadToolsUnbind wrongly
-// stripped search_all_worker_traces / get_worker_trace / node_detail from worker after
-// they had been added to WorkerTools(), so any DB that ran that migration lost them.
-// Fresh DBs already have them via WorkerTools() and this is a harmless no-op there.
-// One-shot + flag-guarded so a user who later deliberately unbinds them isn't overridden.
+// seedWorkerReadbackRebind는 작업 사이 되돌아보기/드릴다운 도구를
+// 워커에 한 번 다시 묶습니다(설정 플래그로 지킴). 예전의 seedWorkerReadToolsUnbind가
+// search_all_worker_traces / get_worker_trace / node_detail을, WorkerTools()에 넣은 뒤에
+// 워커에서 잘못 떼었습니다. 그 이관을 탄 DB는 이것을 잃었습니다.
+// 새 DB는 이미 WorkerTools()로 가지고 있어, 여기서는 해가 없는 무동작입니다.
+// 한 번만, 플래그로 지켜, 나중에 사용자가 일부러 풀어도 덮지 않습니다.
 func (s *Server) seedWorkerReadbackRebind() {
 	const flag = "worker_readback_rebind_v2" // v2: node_detail을 추가
 	if v, _, _ := s.m.pg.GetSetting(flag); v == "true" {
@@ -896,10 +899,10 @@ func (s *Server) seedWorkerReadbackRebind() {
 	_ = s.m.pg.SetSetting(flag, "true")
 }
 
-// seedAutoDefaultBindings adds "auto" to the task-op + platform tools' bindings
-// ONCE (guarded by a settings flag), so existing DBs whose tool rows were seeded
-// before Auto existed still give Auto its default toolset — without re-adding it
-// after a user deliberately unbinds.
+// seedAutoDefaultBindings는 작업 조작·플랫폼 도구 바인딩에 "auto"를
+// 한 번 더합니다(설정 플래그로 지킴). Auto가 생기기 전에 심긴 도구 행이 있는 기존 DB도
+// Auto의 기본 도구 묶음을 갖게 합니다. 사용자가 일부러 푼 뒤에
+// 다시 넣지는 않습니다.
 func (s *Server) seedAutoDefaultBindings() {
 	const flag = "auto_default_bindings_v3" // v3: 옛 자산 도구 이름을 바꾸고, insert_assets/add_company_scope를 넣는다
 	if v, _, _ := s.m.pg.GetSetting(flag); v == "true" {

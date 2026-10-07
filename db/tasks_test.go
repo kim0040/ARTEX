@@ -19,13 +19,13 @@ func TestTaskLifecycleAndDeleteCascade(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// populate the exploration subgraph
+	// 탐색 부분 그래프를 채운다
 	es := d.Exploration(tk.ExplorationID)
 	if _, err := es.AddIntent(map[string]any{"summary": "x"}, 5, nil, "planner"); err != nil {
 		t.Fatal(err)
 	}
 
-	// pause + status
+	// 일시정지와 상태
 	if err := d.SetPaused(tk.ID, true); err != nil {
 		t.Fatal(err)
 	}
@@ -37,7 +37,7 @@ func TestTaskLifecycleAndDeleteCascade(t *testing.T) {
 		t.Fatalf("new task should not be queued: %+v", got)
 	}
 
-	// queued (concurrency-hold) flag round-trips independently of paused
+	// queued(동시 실행 보류) 플래그는 paused와 따로 왕복한다
 	if err := d.SetQueued(tk.ID, true); err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +51,7 @@ func TestTaskLifecycleAndDeleteCascade(t *testing.T) {
 		t.Fatalf("queued not cleared: %+v", g)
 	}
 
-	// list contains it
+	// 목록에 들어 있다
 	list, _ := d.ListTasks()
 	found := false
 	for _, x := range list {
@@ -63,7 +63,7 @@ func TestTaskLifecycleAndDeleteCascade(t *testing.T) {
 		t.Fatalf("task not in list")
 	}
 
-	// delete cascades exploration subgraph
+	// 삭제가 탐색 부분 그래프를 함께 지운다
 	if err := d.DeleteTask(tk.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -326,8 +326,8 @@ func TestTaskRelationsAndLLMFailoverChain(t *testing.T) {
 		t.Fatalf("chain exhaustion was not persisted: %+v", got)
 	}
 
-	// Two requests can observe the same last active profile. Only the transaction
-	// that clears the cursor may report an advance; the late one is idempotent.
+	// 요청 둘이 같은 마지막 활성 프로필을 볼 수 있다. 커서를 지우는
+	// 트랜잭션만 전진을 알리고, 늦은 쪽은 같은 결과를 다시 낸다.
 	if err := d.ReplaceTaskLLMProfiles(child.ID, []int64{profileIDs[2]}, profileIDs[2]); err != nil {
 		t.Fatal(err)
 	}
@@ -365,8 +365,8 @@ func TestTaskRelationsAndLLMFailoverChain(t *testing.T) {
 		t.Fatalf("last profile advanced %d times, want exactly once", advanced)
 	}
 
-	// Starting manually from the middle consumes only candidates after that cursor.
-	// Earlier ready profiles must not be revived by hydration or unrelated deletes.
+	// 중간에서 수동으로 시작하면 그 커서 뒤의 후보만 소비한다.
+	// 더 앞의 준비된 프로필을 복원이나 관계없는 삭제가 되살리면 안 된다.
 	if err := d.ReplaceTaskLLMProfiles(child.ID, []int64{profileIDs[2], profileIDs[0], profileIDs[1]}, profileIDs[0]); err != nil {
 		t.Fatal(err)
 	}
@@ -400,8 +400,8 @@ func TestTaskRelationsAndLLMFailoverChain(t *testing.T) {
 		t.Fatalf("deleting an unrelated profile revived an exhausted chain: %+v", got)
 	}
 
-	// A call that finishes after its profile was removed from the chain is stale:
-	// preserve the new cursor and surface the original provider error upstream.
+	// 사슬에서 프로필이 빠진 뒤에 끝나는 호출은 낡았다.
+	// 새 커서는 남기고, 원래 제공자 오류를 위로 올린다.
 	if err := d.ReplaceTaskLLMProfiles(child.ID, []int64{profileIDs[2], profileIDs[1]}, profileIDs[2]); err != nil {
 		t.Fatal(err)
 	}
@@ -665,9 +665,9 @@ RETURNING id`, domainB, companyB).Scan(&companyAssetB); err != nil {
 	}
 }
 
-// TestListTasksOrderByIDDesc pins list ordering to id-descending. created_at is
-// deliberately not the sort key: tasks created in the same instant share a
-// timestamp and would reorder between polls; id is unique and monotonic.
+// TestListTasksOrderByIDDesc는 목록 순서를 id 내림차순으로 고정한다. created_at은
+// 일부러 정렬 키가 아니다. 같은 순간에 만든 작업은
+// 타임스탬프를 공유해 폴링마다 순서가 바뀔 수 있다. id는 유일하고 단조롭다.
 func TestListTasksOrderByIDDesc(t *testing.T) {
 	d, err := Open(testDSN(t))
 	if err != nil {
@@ -690,7 +690,7 @@ func TestListTasksOrderByIDDesc(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Reduce to just the ids created here; other rows may exist in the shared DB.
+	// 여기서 만든 id만 남긴다. 공유 DB에는 다른 행이 있을 수 있다.
 	mine := map[int64]bool{ids[0]: true, ids[1]: true, ids[2]: true}
 	var seen []int64
 	for _, task := range list {
@@ -701,7 +701,7 @@ func TestListTasksOrderByIDDesc(t *testing.T) {
 	if len(seen) != 3 {
 		t.Fatalf("found %d of the created tasks in the list, want 3", len(seen))
 	}
-	// Newest (largest id) first.
+	// 최신(가장 큰 id)이 먼저.
 	if seen[0] != ids[2] || seen[1] != ids[1] || seen[2] != ids[0] {
 		t.Fatalf("order=%v, want descending %v", seen, []int64{ids[2], ids[1], ids[0]})
 	}

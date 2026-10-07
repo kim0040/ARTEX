@@ -41,8 +41,8 @@ import { AgentEditor } from "@/components/agent-editor";
 import { api } from "@/lib/api";
 import type { Agent } from "@/lib/types";
 
-// AgentGridCard is one clickable tile opening the agent's editor drawer. Custom
-// (non-builtin) agents get a delete button.
+// AgentGridCard는 누르면 그 에이전트 편집 서랍이 열리는 칸입니다. 기본 제공이 아닌
+// 사용자 에이전트에는 삭제 버튼이 있습니다.
 function AgentGridCard({
   agent,
   onOpen,

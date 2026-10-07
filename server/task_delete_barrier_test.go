@@ -157,8 +157,8 @@ func TestAbortTaskDeleteUsesPersistedPauseAndQueueState(t *testing.T) {
 	defer func() { _, _ = m.DeleteTask(task.ID, DeleteTaskOptions{}) }()
 	s := &Server{m: m, engine: NewEngine(m)}
 
-	// An engine-only pause is not authoritative. The committed task is running,
-	// so aborting deletion must clear this stale in-memory barrier.
+	// 엔진만의 일시정지는 기준이 아닙니다. 확정된 작업은 실행 중이라,
+	// 삭제를 취소하면 이 낡은 메모리 장벽을 지워야 합니다.
 	s.engine.Pause(task.ID, agent.AbortPausedByUser)
 	if !s.beginTaskDelete(task.ID) {
 		t.Fatal("install first delete barrier")
@@ -168,8 +168,8 @@ func TestAbortTaskDeleteUsesPersistedPauseAndQueueState(t *testing.T) {
 		t.Fatal("stale engine pause survived although the persisted task is running")
 	}
 
-	// A queued row must retain its execution barrier even when BeginDelete saw the
-	// engine as running. This specifically guards against restoring a stale snapshot.
+	// 대기 행은 BeginDelete가 엔진을 실행 중으로 봤어도 실행 장벽을 유지해야 합니다.
+	// 낡은 스냅샷을 되살리지 않게 지키는 테스트입니다.
 	if err := m.EnqueueTask(task.ID, "resume"); err != nil {
 		t.Fatal(err)
 	}

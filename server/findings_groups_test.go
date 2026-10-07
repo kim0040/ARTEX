@@ -174,7 +174,7 @@ func TestDeepenFindingCreatesAuditedIntentAndRevivesTask(t *testing.T) {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	cancel() // admission is exercised without starting background planner/worker work
+	cancel() // 입장은 시험하되, 백그라운드 플래너/워커 작업은 시작하지 않습니다.
 	s := &Server{m: m, engine: NewEngine(m), ctx: ctx}
 	live, unsubscribe := s.engine.Broadcaster().Subscribe(task.ID)
 	defer unsubscribe()
@@ -239,8 +239,8 @@ func TestDeepenFindingCreatesAuditedIntentAndRevivesTask(t *testing.T) {
 	default:
 	}
 
-	// The retained finding can no longer be deepened after its task and node are
-	// deleted; this must be a conflict rather than silently creating orphan work.
+	// 남겨 둔 발견은, 작업과 노드가 지워진 뒤에는 더 이상 깊게 팔 수 없습니다.
+	// 고아 작업을 조용히 만들면 안 되고, 충돌로 거절해야 합니다.
 	if err := m.pg.DeleteTask(taskID); err != nil {
 		t.Fatal(err)
 	}
@@ -309,8 +309,8 @@ func TestDeepenAdmissionFailureDiscardsFollowUpIntent(t *testing.T) {
 	if err := m.SetTaskStatus(task.ID, "done"); err != nil {
 		t.Fatal(err)
 	}
-	// Keep the in-memory handle and graph available while forcing the atomic
-	// admission UPDATE to reject this soft-deleted row.
+	// 메모리 손잡이와 그래프는 남겨 두고, 원자적
+	// 입장 UPDATE가 이 소프트 삭제된 행을 거절하게 합니다.
 	if _, err := m.pg.Exec(`UPDATE tasks SET deleted_at=now() WHERE id=$1`, taskID); err != nil {
 		t.Fatal(err)
 	}

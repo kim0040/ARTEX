@@ -1,5 +1,5 @@
 // 화면과 엔진이 주고받는 데이터 모양입니다. 자산 그래프와 탐색 그래프의 노드가 이 타입으로 표현됩니다.
-// ARTEX domain model — types used across the UI.
+// 화면 곳곳에서 쓰는 도메인 타입입니다.
 // 기능 명세에서 가져옴(7절: 핵심 데이터 모양).
 
 export type TaskStatus = "created" | "queued" | "running" | "paused" | "done" | "failed" | "timeout";
@@ -16,10 +16,10 @@ export interface Task {
   goal: string;
   status: TaskStatus;
   created_at: string;
-  created_unix?: number; // created_at as unix seconds (run-duration calc)
-  completed_at?: string; // RFC3339 finish time (done/failed); "" if unfinished
-  completed_unix?: number; // completed_at as unix seconds (0/undef if unfinished)
-  last_activity_unix?: number; // unix seconds of the last activity (0/undef if none)
+  created_unix?: number; // created_at의 유닉스 초(실행 시간 계산)
+  completed_at?: string; // RFC3339 끝난 시각(완료/실패). 아직이면 ""
+  completed_unix?: number; // completed_at의 유닉스 초(아직이면 0 또는 없음)
+  last_activity_unix?: number; // 마지막 활동의 유닉스 초(없으면 0 또는 없음)
   paused?: boolean;
   queued?: boolean;
   active?: boolean;
@@ -30,15 +30,15 @@ export interface Task {
   goals_total?: number;
   goals_met?: number;
   engine_mode?: EngineMode;
-  tokens?: TokenTotal; // whole-task token consumption
-  llm_profile_id?: number; // LLM profile used; absent = default profile
-  llm_profile_ids?: number[]; // ordered task-level failover chain
-  active_llm_profile_id?: number; // profile used by the next LLM call
+  tokens?: TokenTotal; // 작업 전체 토큰 사용량
+  llm_profile_id?: number; // 쓴 LLM 프로필. 없으면 기본 프로필
+  llm_profile_ids?: number[]; // 작업 단위 장애 전환 사슬(순서 있음)
+  active_llm_profile_id?: number; // 다음 LLM 호출이 쓸 프로필
   llm_failover_state?: "default" | "ready" | "chain_exhausted" | string;
   llm_failover_reason?: string;
-  source_task_ids?: string[]; // directly related tasks inherited as read-only context
-  archive_blocked_by_task_id?: string; // live direct dependent that must be archived first
-  company_ids?: number[]; // associated company scopes; current company assets join the task at creation
+  source_task_ids?: string[]; // 읽기 전용 맥락으로 물려받은, 직접 관련된 작업
+  archive_blocked_by_task_id?: string; // 먼저 보관해야 하는, 아직 살아있는 직접 의존 작업
+  company_ids?: number[]; // 연결된 기업 범위. 만들 때 그 기업의 현재 자산이 작업에 들어옵니다
   coverage_enabled?: boolean; // 자산 커버리지 기능 스위치(만들 때 정함, 기본 켬). false=커버리지를 계산/표시하지 않음
 }
 
@@ -148,7 +148,7 @@ export interface ArchiveBatchItem {
   error?: string;
 }
 
-// ---- Asset graph (global, shared across tasks) ----
+// ---- 자산 그래프(전역, 작업들이 공유) ----
 export type AssetType =
   | "company"
   | "domain"
@@ -168,7 +168,7 @@ export interface AssetNode {
   id: string;
   type: AssetType;
   name: string;
-  key: string; // nkey
+  key: string; // nkey 키
   value?: string;
   company_id?: string; // 소속 회사 자산 id. 비어 있음=소속 없음
   state: NodeState;
@@ -197,7 +197,7 @@ export interface Edge {
   rel: AssetRel | ExploreRel;
 }
 
-// Task asset view — server-side enriched, paginated.
+// 작업 자산 보기. 서버가 보강해 페이지로 나눕니다.
 export interface TaskAssetRef {
   id: string;
   name?: string;
@@ -217,7 +217,7 @@ export interface TaskAssetView {
   items: TaskAssetItem[];
 }
 
-// ---- New unified asset model (new backend) ----
+// ---- 새 통합 자산 모델(새 백엔드) ----
 export type NewAssetType = "root_domain" | "ip" | "subdomain" | "app" | "service" | "endpoint";
 
 export interface Asset {
@@ -284,7 +284,7 @@ export interface TaskAssetScopeMutation {
   scopes_existing: number;
 }
 
-// ---- Asset coverage graph (per task) ----
+// ---- 자산 커버리지 그림(작업마다) ----
 // 힘 기반 「자산 커버리지 그림」의 한 노드. key는 유일합니다. 자산="a:<id>", 회사="c:<id>", （자산 그래프는 자산이 서로 어떻게 연결되는지 보여주는 그림입니다）
 // 자산 행이 없는 루트 도메인="r:<domain>". in_scope=false는 선을 잇기 위한 회색 맥락 노드입니다.
 export interface CoverageGraphNode {
@@ -331,13 +331,13 @@ export interface CoverageAssetRefs {
   findings: CoverageAssetRef[];
 }
 
-// ---- Workspace file manager (workDir) ----
+// ---- 작업 폴더 파일 관리(workDir) ----
 export interface WorkspaceEntry {
   name: string;
-  path: string; // workspace-relative, forward slashes
+  path: string; // 작업 폴더 기준 경로, 슬래시는 /
   dir: boolean;
   size: number;
-  mtime: number; // unix millis
+  mtime: number; // 유닉스 밀리초
 }
 export interface WorkspaceListing {
   path: string;
@@ -404,7 +404,7 @@ export interface Company {
   scope?: ScopeRow[];
 }
 
-// ---- Exploration graph (per task) ----
+// ---- 탐색 그래프(작업마다) ----
 export type ExploreKind = "task" | "begin" | "goal" | "intent" | "fact" | "finding" | "hint" | "digest";
 export type GoalState = "open" | "met" | "abandoned";
 export type IntentState = "open" | "running" | "paused" | "done" | "blocked" | "exhausted" | "stopped";
@@ -417,7 +417,7 @@ export interface TaskNode {
   type: ExploreKind;
   payload?: string;
   priority: number; // 0..10
-  state: string; // GoalState | IntentState | FindingState | HintState
+  state: string; // GoalState | IntentState | FindingState | HintState 중 하나
   origin: string;
   ts: string;
   source_task_id?: string;
@@ -452,7 +452,7 @@ export interface TaskGoal {
   id: string;
   text: string;
   vulnclass?: string;
-  state: string; // GoalState
+  state: string; // GoalState 값
   origin?: string;
   ts: string;
 }
@@ -467,7 +467,7 @@ export interface TaskConstraint {
   ts?: string;
 }
 
-// ---- Findings ----
+// ---- 발견 ----
 export type Severity = "critical" | "high" | "medium" | "low";
 
 // 발견 처리 상태: 처리 대기 / 처리 중 / 확인됨 / 처리됨 / 고침 / 오탐 / 무시 / 중복 / 위험 수용.
@@ -615,7 +615,7 @@ export interface FindingAssetTree {
 // FINDING_UNASSIGNED_ASSET은 백엔드 db.FindingUnassignedAsset에 대응합니다.
 export const FINDING_UNASSIGNED_ASSET = "__none__";
 
-// ---- Activity / sessions ----
+// ---- 활동 / 세션 ----
 export type ActivityKind =
   | "tool_use"
   | "tool_result"
@@ -623,12 +623,12 @@ export type ActivityKind =
   | "thinking"
   | "result"
   | "user"
-  | "intent" // LLM-generated exploration objective leading a worker session (UI-synthesized)
-  | "round" // planner round boundary marker (engine-emitted)
-  | "usage" // live cumulative token usage (per model turn); not rendered
-  | "llm_switch" // automatic/manual task-level LLM switch
-  | "llm_failover" // task-level provider switch / chain exhaustion audit event
-  | "intercept_request"; // user-approval request from the intercept layer
+  | "intent" // 워커 세션을 이끄는, 모델이 만든 탐색 목표(화면이 만듦)
+  | "round" // 플래너 라운드 경계 표시(엔진이 냄)
+  | "usage" // 실시간 누적 토큰 사용량(모델 차례마다). 화면에 그리지 않음
+  | "llm_switch" // 자동/수동 작업 단위 LLM 전환
+  | "llm_failover" // 작업 단위 제공자 전환 또는 사슬이 바닥난 감사 사건
+  | "intercept_request"; // 가로채기 층이 보낸 사용자 승인 요청
 
 // ChatAttachment는 한 번의 업로드 파일입니다. path는 그 세션/작업 작업 디렉터리 기준입니다(즉 agent의 CWD).
 export interface ChatAttachment {
@@ -641,7 +641,7 @@ export interface ChatAttachment {
 export interface Activity {
   seq: number;
   intent_id?: string;
-  worker: string; // session owner: planner | mainagent | work#1 ...
+  worker: string; // 세션 주인: planner | mainagent | work#1 ...
   ts: string;
   kind: ActivityKind;
   tool?: string;
@@ -654,8 +654,8 @@ export interface Activity {
   };
   source_task_id?: string;
   inherited?: boolean;
-  main_seg?: number; // main-agent conversation segment (present only on worker="mainagent" rows)
-  // token usage (present only on kind='result')
+  main_seg?: number; // 메인 에이전트 대화 조각(worker="mainagent" 줄에만 있음)
+  // 토큰 사용량(kind='result'일 때만)
   input_tokens?: number;
   output_tokens?: number;
   cache_read_tokens?: number;
@@ -713,7 +713,7 @@ export interface AgentTrigger {
   last_fire?: string;
 }
 
-// ---- Conversations (chat page) ----
+// ---- 대화(채팅 화면) ----
 export interface ActiveFindingRetest {
   id: number;
   finding_id: string;
@@ -738,7 +738,7 @@ export interface FindingRetest {
 
 export interface Conversation {
   id: number;
-  running?: boolean; // live server state, returned with the conversation list
+  running?: boolean; // 서버의 실시간 상태. 대화 목록과 함께 옵니다
   agent_key: string;
   title: string;
   llm_profile_id?: number;
@@ -748,10 +748,10 @@ export interface Conversation {
   updated_at: string;
 }
 
-// ---- Backend logs (/logs page) ----
+// ---- 백엔드 로그(/logs 화면) ----
 export interface LogLine {
   seq: number;
-  db_id?: number; // server_logs.id; present for DB-persisted lines
+  db_id?: number; // server_logs.id. DB에 남은 줄에만 있음
   ts: string;
   level: "info" | "warn" | "error";
   tag: string;
@@ -761,16 +761,16 @@ export interface LogLine {
 export type SessionRole = "mainagent" | "planner" | "worker" | "system";
 export type SessionStatus = "running" | "paused" | "done" | "blocked" | "exhausted" | "pending" | "stopped" | "deleted";
 
-// Daily token aggregate bucket (GET /api/tokens/daily).
+// 하루 토큰 합계 통(GET /api/tokens/daily).
 export interface DailyTokenBucket {
-  date: string; // "YYYY-MM-DD"
+  date: string; // 날짜 형식 "YYYY-MM-DD"
   input_tokens: number;
   output_tokens: number;
   cache_read_tokens: number;
   cache_write_tokens: number;
 }
 
-// Per-worker token usage (GET /api/exploration/tokens).
+// 워커별 토큰 사용량(GET /api/exploration/tokens).
 export interface TokenUsage {
   worker: string;
   input_tokens: number;
@@ -802,7 +802,7 @@ export interface BatchCategoryItem {
   error?: string;
 }
 
-// Whole-task (all agents) token aggregate.
+// 작업 전체(모든 에이전트) 토큰 합계.
 export interface TokenTotal {
   input_tokens: number;
   output_tokens: number;
@@ -810,7 +810,7 @@ export interface TokenTotal {
   cache_write_tokens: number;
 }
 
-// Global per-profile token spend from the llm_usage ledger (GET /api/tokens/usage).
+// llm_usage 장부의 프로필별 전역 토큰 사용(GET /api/tokens/usage).
 export interface ProfileUsage {
   profile_name: string;
   calls: number;
@@ -821,23 +821,23 @@ export interface ProfileUsage {
   cache_write_tokens: number;
 }
 
-// One (profile, UTC day) token bucket for the dashboard's daily chart (new source).
+// 대시보드 일별 차트의 (프로필, UTC 날짜) 토큰 통(새 출처).
 export interface ProfileDayUsage {
   profile_name: string;
-  date: string; // YYYY-MM-DD
+  date: string; // 날짜 YYYY-MM-DD
   input_tokens: number;
   output_tokens: number;
   cache_read_tokens: number;
 }
 
-// Response of GET /api/tokens/usage — the dashboard's "new" (llm_usage) token view.
+// GET /api/tokens/usage 응답. 대시보드의 새(llm_usage) 토큰 보기.
 export interface UsageStats {
   by_profile: ProfileUsage[];
   daily: ProfileDayUsage[];
 }
 
-// Per-model token usage for one task (GET /api/llm/records/by-model), from the
-// always-on llm_usage metering ledger. calls = number of LLM calls on this model.
+// 작업 하나의 모델별 토큰 사용량(GET /api/llm/records/by-model).
+// 항상 켜진 llm_usage 장부에서 옵니다. calls는 이 모델의 LLM 호출 수.
 export interface ModelTokenStat {
   model: string;
   calls: number;
@@ -857,10 +857,10 @@ export interface Session {
   intent_id?: string;
   source_task_id?: string;
   inherited?: boolean;
-  seg?: number; // main-agent session: which conversation segment (0 = original)
+  seg?: number; // 메인 에이전트 세션: 어느 대화 조각인지(0 = 원래)
 }
 
-// ---- Security ----
+// ---- 보안 ----
 export interface AuditEntry {
   ts: string;
   tool: string;
@@ -874,7 +874,7 @@ export interface Audit {
   attributions?: Record<string, number>;
 }
 
-// ---- Traffic ----
+// ---- 트래픽 ----
 export interface TrafficExchange {
   id: string;
   ts: string;
@@ -889,37 +889,37 @@ export interface TrafficExchange {
 export interface TrafficResp {
   enabled: boolean;
   proxy?: string;
-  count?: number; // global total (unfiltered)
-  total?: number; // rows matching the current filter (for pagination)
+  count?: number; // 전체 개수(필터 없음)
+  total?: number; // 지금 필터에 맞는 줄 수(페이지용)
   page?: number;
   size?: number;
   exchanges?: TrafficExchange[];
 }
 
-// Full raw request/response of one exchange (lazy-loaded on row select).
+// 왕래 하나의 원문 요청/응답(줄을 고르면 나중에 불러옴).
 export interface TrafficDetail {
   req: string;
   resp: string;
 }
 
-// One distinct recorded host with its exchange count (target picker).
+// 기록된 호스트 하나와 그 왕래 수(대상 고르기).
 export interface TrafficHost {
   host: string;
   count: number;
 }
 
-// ---- App settings (runtime toggles) ----
+// ---- 앱 설정(실행 중 스위치) ----
 export interface Settings {
   traffic_capture: boolean;
   agent_traffic_binding: boolean; // Agent가 트래픽 증거를 자동으로 연결. 기본은 끔. 사람이 연결하는 것에는 영향 없음
   llm_record: boolean; // LLM 기록 스위치(기본 끔). 끄면 LLM 호출을 전혀 기록하지 않습니다
-  // Web search. brave_key_set / tavily_key_set reflect whether a key is stored
-  // (the values are never returned). On PUT, send the corresponding field to set/clear.
+  // 웹 검색. brave_key_set / tavily_key_set는 키가 저장돼 있는지만 알려 줍니다
+  // (값 자체는 돌려주지 않음). PUT할 때 해당 필드를 보내 저장하거나 지웁니다.
   web_search_enabled: boolean;
-  web_search_backend: string; // "ddgs" | "brave-free" | "tavily" | "deepseek"
+  web_search_backend: string; // 웹 검색 백엔드: "ddgs" | "brave-free" | "tavily" | "deepseek"
   brave_key_set: boolean;
   tavily_key_set: boolean;
-  // write-only: only sent on PUT to store/clear the key.
+  // 쓰기 전용. PUT으로 키를 저장하거나 지울 때만 보냅니다.
   brave_search_api_key?: string;
   tavily_search_api_key?: string;
   // 독립 출구 프록시(http/https/socks5). 검색 엔드포인트에 접속하는 데 씁니다. 트래픽을 기록하는 MITM 프록시와는 무관합니다. 비어 있음=바로 연결. （기록 프록시는 오가는 트래픽을 잡아 두는 중간 서버입니다）
@@ -955,7 +955,7 @@ export interface Settings {
 // NotificationFilter는 채널의 필터 조건입니다. 필드는 모두 선택이며, 없으면 거르지 않습니다.
 // 백엔드는 모든 필드를 검사하지 않습니다. 설정이 잘못되면 「맞음」으로 처리합니다(더 보내도 되고, 빠뜨리면 안 됨).
 export interface NotificationFilter {
-  min_severity?: string; // "" | low | medium | high | critical
+  min_severity?: string; // 비움 또는 low | medium | high | critical
   task_ids?: number[]; // 비어 있음=제한 없음. 비어 있지 않으면 발견이 속한 작업과 교집합이 있어야 함
   asset_ids?: number[]; // 비어 있음=제한 없음. 비어 있지 않으면 발견에 묶인 자산과 교집합이 있어야 함
   vulnclass_include?: string[]; // 비어 있음=모두 받음. 비어 있지 않으면 발견 유형이 키워드 중 하나에 맞아야 함(대소문자 무시 부분 문자열)
@@ -1008,7 +1008,7 @@ export interface NotificationMeta {
 export interface NotificationDelivery {
   id: number;
   finding_id: string;
-  event_kind: string; // finding_created | finding_status_changed
+  event_kind: string; // finding_created | finding_status_changed 사건
   channel_id: number;
   channel_name: string;
   channel_kind: string;
@@ -1023,7 +1023,7 @@ export interface NotificationDelivery {
   severity: string;
 }
 
-// ---- LLM config ----
+// ---- LLM 설정 ----
 export interface LLMProfile {
   id: string;
   name: string;
@@ -1110,7 +1110,7 @@ export interface LLMPoolStatus {
   chain: LLMPoolMember[];
 }
 
-// ---- Agents ----
+// ---- 에이전트 ----
 export interface Agent {
   id: string;
   key: string; // 내장은 goals/planner/mainagent/worker입니다. 사용자 지정은 사용자가 정한 key입니다 （플래너는 방향을 정하고, 워커는 그 의도를 실행합니다）
@@ -1178,8 +1178,8 @@ export interface MCPServer {
   env: Record<string, string>;
   url?: string;
   enabled: boolean;
-  insecure?: boolean; // http: skip TLS cert verification (self-signed servers)
-  tools?: string[]; // mcp_tools_cache (names only, for the count)
+  insecure?: boolean; // http: TLS 인증서 확인을 건너뜀(자체 서명 서버)
+  tools?: string[]; // mcp_tools_cache(개수용 이름만)
 }
 
 export interface MCPTool {
@@ -1187,16 +1187,16 @@ export interface MCPTool {
   description: string;
 }
 
-// ---- Skills ----
-// Fields align with the agentskills.io open specification.
-// description covers both "what the skill does" and "when to use it".
+// ---- 스킬 ----
+// 필드는 agentskills.io 공개 명세에 맞춥니다.
+// description은 "무엇을 하는지"와 "언제 쓰는지"를 모두 담습니다.
 export interface SkillItem {
-  name: string; // unique key = directory name
-  description?: string; // required per spec; covers what + when to use
-  license?: string; // optional: SPDX identifier or free text
-  compatibility?: string; // optional: environment requirements
-  mcps?: string[]; // MCP server names this skill unlocks on load
-  files: string[]; // files in the skill directory
+  name: string; // 유일한 키 = 디렉터리 이름
+  description?: string; // 명세상 필수. 무엇을 하는지와 언제 쓰는지
+  license?: string; // 선택: SPDX 식별자 또는 자유 문장
+  compatibility?: string; // 선택: 필요한 실행 환경
+  mcps?: string[]; // 이 스킬을 불러올 때 열리는 MCP 서버 이름
+  files: string[]; // 스킬 디렉터리 안의 파일
   // 호출 통계(skill_usage 장부). 한 번도 호출되지 않은 skill: calls=0, last_used 없음.
   calls: number;
   tasks: number; // 이것을 불러 본 작업 수(chat 세션은 세지 않음)
@@ -1222,25 +1222,25 @@ export interface MissingSkill {
 }
 
 // ---- Tools (내장 도구 목록) ----
-// key + handler live in Go; only these fields are page-editable. system tools lock
-// the key and the parameter *structure* (name/type/required) — the per-param
-// description/default and the agent binding are what move.
+// key와 handler는 Go에 있습니다. 이 필드만 화면에서 고칩니다. 시스템 도구는
+// key와 매개변수 *구조*(name/type/required)를 잠그고, 매개변수별
+// description/default와 에이전트 연결만 바뀝니다.
 export interface Tool {
   key: string;
   system: boolean;
   description: string;
   // 데모 기록입니다. 영향만 적었고 명령과 자격 증명은 생략했습니다.
-  schema: Record<string, any>; // full JSON-Schema (object with properties)
-  agents: string[]; // bound agent keys
+  schema: Record<string, any>; // 전체 JSON 스키마(properties가 있는 객체)
+  agents: string[]; // 연결된 에이전트 키
   enabled: boolean;
   kind?: "builtin" | "shell" | "command" | "script" | "http"; // 사용자 지정 도구 유형
   // 데모 기록입니다. 영향만 적었고 명령과 자격 증명은 생략했습니다.
   exec?: Record<string, any>; // 사용자 지정 도구 실행 명세(kind!=builtin)
   deferred?: boolean; // schema 지연(SearchExtraTools/ExecuteExtraTool)
-  calls?: number; // persistent runtime invocation count (older APIs may omit it)
+  calls?: number; // 실행 중 호출 횟수(저장됨. 예전 API는 빠질 수 있음)
 }
 
-// ---- Stats ----
+// ---- 통계 ----
 export interface Stats {
   assets: number;
   engine_mode: EngineMode;
@@ -1250,7 +1250,7 @@ export interface Stats {
   active_task?: Partial<Task>;
 }
 
-// ---- Intercept Rules ----
+// ---- 가로채기 규칙 ----
 export type InterceptAction = "allow" | "deny" | "ask";
 export type InterceptMatchTarget = "tool_name" | "tool_input";
 export type InterceptMatchType = "string" | "regex";
@@ -1335,7 +1335,7 @@ export interface JudgeConfig {
 
 // JudgeUsage: 모델 최후 승인(judge 채널)의 누적 token 사용량 + 최근 N일 하루 단위 수열.
 export interface JudgeDayUsage {
-  date: string; // YYYY-MM-DD (UTC)
+  date: string; // YYYY-MM-DD (UTC 날짜)
   calls: number;
   input_tokens: number;
   output_tokens: number;
@@ -1354,16 +1354,16 @@ export interface InterceptApprovalFilter {
   decision_source?: "rule" | "model" | "unknown";
 }
 
-// InterceptApprovalRow enriches InterceptPending with conversation/task and rule context.
+// InterceptApprovalRow는 InterceptPending에 대화/작업과 규칙 맥락을 붙입니다.
 export interface InterceptApprovalRow extends InterceptPending {
-  conv_title: string; // "" if no linked conversation
-  conv_agent_key: string; // "" if no linked conversation
-  rule_name: string; // "" if rule was deleted
+  conv_title: string; // 연결된 대화가 없으면 ""
+  conv_agent_key: string; // 연결된 대화가 없으면 ""
+  rule_name: string; // 규칙이 지워졌으면 ""
 }
 
 // ── 자산 동기화 (ScopeSentry 데이터 출처) ──────────────────────────────────────────────
 export interface SSProject {
-  id: string; // MongoDB ObjectID — used as filter.project
+  id: string; // MongoDB ObjectID. filter.project로 씁니다
   name: string;
   logo?: string;
   AssetCount?: number;
@@ -1372,15 +1372,15 @@ export interface SSProject {
 
 export interface SSTask {
   id: string;
-  name: string; // used as filter.task
+  name: string; // filter.task로 씁니다
   status?: number;
   progress?: number;
   creatTime?: string;
   endTime?: string;
 }
 
-// ConvTokenSummary — one conversation's token total (+ profile/date) for merging
-// chat usage into the dashboard token stats. GET /api/tokens/conversations.
+// ConvTokenSummary. 대화 하나의 토큰 합계(프로필/날짜 포함). 채팅 사용량을
+// 대시보드 토큰 통계에 합칩니다. GET /api/tokens/conversations.
 export interface ConvTokenSummary {
   llm_profile_id: number | null;
   created_at: string;
@@ -1390,13 +1390,13 @@ export interface ConvTokenSummary {
   cache_write_tokens: number;
 }
 
-// ---- Command recording (Bash execution history) ----
+// ---- 명령 기록(Bash 실행 기록) ----
 export interface CommandRecord {
   id: number;
   exploration_id: number;
   worker: string;
   tool: string;
-  command: string; // raw tool input (JSON)
+  command: string; // 도구에 들어간 원문(JSON)
   output: string;
   is_error: boolean;
   created_at: string;
@@ -1409,7 +1409,7 @@ export interface ToolStat {
   errors: number;
 }
 
-// ---- LLM recording ----
+// ---- LLM 기록 ----
 export interface LLMRecordItem {
   id: number;
   ts: string;
@@ -1437,22 +1437,22 @@ export interface LLMRecordDetail extends LLMRecordItem {
   raw_response?: string;
 }
 
-// One distinct task with its LLM-record count (task picker on the records page).
+// LLM 기록이 있는 작업 하나와 그 개수(기록 화면의 작업 고르기).
 export interface LLMTask {
   task_id: string;
   count: number;
 }
 
-// The exact JSON sent to the review model, retained for all model verdicts.
+// 검토 모델에 보낸 JSON 그대로. 모든 모델 판정에 남겨 둡니다.
 export interface InterceptReviewInput {
   version: number;
   background?: {
-    // worker_summary is retained only for immutable v2/v3 snapshots.
+    // worker_summary는 바꾸지 않는 v2/v3 스냅샷에만 남습니다.
     source: "user_message" | "worker_summary";
     text: string;
     truncated?: boolean;
   };
-  // Version 1 snapshots are immutable and remain readable in historical audits.
+  // 버전 1 스냅샷은 바꾸지 않으며, 과거 감사에서 계속 읽을 수 있습니다.
   task?: {
     task_id: number;
     description: string;
@@ -1464,7 +1464,7 @@ export interface InterceptReviewInput {
   worker_intent?: string;
   turn_input?: string;
   background_truncated?: boolean;
-  // Legacy v1/v2 snapshots only; v3 never sends execution history.
+  // 예전 v1/v2 스냅샷만. v3는 실행 기록을 보내지 않습니다.
   history?: {
     tool_use_id: string;
     tool: string;
@@ -1479,7 +1479,7 @@ export interface InterceptReviewInput {
   arguments: Record<string, unknown>;
 }
 
-// Immutable review snapshot plus separately recorded execution outcome.
+// 바꾸지 않는 검토 스냅샷과, 따로 기록한 실행 결과.
 export interface InterceptAudit {
   model_input?: InterceptReviewInput;
   model_input_digest?: string;
@@ -1603,7 +1603,7 @@ export interface UpdateProgress {
   error?: string;
 }
 
-// Original execution selected from an approval, never submitted to the reviewer.
+// 승인에서 고른 원래 실행. 검토 모델에는 보내지 않습니다.
 export interface InterceptExecution {
   conversation_id: number | null;
   task_id: string | null;

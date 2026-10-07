@@ -14,8 +14,8 @@ import (
 	"github.com/Autumn-27/norma/transcript"
 )
 
-// goalsDefaultTmpl is the built-in EDITABLE body (구간 [A]) of the goals-decomposer
-// prompt, seeded into agent_prompts. No template vars are used today.
+// goalsDefaultTmpl 은 목표 분해기 프롬프트의 내장 편집 본문(구간 [A])입니다.
+// agent_prompts 에 심습니다. 지금은 템플릿 변수를 쓰지 않습니다.
 const goalsDefaultTmpl = `你是渗透测试目标分解器。你的职责是从用户输入中识别出**最终要达成的结果**，而不是规划攻击步骤。
 
 **第一步（拆分目标之前先做）：抽取操作约束**
@@ -45,11 +45,11 @@ const goalsDefaultTmpl = `你是渗透测试目标分解器。你的职责是从
 
 调用 set_goals 提交结果。`
 
-// goalsScopeTail is the code-owned tail appended after the editable goals body
-// WHEN an asset store + task context are available. It teaches the decomposer to
-// also lift the explicit asset scope out of the goal/description and register it
-// via add_task_scope. Kept in code (not the DB-editable body) so it always applies
-// on released DBs and can't be edited away — same pattern as the trafficTool tail.
+// goalsScopeTail 은 자산 저장소와 작업 맥락이 있을 때만, 고칠 수 있는 목표 본문 뒤에
+// 붙는 코드 소유 꼬리입니다. 분해기가 목표/설명에서 명시된 자산 범위를 뽑아
+// add_task_scope 로 등록하게 가르칩니다. DB 에서 고칠 수 있는 본문이 아니라 코드에 두어,
+// 배포된 DB 에서도 항상 적용되고 지워지지 않습니다. trafficTool 꼬리와 같은 방식입니다.
+// 초보: 작업의 자산 그래프 범위(분모)를 목표 문장에서 여기 안내로 등록하게 합니다.
 const goalsScopeTail = `
 
 **额外职责：登记测试资产范围**
@@ -66,36 +66,35 @@ const goalsScopeTail = `
 - 若目标/描述中没有任何明确资产范围，则**不要**调用 add_task_scope。
 先用 add_task_scope 登记范围（如有），再调用 set_goals 提交目标。`
 
-// GoalSpec is one decomposed objective.
+// GoalSpec 은 쪼개진 목표 하나입니다.
 type GoalSpec struct {
 	Text      string `json:"text"`
 	VulnClass string `json:"vulnclass,omitempty"`
 }
 
-// DecomposeGoals asks the LLM to break a pentest task goal into discrete,
-// independently-verifiable objectives (each becomes a goal node). Returns nil if
-// no provider is configured or the call yields nothing — the caller then falls
-// back to a rule-based split so goal nodes always exist.
+// DecomposeGoals 는 LLM 에게 침투 작업의 목표를, 따로 검증할 수 있는 목표들로 쪼개라고 합니다
+// (각각 목표 노드가 됩니다). 공급자가 없거나 호출이 아무것도 안 내면 nil 입니다.
+// 그러면 호출자가 규칙 기반 분할로 돌아가, 목표 노드는 항상 있게 합니다.
 //
-// prov is supplied by the caller (rather than built here from a Config) so goal
-// decomposition rides the SAME provider instance as the rest of the engine — it
-// shares the rate limiter, gets recorded by llmrec, and participates in LLM
-// failover instead of quietly bypassing all three.
+// prov 는 여기서 Config 로 만들지 않고 호출자가 넣습니다. 목표 분해가 엔진의 나머지와
+// 같은 공급자 인스턴스를 탑니다. 속도 제한을 공유하고, llmrec 에 기록되고, LLM
+// 장애 조치에 참여합니다. 셋을 조용히 우회하지 않습니다.
 //
-// desc is the task's free-text description (배경: 대상 범위와 교전 설명 등).
-// It is fed alongside the goal so the decomposer no longer splits blind — the
-// prompt still forbids inventing anything the two texts don't state.
+// desc 는 작업의 자유 설명입니다(배경: 대상 범위와 교전 설명 등).
+// 목표와 함께 넣어, 분해기가 눈을 감고 쪼개지 않게 합니다. 프롬프트는 여전히
+// 두 글에 없는 내용을 지어내는 것을 금지합니다.
 //
-// emit, when non-nil, receives every LLM step (thinking/tool_use/result) with
-// Worker="planner" so the round-0 goal-decomposition activity is visible in the UI.
+// emit 이 nil 이 아니면 LLM 단계(thinking/tool_use/result)를 모두 받습니다.
+// Worker="planner" 라서, 0라운드 목표 분해 활동이 UI 에 보입니다.
 //
-// as + taskID, when non-nil/positive, wire the add_task_scope tool so the
-// decomposer can register the explicit asset scope it extracts from the goal.
+// as 와 taskID 가 nil 이 아니고 양수이면 add_task_scope 도구를 연결합니다.
+// 분해기가 목표에서 뽑은 명시적 자산 범위를 등록할 수 있습니다.
 //
-// ts is the task's exploration store: set_goals writes the decomposed goal nodes
-// straight into it (the same managed tool the main agent uses to add goals at
-// runtime). The returned specs are read back from the store so callers can emit
-// per-goal activity and detect the "LLM produced nothing" case for their fallback.
+// ts 는 이 작업의 탐색 저장소입니다. set_goals 가 쪼갠 목표 노드를 바로 거기에 씁니다
+// (메인 에이전트가 실행 중에 목표를 더할 때 쓰는 것과 같은 관리 도구).
+// 돌려주는 명세는 저장소에서 다시 읽습니다. 호출자가 목표마다 활동을 내고,
+// "LLM 이 아무것도 안 냈다"를 알아 폴백할 수 있습니다.
+// 초보: 작업을 시작할 때 탐색 그래프의 목표 노드를 여기서 만듭니다. 플래너는 그 목표를 보고 의도를 만듭니다.
 func DecomposeGoals(ctx context.Context, prov llm.Provider, dataDir, goalText, desc string, as *db.AssetStore, ts *db.ExplorationStore, taskID int64, emit func(db.Activity)) []GoalSpec {
 	if prov == nil {
 		return nil
@@ -103,10 +102,9 @@ func DecomposeGoals(ctx context.Context, prov llm.Provider, dataDir, goalText, d
 	return DecomposeGoalsWithProvider(ctx, prov, dataDir, goalText, desc, as, ts, taskID, false, 0, emit)
 }
 
-// DecomposeGoalsWithProvider is the task-runtime variant used when a task has an
-// ordered provider chain. It preserves the same tools and write behavior while
-// letting the caller own provider selection/failover. maxTokens is the profile's
-// per-reply output cap (0 = send none).
+// DecomposeGoalsWithProvider 는 작업에 순서가 있는 공급자 사슬이 있을 때의 실행 변형입니다.
+// 도구와 쓰기 동작은 같고, 공급자 선택과 장애 조치는 호출자가 맡습니다.
+// maxTokens 는 그 profile 의 답 하나 출력 상한입니다(0 = 보내지 않음).
 func DecomposeGoalsWithProvider(ctx context.Context, prov llm.Provider, dataDir, goalText, desc string, as *db.AssetStore, ts *db.ExplorationStore, taskID int64, nonStreaming bool, maxTokens int, emit func(db.Activity)) []GoalSpec {
 	if prov == nil {
 		return nil
@@ -120,20 +118,19 @@ func DecomposeGoalsWithProvider(ctx context.Context, prov llm.Provider, dataDir,
 	if ts != nil {
 		ctx = transcript.WithSessionID(ctx, fmt.Sprintf("exp%d-goals", ts.ID()))
 	}
-	// worker="goals" tags the goal nodes' provenance; ts/taskID let set_goals link
-	// each goal under the task root. This is the catalog's real set_goals tool, so a
-	// web-edited description/schema on it applies here too.
+	// worker="goals" 는 목표 노드의 출처를 표시합니다. ts/taskID 로 set_goals 가
+	// 각 목표를 작업 뿌리 아래에 잇습니다. 이것은 목록의 진짜 set_goals 도구라,
+	// 웹에서 고친 설명/schema 도 여기서 적용됩니다.
 	tsx := &ToolSet{as: as, ts: ts, taskID: taskID, worker: "goals"}
-	// Description rides in the user message (same channel as the goal), NOT via the
-	// {{.EngagementDescription}} template var — else a prompt that references the var
-	// would inject the description twice. System prompt stays pure static instructions.
+	// 설명은 목표와 같은 통로인 사용자 메시지에 탑니다. {{.EngagementDescription}}
+	// 템플릿 변수로는 넣지 않습니다. 그 변수를 가리키는 프롬프트가 설명을 두 번 넣게 됩니다.
+	// 시스템 프롬프트는 고정된 지시만 담습니다.
 	sys := renderSystem("goals", goalsDefaultTmpl, GoalsVars{DataDir: dataDir, Now: nowStr()})
 	// set_constraints 는 항상 쓸 수 있습니다(asset store 에 의존하지 않음). 본문에 이미 조작 제약을 먼저 뽑고 목표를 쪼개는 단계가 있습니다
 	// (에이전트 편집 페이지에서 문장을 바꿀 수 있음). 여기서는 도구만 연결하면 됩니다.
 	tools := []actool.CoreTool{tsx.setGoals(), tsx.setConstraints()}
-	// Wire add_task_scope only when we have a real asset store + task to write to.
-	// The scope-extraction tail is appended in lockstep so the prompt never asks for
-	// a tool that isn't present.
+	// 쓸 자산 저장소와 작업이 있을 때만 add_task_scope 를 연결합니다.
+	// 범위 추출 꼬리도 같이 붙여, 프롬프트가 없는 도구를 시키지 않게 합니다.
 	if as != nil && taskID > 0 {
 		tools = append(tools, tsx.addTaskScope())
 		sys += goalsScopeTail
@@ -142,8 +139,8 @@ func DecomposeGoalsWithProvider(ctx context.Context, prov llm.Provider, dataDir,
 	if d := strings.TrimSpace(desc); d != "" {
 		userMsg += "\n\n任务描述（背景信息，可能含靶标范围/flag 数量/交战说明；仅供参考，不要臆造其中未提及的内容）：\n" + d // han-allow 업스트림 프롬프트·픽스처
 	}
-	// Use captureRun so every LLM step is emitted as an activity record (visible in
-	// the plan tab under the round-0 marker). Falls back gracefully when emit is nil.
+	// captureRun 을 써서 LLM 단계마다 활동 기록으로 나갑니다(계획 탭의 0라운드 표시 아래).
+	// emit 이 nil 이면 조용히 넘어갑니다.
 	captureEmit := func(r db.Activity) {
 		if emit != nil {
 			r.Worker = "planner"
@@ -161,8 +158,8 @@ func DecomposeGoalsWithProvider(ctx context.Context, prov llm.Provider, dataDir,
 		NonStreaming: nonStreaming, // 이 profile 이 비스트리밍이면 Provider.Complete 를 탑니다
 		MaxTokens:    maxTokens,    // 0 = 상한을 보내지 않음. 서버 기본값
 	}, userMsg, captureEmit)
-	// set_goals persisted the goals directly; read them back so the caller sees what
-	// was written (empty slice ⇒ the LLM produced nothing ⇒ caller falls back).
+	// set_goals 가 목표를 바로 저장했습니다. 다시 읽어 호출자가 무엇을 썼는지 보게 합니다
+	// (빈 조각이면 LLM 이 아무것도 안 낸 것이고, 호출자가 폴백합니다).
 	if ts == nil {
 		return nil
 	}

@@ -10,9 +10,9 @@ import { ArrowLeftIcon } from "lucide-react";
 import { AgentEditor } from "@/components/agent-editor";
 import { Button } from "@/components/ui/button";
 
-// Deep-link editor page for one agent. The primary flow is the drawer on
-// /system/agents; this page reuses the same AgentEditor component full-width so a
-// direct URL (or an external link) still opens the editor.
+// 에이전트 하나를 바로 여는 편집 페이지입니다. 기본 흐름은
+// /system/agents의 서랍이고, 이 페이지는 같은 AgentEditor를 넓게 써서
+// 주소만 있어도(외부 링크 포함) 편집기가 열리게 합니다.
 function AgentDetailInner() {
   const searchParams = useSearchParams();
   const key = searchParams.get("key") ?? "";
@@ -37,7 +37,7 @@ function AgentDetailInner() {
   );
 }
 
-// useSearchParams must sit under a Suspense boundary for static export.
+// useSearchParams는 정적 내보내기를 위해 Suspense 안에 있어야 합니다.
 export default function AgentDetailPage() {
   return (
     <React.Suspense fallback={null}>

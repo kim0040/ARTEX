@@ -55,15 +55,15 @@ func TestTokenStatsBySessionUsesCompleteIntentHistory(t *testing.T) {
 
 	appendResult(nil, "mainagent", 11, 12, 13, 14)
 	appendResult(nil, "planner", 21, 22, 23, 24)
-	// More than ActivityPage's default limit proves this aggregate reads the
-	// persisted history directly instead of summing the currently loaded page.
+	// ActivityPage 기본 상한보다 많다는 것은 이 집계가
+	// 지금 로드된 페이지를 합치지 않고 저장된 이력을 직접 읽는다는 뜻이다.
 	const completedRuns = 205
 	for i := 0; i < completedRuns; i++ {
 		appendResult(&intentID, fmt.Sprintf("work#%d", i%3+1), 1, 2, 3, 4)
 	}
 
-	// All three rows remain part of the legacy worker/whole-task totals, but none
-	// represents a local Worker session and therefore none may create intent:*.
+	// 세 행은 예전 워커/작업 전체 합계에는 남지만, 어느 것도
+	// 로컬 워커 세션이 아니라서 intent:*를 만들면 안 된다.
 	appendResult(&factID, "work#fact", 31, 32, 33, 34)
 	appendResult(nil, "work#missing-node", 41, 42, 43, 44)
 	appendResult(&foreignIntentID, "work#foreign", 51, 52, 53, 54)
@@ -97,7 +97,7 @@ func TestTokenStatsBySessionUsesCompleteIntentHistory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(workers) != 8 { // main, planner, 3 executors, and the 3 deliberately invalid session rows
+	if len(workers) != 8 { // 메인, 플래너, 실행자 3, 그리고 일부러 잘못 넣은 세션 행 3개
 		t.Fatalf("legacy workers changed: got %d entries: %+v", len(workers), workers)
 	}
 	total, err := store.TokenTotal()

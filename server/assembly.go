@@ -15,13 +15,14 @@ import (
 	actool "github.com/Autumn-27/norma/tool"
 )
 
-// wireAgentAugment connects the PG agent_visibility table into the agent runtime:
-// an agent's visible skills are loaded from the filesystem and packed into one
-// Skill meta-tool; its visible stdio MCP servers are spawned and expanded to
-// mcp__server__tool. skillDir is the root directory of all skill subdirectories.
-// hostTools, if set, returns runtime host tools (currently the traffic tools when
-// capture is on) to add to EVERY agent's base list — the DB tools table then
-// filters them per-agent binding. Empty/nil → no host tools this run (capture off).
+// wireAgentAugment는 PG의 agent_visibility 표를 에이전트 실행에 연결합니다.
+// 에이전트가 볼 수 있는 스킬은 파일에서 읽어 Skill 메타 도구 하나로 묶고,
+// 볼 수 있는 stdio MCP 서버는 띄워 mcp__server__tool 로 펼칩니다.
+// skillDir는 스킬 하위 디렉터리를 모두 담는 루트입니다.
+// hostTools를 주면, 실행 중 host 도구를 돌려줍니다(지금은 캡처가 켜졌을 때의 트래픽 도구).
+// 그 도구를 모든 에이전트의 기본 목록에 넣고, DB tools 표가 에이전트별 바인딩으로 거릅니다.
+// 비었거나 nil이면 이번 실행에는 host 도구가 없습니다(캡처 꺼짐).
+// 초보용: 엔진이 에이전트를 돌릴 때, 화면에서 켠 스킬·MCP·host 도구를 여기서 붙입니다.
 func wireAgentAugment(pg *db.DB, skillDir string, hostTools func() ([]actool.CoreTool, map[string][]string)) {
 	agent.ToolAugment = func(ctx context.Context, agentKey string) ([]actool.CoreTool, agent.DeferredInfo, func()) {
 		a, err := pg.GetAgentByKey(agentKey)
@@ -30,8 +31,8 @@ func wireAgentAugment(pg *db.DB, skillDir string, hostTools func() ([]actool.Cor
 		}
 		var extra []actool.CoreTool
 
-		// --- skills: load visible skills into reg (used for the Skill meta-tool
-		// and to know which MCP servers are skill-gated). ---
+		// --- 스킬: 보이는 스킬을 reg에 넣습니다(Skill 메타 도구에 쓰고,
+		// 어느 MCP 서버가 스킬에 잠기는지 알 때도 씁니다). ---
 		var reg *skill.Registry
 		if names, _ := pg.AgentSkillNames(a.ID); len(names) > 0 {
 			nameSet := make(map[string]bool, len(names))
@@ -41,7 +42,7 @@ func wireAgentAugment(pg *db.DB, skillDir string, hostTools func() ([]actool.Cor
 			if allReg, err := skill.LoadDir(skillDir); err == nil && allReg != nil {
 				reg = skill.NewRegistry()
 				for _, s := range allReg.List() {
-					// match by directory name (Base of Dir), not by skill display Name
+					// 표시 이름 Name이 아니라 디렉터리 이름(Dir의 Base)으로 맞춥니다.
 					if s.Dir != "" && nameSet[filepath.Base(s.Dir)] {
 						reg.Add(s)
 					}
@@ -51,8 +52,8 @@ func wireAgentAugment(pg *db.DB, skillDir string, hostTools func() ([]actool.Cor
 				}
 			}
 		}
-		// A server named by any visible skill's `mcps:` is skill-gated: its tools
-		// are deferred + locked (not in the global block) until that skill loads.
+		// 보이는 스킬의 `mcps:`에 적힌 서버는 스킬에 잠깁니다. 그 도구는
+		// 그 스킬이 로드될 때까지 미루고 잠급니다(전역 블록에는 넣지 않음).
 		gated := map[string]bool{}
 		if reg != nil {
 			for _, s := range reg.List() {
@@ -62,12 +63,12 @@ func wireAgentAugment(pg *db.DB, skillDir string, hostTools func() ([]actool.Cor
 			}
 		}
 
-		// --- mcp: connect enabled servers that are directly visible to this agent
-		// OR skill-gated (named in a visible skill's mcps field). Directly-visible
-		// and NOT gated → global (unlocked from session start). Skill-gated →
-		// deferred until that skill is invoked (regardless of direct visibility).
+		// --- mcp: 이 에이전트에 직접 보이거나
+		// 스킬에 잠긴(보이는 스킬의 mcps에 적힌) 켜진 서버에 접속합니다. 직접 보이고
+		// 잠기지 않으면 전역입니다(세션 시작부터 열림). 스킬에 잠기면
+		// 직접 보이는지와 상관없이, 그 스킬이 불릴 때까지 미룹니다.
 		var closers []io.Closer
-		serverTools := map[string][]string{} // server name → its tool names
+		serverTools := map[string][]string{} // 서버 이름 → 그 도구 이름들
 		var allNames, globalNames []string
 		globalSet := map[string]bool{}
 		{
@@ -81,7 +82,7 @@ func wireAgentAugment(pg *db.DB, skillDir string, hostTools func() ([]actool.Cor
 				directVisible := want[m.ID]
 				skillGated := gated[m.Name]
 				if !directVisible && !skillGated {
-					continue // neither directly visible nor referenced by a visible skill
+					continue // 직접 보이지도 않고, 보이는 스킬이 가리키지도 않습니다.
 				}
 				cl, err := connectMCP(ctx, m)
 				if err != nil {
@@ -99,17 +100,17 @@ func wireAgentAugment(pg *db.DB, skillDir string, hostTools func() ([]actool.Cor
 					allNames = append(allNames, t.Name())
 					serverTools[m.Name] = append(serverTools[m.Name], t.Name())
 					if directVisible && !skillGated {
-						// directly visible and not gated → available from session start
+						// 직접 보이고 잠기지 않음 → 세션 시작부터 쓸 수 있습니다.
 						globalNames = append(globalNames, t.Name())
 						globalSet[t.Name()] = true
 					}
-					// skill-gated tools stay out of globalNames; unlocked via unlockSkill()
+					// 스킬에 잠긴 도구는 globalNames 밖에 둡니다. unlockSkill()로 엽니다.
 				}
 			}
 		}
 
-		// Shared call-gate: global MCP tools are unlocked from the start; skill-gated
-		// ones are unlocked when their skill loads (or replayed from history — C2).
+		// 공통 호출 문입니다. 전역 MCP 도구는 처음부터 열려 있고, 스킬에 잠긴
+		// 도구는 그 스킬이 로드될 때, 또는 기록을 재생할 때(C2) 열립니다.
 		unlock := actool.NewUnlockSet(globalNames...)
 		unlockSkill := func(skillName string) {
 			if reg == nil {
@@ -122,8 +123,8 @@ func wireAgentAugment(pg *db.DB, skillDir string, hostTools func() ([]actool.Cor
 			}
 		}
 
-		// Skill meta-tool: on load, unlock the skill's MCPs and reveal their names
-		// (the ones not already in the global block).
+		// Skill 메타 도구: 로드되면 그 스킬의 MCP를 열고 이름을 보여 줍니다
+		// (이미 전역 블록에 있는 이름은 빼고요).
 		if reg != nil {
 			reg.OnInvoke = func(s skill.Skill) string {
 				unlockSkill(s.Name)
@@ -137,29 +138,29 @@ func wireAgentAugment(pg *db.DB, skillDir string, hostTools func() ([]actool.Cor
 				}
 				return actool.RenderDeferredToolsBlock(reveal)
 			}
-			// Attribution for the usage ledger: ToolAugment only gets (ctx, agentKey),
-			// so the run's task/session ids ride in on the ctx (agent.RunInfo). Read it
-			// once here — this closure is rebuilt per run, so the captured value always
-			// belongs to this run.
+			// 사용 장부에 누구 것인지 적습니다. ToolAugment는 (ctx, agentKey)만 받으므로
+			// 이번 실행의 작업/세션 id는 ctx의 agent.RunInfo로 들어옵니다. 여기서
+			// 한 번만 읽습니다. 이 클로저는 실행마다 다시 만들므로, 잡은 값은 항상
+			// 이번 실행의 것입니다.
 			extra = append(extra, meterSkillTool(reg.Tool(), pg, reg, a.Key, agent.RunInfoFrom(ctx)))
 		}
 
-		// host tools (traffic / orchestration / custom) — added to every agent's base;
-		// ToolResolve then keeps them only for agents the tool is bound to. Custom
-		// tools flagged deferred contribute their names to the deferred wiring so
-		// their schema is withheld (SearchExtraTools/ExecuteExtraTool), same as MCP.
+		// host 도구(트래픽 / 오케스트레이션 / 사용자 정의)를 모든 에이전트의 기본 목록에 넣습니다.
+		// 그다음 ToolResolve가, 그 도구가 묶인 에이전트만 남깁니다. deferred로 표시된 사용자 정의
+		// 도구는 이름을 deferred 배선에 넣어 스키마를 감춥니다(SearchExtraTools/ExecuteExtraTool).
+		// MCP와 같습니다.
 		if hostTools != nil {
 			ht, deferredBinds := hostTools()
 			extra = append(extra, ht...)
 			for name, boundAgents := range deferredBinds {
 				if !contains(boundAgents, a.Key) {
-					continue // only defer names this agent is actually bound to
+					continue // 이 에이전트에 실제로 묶인 이름만 미룹니다.
 				}
-				allNames = append(allNames, name)       // schema withheld from the prompt
-				globalNames = append(globalNames, name) // advertised in the deferred block
+				allNames = append(allNames, name)       // 프롬프트에는 스키마를 넣지 않습니다.
+				globalNames = append(globalNames, name) // deferred 블록에는 이름을 알립니다.
 				globalSet[name] = true
 				if unlock != nil {
-					unlock.Add(name) // global deferred → callable from the start
+					unlock.Add(name) // 전역 deferred라서 처음부터 호출할 수 있습니다.
 				}
 			}
 		}
@@ -187,10 +188,10 @@ func idSet(ids []int64) map[int64]bool {
 	return m
 }
 
-// seedPrompts writes each built-in agent's code-default prompt body into
-// agent_prompts on startup — first-insert only (SeedPromptIfEmpty is a no-op once
-// any version exists), so the DB becomes the authoritative editable source while
-// user edits survive restarts. Runs after seedBuiltins has created the agent rows.
+// seedPrompts는 시작 때 내장 에이전트의 코드 기본 프롬프트 본문을
+// agent_prompts에 씁니다. 처음 한 번만 넣습니다(버전이 있으면 SeedPromptIfEmpty는 아무 일도 안 함).
+// 그래서 DB가 고칠 수 있는 기준이 되고,
+// 사용자가 고친 내용은 재시작해도 남습니다. seedBuiltins가 에이전트 행을 만든 뒤에 돕니다.
 func seedPrompts(pg *db.DB) {
 	for key, tmpl := range agent.BuiltinPromptSeeds() {
 		a, err := pg.GetAgentByKey(key)
@@ -204,16 +205,16 @@ func seedPrompts(pg *db.DB) {
 	}
 }
 
-// wireTools seeds the built-in tool catalog (idempotent, first-insert only so page
-// edits survive restart) and wires the DB tools table into the agent runtime: at
-// tool-assembly time each built-in tool is filtered by its agent binding / enabled
-// flag and, if kept, wrapped so the model sees the DB-overridden description/schema
+// wireTools는 내장 도구 목록을 심습니다. 여러 번 해도 되고, 처음만 넣어 화면에서
+// 고친 내용이 재시작 뒤에 남게 합니다. DB tools 표를 에이전트 실행에 연결합니다.
+// 도구를 조립할 때 내장 도구마다 에이전트 바인딩과 enabled
+// 플래그로 거르고, 남기면 감싸서 모델이 DB에서 덮어쓴 설명/스키마를 보게 합니다.
 // and 빠진 인자는 주입된다. MCP/skill/host 도구는 행이 없어 그대로 통과한다.
 func wireTools(pg *db.DB, domainReg map[string]actool.CoreTool) {
 	agent.FindingTrafficBindingEnabled = func() bool { return pg.GetBool(settingAgentTrafficBinding, false) }
-	// Seed the built-in domain tools (first-insert only; DO NOTHING preserves edits).
-	// No startup prune: rows we didn't seed are left alone so future user-defined
-	// custom tools (system=false, added via the UI) survive restarts.
+	// 내장 도메인 도구를 심습니다(처음만 넣음. DO NOTHING이라 고친 내용은 남습니다).
+	// 시작 때 행을 지우지 않습니다. 우리가 심지 않은 행은 그대로 두어, 나중에 사용자가
+	// UI로 넣은 사용자 정의 도구(system=false)가 재시작 뒤에도 남게 합니다.
 	for _, s := range agent.BuiltinToolSeeds() {
 		schema, _ := json.Marshal(s.Schema)
 		agents, _ := json.Marshal(s.Agents)
@@ -221,10 +222,10 @@ func wireTools(pg *db.DB, domainReg map[string]actool.CoreTool) {
 			log.Printf("[tools] seed %s 실패: %v", s.Key, err)
 		}
 	}
-	// Seed the traffic host tools so they're bindable per-agent like built-ins.
-	// Default binding = worker (preserves prior behavior). Their runtime availability
-	// is still gated by the global capture switch (hostTools() returns them only when
-	// capture is on), so an off-capture binding simply never surfaces the tool.
+	// 트래픽 host 도구를 심어, 내장 도구처럼 에이전트마다 묶을 수 있게 합니다.
+	// 기본 바인딩은 worker입니다(예전 동작을 유지). 실행 중에 실제로 나오는지는
+	// 여전히 전역 캡처 스위치가 정합니다. hostTools()는 캡처가 켜져 있을 때만 돌려줍니다.
+	// 그래서 캡처가 꺼진 채 묶기만 하면 그 도구는 나타나지 않습니다.
 	trafficAgents, _ := json.Marshal([]string{"worker"})
 	for _, t := range traffic.SeedToolMetas() {
 		schema, _ := json.Marshal(t.InputSchema())
@@ -232,9 +233,9 @@ func wireTools(pg *db.DB, domainReg map[string]actool.CoreTool) {
 			log.Printf("[tools] seed %s 실패: %v", t.Name(), err)
 		}
 	}
-	// bashInteractiveShellNote is appended to Bash's description ONLY for agents whose
-	// interactive_shell is on, so Bash points at shell_open for interactive programs
-	// without ever referencing a tool that isn't injected (§14.1/§14.2).
+	// bashInteractiveShellNote는 interactive_shell이 켜진 에이전트의 Bash 설명에만 붙습니다.
+	// 그래서 Bash가 대화형 프로그램은 shell_open을 가리키게 하고,
+	// 주입되지 않은 도구는 언급하지 않습니다(§14.1/§14.2).
 	const bashInteractiveShellNote = "\n\n【대화형 입력】이 필요한 프로그램(msfconsole / ssh 대화형 로그인 / mysql, psql, python 등의 REPL / 비밀번호 또는 yes/no 프롬프트 / nc 리버스 셸)은 Bash를 쓰지 말 것(stdin이 없어 멈춘다). shell_open으로 대화형 세션을 연다(끝나면 shell_close). 일회성이고 비대화형인 명령은 계속 Bash를 사용한다."
 	agent.ToolResolve = func(ctx context.Context, agentKey string, tools []actool.CoreTool) []actool.CoreTool {
 		rows, err := pg.ListTools()
@@ -257,20 +258,20 @@ func wireTools(pg *db.DB, domainReg map[string]actool.CoreTool) {
 		out := tools[:0:0]
 		for _, t := range tools {
 			row, known := byKey[t.Name()]
-			if !known { // MCP/skill/host tool: no row → untouched
+			if !known { // MCP/스킬/host 도구는 행이 없으면 그대로 둡니다.
 				out = append(out, t)
 				continue
 			}
 			if !row.Enabled || !contains(row.Agents, agentKey) {
-				continue // disabled globally or not bound to this agent → drop
+				continue // 전역으로 꺼졌거나 이 에이전트에 안 묶이면 뺍니다.
 			}
 			out = append(out, resolve(t, row))
 		}
-		// inject: domain tools bound to this agent in the DB but absent from the
-		// incoming list. Covers agents (Auto, custom) whose base only has DefaultTools
-		// and therefore never includes ToolSet-backed domain tools. Per-task instances
-		// in the base always win: inList is built from the original incoming list so a
-		// worker's own upsert_asset is never shadowed by the server-level registry copy.
+		// 주입: DB에서는 이 에이전트에 묶여 있는데
+		// 들어온 목록에는 없는 도메인 도구입니다. 기본이 DefaultTools뿐인 에이전트
+		// (Auto, 사용자 정의)를 위한 것입니다. 그 기본에는 ToolSet 도메인 도구가 없습니다. 작업별 인스턴스가
+		// 기본 목록에 있으면 항상 그쪽이 이깁니다. inList는 원래 들어온 목록으로 만들어서,
+		// 워커 자신의 upsert_asset이 서버 레지스트리 사본에 가리지 않습니다.
 		if len(domainReg) > 0 {
 			inList := make(map[string]bool, len(tools))
 			for _, t := range tools {
@@ -282,14 +283,14 @@ func wireTools(pg *db.DB, domainReg map[string]actool.CoreTool) {
 				}
 				inst, ok := domainReg[row.Key]
 				if !ok {
-					continue // not a domain tool; custom/host tools are injected via hostTools()
+					continue // 도메인 도구가 아닙니다. 사용자 정의/host 도구는 hostTools()로 넣습니다.
 				}
 				out = append(out, resolve(inst, row))
 			}
 		}
-		// shell hints: user-defined kind="shell" tools are not callable — they are
-		// environment declarations that tell the model which command-line tools are
-		// installed. Collect the ones bound to this agent and append to Bash's description.
+		// shell 힌트: 사용자가 만든 kind="shell" 도구는 호출할 수 없습니다. 이것은
+		// 어떤 명령줄 도구가 설치돼 있는지 모델에게 알려 주는 환경 선언입니다.
+		// 이 에이전트에 묶인 것을 모아 Bash 설명 뒤에 붙입니다.
 		var shellHints []string
 		for _, row := range rows {
 			if row.Kind == "shell" && row.Enabled && contains(row.Agents, agentKey) {
@@ -305,9 +306,9 @@ func wireTools(pg *db.DB, domainReg map[string]actool.CoreTool) {
 				}
 			}
 		}
-		// interactive shell: gated purely by the agent's interactive_shell flag (like
-		// web_search), NOT by tools-table binding. When on, inject the 5 shell_* tools
-		// and COUPLE the Bash description addendum so it points at shell_open — and never
+		// 대화형 셸은 tools 표 바인딩이 아니라, 에이전트의 interactive_shell 플래그만으로 정합니다(web_search와 같음).
+		// 켜지면 shell_* 도구 5개를 넣고,
+		// Bash 설명 추가문도 같이 붙여 shell_open을 가리키게 합니다. 없는 도구를 가리킨 채 두지 않습니다.
 		// 꺼져 있으면 매달려 남는다. docs/대화형shell설계.md §14.2 참고.
 		if !actool.InteractiveShellDisabled() {
 			if a, err := pg.GetAgentByKey(agentKey); err == nil && a != nil && a.InteractiveShell {
@@ -333,16 +334,17 @@ func contains(ss []string, v string) bool {
 	return false
 }
 
-// buildDomainReg builds a name→CoreTool registry from a server-level ToolSet
-// (real AssetStore, nil ExplorationStore, taskID=0). Used by ToolResolve to inject
-// domain tools into agents (Auto, custom) that don't own a per-task ToolSet.
-// nil as → returns nil (no injection, graceful degradation).
+// buildDomainReg는 서버 수준 ToolSet으로 이름에서 CoreTool로 가는 레지스트리를 만듭니다
+// (진짜 AssetStore, ExplorationStore는 nil, taskID=0). ToolResolve가 이것으로
+// 작업별 ToolSet이 없는 에이전트(Auto, 사용자 정의)에 도메인 도구를 넣습니다.
+// as가 nil이면 nil을 돌려줍니다(넣지 않고, 기능을 조용히 줄입니다).
 //
-// The nil ExplorationStore is deliberate — these instances are task-less by
-// construction — so every tool here must tolerate it. Asset/company tools do
-// (they only need the AssetStore); the exploration-graph tools refuse with a
-// clear message via ToolSet.needExploration. Binding one of them to a task-less
-// agent in the tools table is therefore a useless tool, not a crash.
+// ExplorationStore를 nil로 둔 것은 일부러입니다. 이 인스턴스는 처음부터 작업이 없어서,
+// 여기 있는 도구는 모두 그걸 견뎌야 합니다. 자산/기업 도구는 견딥니다
+// (AssetStore만 있으면 됩니다). 탐색 그래프 도구는 ToolSet.needExploration으로
+// 분명한 말을 하고 거절합니다. 그런 도구를 작업 없는 에이전트의 tools 표에 묶으면
+// 쓸 수 없는 도구일 뿐, 프로그램이 죽지는 않습니다.
+// 초보용: 작업이 없는 에이전트에는 자산 그래프 도구만 넣고, 탐색 그래프 도구는 거절합니다.
 func buildDomainReg(as *db.AssetStore) map[string]actool.CoreTool {
 	if as == nil {
 		return nil

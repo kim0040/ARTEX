@@ -13,8 +13,8 @@ func TestCreateTaskRejectsTooManySourcesBeforeOpeningTransaction(t *testing.T) {
 		sourceIDs[i] = int64(i + 1)
 	}
 
-	// No database handle is needed: validation must run before Begin so an
-	// oversized request cannot consume a connection or create partial rows.
+	// 데이터베이스 핸들은 필요 없다. 검사는 Begin보다 먼저 돌아야
+	// 너무 큰 요청이 연결을 잡거나 일부 행을 만들지 못한다.
 	_, err := (&DB{}).CreateTaskWithOptions("child", "goal", TaskCreateOptions{SourceTaskIDs: sourceIDs})
 	if err == nil || !strings.Contains(err.Error(), "원본 작업이 너무 많습니다") {
 		t.Fatalf("expected source-count validation error, got %v", err)

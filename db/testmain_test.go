@@ -8,15 +8,15 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
-// TestMain acquires a PostgreSQL advisory lock (7337741002) for the entire
-// db test suite. Packages agent and server hold the same lock, so parallel
-// `go test ./...` runs serialize across packages on the shared dev DB and
-// avoid cross-package cleanup races (e.g. DELETE FROM assets WHERE id > X
-// from one package deleting assets created by another).
+// TestMain은 db 테스트 모음 전체가 PostgreSQL 권고 잠금(7337741002)을 잡는다.
+// agent와 server 패키지도 같은 잠금을 잡는다. 그래서 병렬
+// `go test ./...`는 공유 개발 DB에서 패키지끼리 차례로 돌고
+// 패키지 사이 정리 경합을 피한다(예: 한 패키지의 DELETE FROM assets WHERE id > X가
+// 다른 패키지가 만든 자산을 지우는 일).
 func TestMain(m *testing.M) {
 	dsn, _, err := DSN()
 	if err != nil {
-		// No DB configured — tests that need PG will skip themselves.
+		// DB가 설정되지 않았다. PG가 필요한 테스트는 스스로 건너뛴다.
 		os.Exit(m.Run())
 	}
 	conn, err := sql.Open("pgx", dsn)

@@ -1,4 +1,4 @@
-// Centralised status → color/label semantics, reused across the whole app.
+// 상태마다 색과 글자를 한곳에서 정해, 앱 전체가 같이 씁니다.
 // Spec §8.3: 의도 / 커버리지 / 작업 / 심각도는 각각 일관된 색 묶음을 가집니다.
 
 export type Tone = "neutral" | "blue" | "green" | "amber" | "red" | "rose" | "violet" | "slate";

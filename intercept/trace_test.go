@@ -15,8 +15,8 @@ func TestTraceExactCorrelationAndSnapshot(t *testing.T) {
 	trace.Start("call-a", "Write", []byte(`{"path":"a","n":12345678901234567890}`))
 	trace.Append(db.InterceptContextEntry{Kind: "text", Text: "later context"})
 	callCtx := WithCall(ctx, "Write", []byte(`{ "n":12345678901234567890, "path":"a" }`))
-	// "pending" (the ask path) keeps the full snapshot; see TestAuditAllowDropsSnapshot
-	// for why a routine allow does not.
+	// "pending"(ask 경로)은 전체 스냅샷을 남깁니다.
+	// 평범한 allow 가 남기지 않는 이유는 TestAuditAllowDropsSnapshot 을 보세요.
 	a := auditFor(callCtx, Decision{Action: "ask"}, nil, "pending")
 	if a.Correlation != "exact" || a.ToolUseID != "call-a" || len(a.Context) != 1 || a.Context[0].Text != "prior message" {
 		t.Fatalf("wrong snapshot: %+v", a)
@@ -34,11 +34,11 @@ func TestTraceExactCorrelationAndSnapshot(t *testing.T) {
 	}
 }
 
-// A rule allow is logged for auditability but must not carry the replay
-// snapshot: with the fallback judge on those rows are emitted per tool call, and
-// keeping 24×8KiB of context plus a 32KiB prompt each would put hundreds of MB
-// into intercept_pending (and from there into the task archive). Decision
-// metadata and correlation must survive so the execution result still binds.
+// 규칙의 allow 는 감사하려고 기록하지만, 재생용 스냅샷은 담으면 안 됩니다.
+// 예비 판정이 켜지면 그런 행이 도구 호출마다 생깁니다.
+// 호출마다 24×8KiB 맥락과 32KiB 프롬프트를 남기면 intercept_pending 에 수백 MB 가 쌓입니다.
+// 그 데이터는 이어서 작업 보관함에도 들어갑니다.
+// 결정에 대한 정보와 연결 정보는 남아야, 실행 결과가 계속 묶입니다.
 func TestAuditAllowDropsSnapshot(t *testing.T) {
 	ctx, trace := WithTrace(context.Background(), "a long user prompt", []db.InterceptContextEntry{{Kind: "user", Text: "prior message"}})
 	input := []byte(`{"path":"a"}`)
@@ -52,7 +52,7 @@ func TestAuditAllowDropsSnapshot(t *testing.T) {
 		t.Fatalf("allow lost decision metadata: %+v", a)
 	}
 
-	// A denial is rare and worth the full context, so it keeps its snapshot.
+	// 차단은 드물고 전체 맥락을 남길 가치가 있어, 스냅샷을 유지합니다.
 	denied := []byte(`{"path":"b"}`)
 	trace.Start("call-b", "Write", denied)
 	d := auditFor(WithCall(ctx, "Write", denied), Decision{Action: "deny"}, denied, "denied")

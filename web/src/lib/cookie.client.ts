@@ -1,9 +1,9 @@
-// Client-side cookie utilities.
-// These functions manage cookies in the browser only.
-// Server actions handle cookie updates on the server side.
+// 브라우저에서만 쓰는 쿠키 도구입니다.
+// 이 함수들은 브라우저 쿠키만 다룹니다.
+// 서버 쪽 쿠키 변경은 서버 액션이 맡습니다.
 
 function writeClientCookie(serializedCookie: string) {
-  // biome-ignore lint/suspicious/noDocumentCookie: This project still uses document.cookie for broad browser support.
+  // biome-ignore lint/suspicious/noDocumentCookie: 이 프로젝트는 넓은 브라우저 지원을 위해 아직 document.cookie를 씁니다.
   document.cookie = serializedCookie;
 }
 

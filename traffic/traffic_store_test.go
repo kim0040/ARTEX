@@ -13,15 +13,15 @@ import (
 	mproxy "github.com/lqqyt2423/go-mitmproxy/proxy"
 )
 
-// flowOpt tweaks the synthetic flow built by newFlow.
+// flowOpt 는 newFlow 가 만든 가짜 flow 를 조금 바꿉니다.
 type flowOpt func(*mproxy.Flow)
 
 func withRespType(ct string) flowOpt {
 	return func(f *mproxy.Flow) { f.Response.Header.Set("Content-Type", ct) }
 }
 
-// newFlow builds the minimal flow record() needs: a request with a URL, method
-// and body, plus a response with a status and body.
+// newFlow 는 record() 에 필요한 최소 flow 를 만듭니다. URL, method,
+// 본문이 있는 요청과, 상태와 본문이 있는 응답입니다.
 func newFlow(host, method, path string, reqBody, respBody []byte, opts ...flowOpt) *mproxy.Flow {
 	u, err := url.Parse("http://" + host + path)
 	if err != nil {
@@ -67,9 +67,8 @@ func onlyExchangeID(t *testing.T, tr *Traffic) string {
 	return id
 }
 
-// TestRecordKeepsBodiesInIndex is the core of the storage change: a recorded
-// exchange produces no per-request directory at all, and its bodies are served
-// back out of SQLite.
+// TestRecordKeepsBodiesInIndex 는 저장 방식 변경의 핵심입니다. 기록된
+// 교환은 요청마다 디렉터리를 만들지 않고, 본문은 SQLite 에서 다시 줍니다.
 func TestRecordKeepsBodiesInIndex(t *testing.T) {
 	tr, dir := openTraffic(t)
 
@@ -77,7 +76,7 @@ func TestRecordKeepsBodiesInIndex(t *testing.T) {
 		[]byte(`{"user":"admin","password":"P@ssw0rd"}`),
 		[]byte(`{"token":"abc123","note":"内网测试账号"}`))) // han-allow 업스트림 프롬프트·픽스처
 
-	// The URL-mirroring tree is gone: no host directory, no nested path segments.
+	// URL 을 그대로 따르던 트리는 없습니다. 호스트 디렉터리도, 중첩 경로도 없습니다.
 	if _, err := os.Stat(filepath.Join(dir, "api.example.com")); !os.IsNotExist(err) {
 		t.Fatalf("record 仍在磁盘上创建 host 目录（stat err=%v）", err) // han-allow 업스트림 프롬프트·픽스처
 	}
@@ -108,9 +107,9 @@ func TestRecordKeepsBodiesInIndex(t *testing.T) {
 	}
 }
 
-// TestFullTextSearchMatchesBodies covers what the trigram index buys over the
-// previous URL-only search: arbitrary substrings and CJK, across request and
-// response bodies.
+// TestFullTextSearchMatchesBodies 는 트라이그램 색인이 URL 만 찾던 예전에
+// 비해 무엇을 더 주는지 봅니다. 요청과 응답 본문에서 임의 부분 문자열과
+// 한자를 찾습니다.
 func TestFullTextSearchMatchesBodies(t *testing.T) {
 	tr, _ := openTraffic(t)
 	if !tr.fts {
@@ -133,7 +132,7 @@ func TestFullTextSearchMatchesBodies(t *testing.T) {
 	if n := hits("password"); n != 1 {
 		t.Fatalf("搜 password 命中 %d 条，应为 1", n) // han-allow 업스트림 프롬프트·픽스처
 	}
-	// Substring inside a token — the default unicode61 tokenizer cannot do this.
+	// 토큰 안의 부분 문자열입니다. 기본 unicode61 토크나이저는 이것을 못 합니다.
 	if n := hits("ssw0r"); n != 1 {
 		t.Fatalf("搜子串 ssw0r 命中 %d 条，应为 1", n) // han-allow 업스트림 프롬프트·픽스처
 	}
@@ -144,15 +143,15 @@ func TestFullTextSearchMatchesBodies(t *testing.T) {
 		t.Fatalf("无关关键词命中 %d 条，应为 0", n) // han-allow 업스트림 프롬프트·픽스처
 	}
 
-	// Too-short terms are reported, not silently treated as "no match".
+	// 너무 짧은 검색어는 "없음"으로 조용히 넘기지 않고 알립니다.
 	if _, err := tr.query(host, "", "ab", 0, 10); err == nil {
 		t.Fatal("两字符正文关键词应返回明确错误") // han-allow 업스트림 프롬프트·픽스처
 	}
 }
 
-// TestLargeBodySpillsButStaysSearchable is the case that motivated indexing from
-// memory: the body lives in the blob store, only a preview is inline, and the
-// part past the preview is still findable.
+// TestLargeBodySpillsButStaysSearchable 는 메모리에서 색인하게 된 경우입니다.
+// 본문은 blob 저장소에 있고, 미리보기만 칸 안에 있으며, 미리보기 너머도
+// 여전히 찾을 수 있습니다.
 func TestLargeBodySpillsButStaysSearchable(t *testing.T) {
 	tr, dir := openTraffic(t)
 	if !tr.fts {
@@ -160,14 +159,14 @@ func TestLargeBodySpillsButStaysSearchable(t *testing.T) {
 	}
 	const host = "dump.example.com"
 	const marker = "DB_PASSWORD=hunter2"
-	// Marker sits far past blobPreview, so only the full-text index can find it.
+	// 표식은 blobPreview 보다 훨씬 뒤에 있습니다. 전문 색인만 찾을 수 있습니다.
 	big := []byte(strings.Repeat("-- MySQL dump\n", maxInlineBody/14+2000) + marker)
 	if len(big) <= maxInlineBody+blobPreview {
 		t.Fatalf("测试数据不够大：%d 字节", len(big)) // han-allow 업스트림 프롬프트·픽스처
 	}
 	tr.record(newFlow(host, "GET", "/backup.sql", nil, big, withRespType("application/sql")))
 
-	// Stored under a single bucket level, named by hash.
+	// 해시 이름으로, 버킷 한 단계 아래에 저장됩니다.
 	var hash string
 	if err := tr.DB().QueryRow(`SELECT resp_blob FROM exchange_bodies`).Scan(&hash); err != nil {
 		t.Fatal(err)
@@ -184,7 +183,7 @@ func TestLargeBodySpillsButStaysSearchable(t *testing.T) {
 		t.Fatalf("blob 大小 %d，应为 %d", st.Size(), len(big)) // han-allow 업스트림 프롬프트·픽스처
 	}
 
-	// The reference is registered, which is what GC consults.
+	// 참조가 등록됩니다. 수거가 이것을 봅니다.
 	var refs int
 	if err := tr.DB().QueryRow(`SELECT COUNT(*) FROM blob_refs WHERE hash=?`, hash).Scan(&refs); err != nil {
 		t.Fatal(err)
@@ -193,7 +192,7 @@ func TestLargeBodySpillsButStaysSearchable(t *testing.T) {
 		t.Fatalf("blob_refs 行数 %d，应为 1", refs) // han-allow 업스트림 프롬프트·픽스처
 	}
 
-	// Inline: a readable preview plus the pointer, not the whole body.
+	// 칸 안: 읽을 수 있는 미리보기와 포인터입니다. 본문 전체가 아닙니다.
 	_, resp, err := tr.Get(onlyExchangeID(t, tr))
 	if err != nil {
 		t.Fatal(err)
@@ -211,7 +210,7 @@ func TestLargeBodySpillsButStaysSearchable(t *testing.T) {
 		t.Fatalf("内联内容 %d 字节，远超预览上限", len(resp)) // han-allow 업스트림 프롬프트·픽스처
 	}
 
-	// Searchable despite living on disk — the index was fed from memory.
+	// 디스크에 있어도 찾을 수 있습니다. 색인은 메모리에서 채워졌습니다.
 	rows, err := tr.query(host, "", marker, 0, 10)
 	if err != nil {
 		t.Fatal(err)
@@ -220,7 +219,7 @@ func TestLargeBodySpillsButStaysSearchable(t *testing.T) {
 		t.Fatalf("超大正文中的关键词命中 %d 条，应为 1", len(rows)) // han-allow 업스트림 프롬프트·픽스처
 	}
 
-	// And retrievable in pages.
+	// 그리고 페이지로 다시 꺼낼 수 있습니다.
 	data, total, err := tr.BlobRange(hash, int64(len(big)-len(marker)), 100)
 	if err != nil {
 		t.Fatal(err)
@@ -236,8 +235,8 @@ func TestLargeBodySpillsButStaysSearchable(t *testing.T) {
 	}
 }
 
-// TestBinaryBodyStaysOutOfIndex keeps the index spend on things worth searching:
-// binary payloads contribute nothing but a type tag.
+// TestBinaryBodyStaysOutOfIndex 는 색인 비용을 찾을 가치가 있는 것에 둡니다.
+// 이진 본문은 유형 꼬리표만 더합니다.
 func TestBinaryBodyStaysOutOfIndex(t *testing.T) {
 	tr, _ := openTraffic(t)
 	if !tr.fts {
@@ -265,8 +264,8 @@ func TestBinaryBodyStaysOutOfIndex(t *testing.T) {
 	}
 }
 
-// TestGetFallsBackToLegacyTree keeps pre-migration captures readable: their rows
-// carry a path and their bodies are still .http files on disk.
+// TestGetFallsBackToLegacyTree 는 옮기기 전 캡처를 읽을 수 있게 합니다.
+// 그 행은 path 를 가지고, 본문은 아직 디스크의 .http 파일입니다.
 func TestGetFallsBackToLegacyTree(t *testing.T) {
 	tr, dir := openTraffic(t)
 	const host = "old.example.com"
@@ -299,9 +298,8 @@ VALUES(?,?,?,?,?,?,?,?,?,?,?)`, id, 1, host, "GET", "/", "http://"+host+"/", 200
 	}
 }
 
-// TestGCCollectsBlobsAndEmptyBuckets covers both halves of the collector: the
-// reference lookup now comes from blob_refs, and emptied buckets are removed
-// instead of accumulating forever.
+// TestGCCollectsBlobsAndEmptyBuckets 는 수거의 두 면을 봅니다. 참조 조회는
+// 이제 blob_refs 에서 오고, 빈 버킷은 영원히 쌓이지 않고 지워집니다.
 func TestGCCollectsBlobsAndEmptyBuckets(t *testing.T) {
 	tr, dir := openTraffic(t)
 	const host = "dump.example.com"
@@ -326,7 +324,7 @@ func TestGCCollectsBlobsAndEmptyBuckets(t *testing.T) {
 	if _, err := os.Stat(bucket); !os.IsNotExist(err) {
 		t.Fatalf("空桶目录未被清理：%v", err) // han-allow 업스트림 프롬프트·픽스처
 	}
-	// Bodies and full-text rows go with the exchange.
+	// 본문과 전문 색인 행은 교환과 함께 갑니다.
 	for _, q := range []string{
 		`SELECT COUNT(*) FROM exchange_bodies`,
 		`SELECT COUNT(*) FROM blob_refs`,
@@ -350,8 +348,8 @@ func TestGCCollectsBlobsAndEmptyBuckets(t *testing.T) {
 	}
 }
 
-// TestPageSearchesBodies checks the UI-facing search box picks up the full-text
-// index too, not just metadata columns.
+// TestPageSearchesBodies 는 화면 검색창이 메타데이터 열만이 아니라
+// 전문 색인도 타는지 봅니다.
 func TestPageSearchesBodies(t *testing.T) {
 	tr, _ := openTraffic(t)
 	if !tr.fts {
@@ -367,40 +365,39 @@ func TestPageSearchesBodies(t *testing.T) {
 	if total != 1 || len(rows) != 1 {
 		t.Fatalf("正文关键词命中 total=%d rows=%d，应为 1/1", total, len(rows)) // han-allow 업스트림 프롬프트·픽스처
 	}
-	// Metadata matching still works alongside it.
+	// 메타데이터 맞추기도 함께 동작합니다.
 	if _, total, err := tr.Page(PageQuery{Query: "health", RespMin: -1, RespMax: -1}, 0, 100); err != nil || total != 1 {
 		t.Fatalf("URL 关键词 total=%d err=%v，应为 1", total, err) // han-allow 업스트림 프롬프트·픽스처
 	}
 }
 
-// TestPageFiltersAndSort covers the issue #177 additions: status-class/exact
-// filtering, response-size bounds, path (url_template) filtering, and
-// server-side sorting by resp_len.
+// TestPageFiltersAndSort 는 이슈 #177 추가분입니다. 상태 구간/정확한 상태
+// 거르기, 응답 크기 범위, 경로(url_template) 거르기, resp_len 서버 정렬입니다.
 func TestPageFiltersAndSort(t *testing.T) {
 	tr, _ := openTraffic(t)
 	status := func(code int) flowOpt { return func(f *mproxy.Flow) { f.Response.StatusCode = code } }
-	// Three exchanges with distinct status codes and response sizes.
+	// 상태 코드와 응답 크기가 서로 다른 교환 세 개입니다.
 	tr.record(newFlow("api.example.com", "GET", "/api/users", nil, make([]byte, 10), status(200)))
 	tr.record(newFlow("api.example.com", "GET", "/api/admin", nil, make([]byte, 100), status(404)))
 	tr.record(newFlow("api.example.com", "GET", "/api/users/1", nil, make([]byte, 50), status(500)))
 
-	// Status class band.
+	// 상태 구간입니다.
 	if rows, _, err := tr.Page(PageQuery{Status: "4xx", RespMin: -1, RespMax: -1}, 0, 100); err != nil || len(rows) != 1 || rows[0].Status != 404 {
 		t.Fatalf("status=4xx 应命中 1 条 404，得 %d 条 err=%v", len(rows), err) // han-allow 업스트림 프롬프트·픽스처
 	}
-	// Exact status.
+	// 정확한 상태입니다.
 	if rows, _, err := tr.Page(PageQuery{Status: "500", RespMin: -1, RespMax: -1}, 0, 100); err != nil || len(rows) != 1 || rows[0].Status != 500 {
 		t.Fatalf("status=500 应命中 1 条，得 %d 条 err=%v", len(rows), err) // han-allow 업스트림 프롬프트·픽스처
 	}
-	// Response-size lower bound (>=60 keeps only the 100-byte row).
+	// 응답 크기 하한입니다(>=60 이면 100바이트 행만 남음).
 	if rows, _, err := tr.Page(PageQuery{RespMin: 60, RespMax: -1}, 0, 100); err != nil || len(rows) != 1 || rows[0].RespLen != 100 {
 		t.Fatalf("resp_min=60 应命中 1 条 100B，得 %d 条 err=%v", len(rows), err) // han-allow 업스트림 프롬프트·픽스처
 	}
-	// Path (url_template) filter narrows to the /api/admin exchange.
+	// 경로(url_template) 필터는 /api/admin 교환만 남깁니다.
 	if rows, _, err := tr.Page(PageQuery{Path: "/api/admin", RespMin: -1, RespMax: -1}, 0, 100); err != nil || len(rows) != 1 || rows[0].Status != 404 {
 		t.Fatalf("path=/api/admin 应命中 1 条，得 %d 条 err=%v", len(rows), err) // han-allow 업스트림 프롬프트·픽스처
 	}
-	// Sort by response length, ascending then descending.
+	// 응답 길이로 정렬합니다. 오름차순 다음 내림차순입니다.
 	asc, _, err := tr.Page(PageQuery{RespMin: -1, RespMax: -1, Sort: "resp_len", Order: "asc"}, 0, 100)
 	if err != nil || len(asc) != 3 {
 		t.Fatalf("resp_len asc 应返回 3 条，得 %d 条 err=%v", len(asc), err) // han-allow 업스트림 프롬프트·픽스처
@@ -461,7 +458,7 @@ func TestNormalizeSearchHost(t *testing.T) {
 	}
 }
 
-// TestTruncateUTF8 guards the preview cut: never split a multi-byte rune.
+// TestTruncateUTF8 는 미리보기 자르기를 지킵니다. 여러 바이트 글자를 쪼개지 않습니다.
 func TestTruncateUTF8(t *testing.T) {
 	s := "内网测试账号" // han-allow 업스트림 프롬프트·픽스처
 	for n := 0; n <= len(s); n++ {
@@ -478,8 +475,8 @@ func TestTruncateUTF8(t *testing.T) {
 	}
 }
 
-// TestIsBinaryBody documents the classification: declared binary types, and the
-// NUL backstop for anything mislabeled.
+// TestIsBinaryBody 는 분류를 적습니다. 선언된 이진 유형과,
+// 잘못 표시된 것을 위한 NUL 안전망입니다.
 func TestIsBinaryBody(t *testing.T) {
 	cases := []struct {
 		ct   string
@@ -502,8 +499,8 @@ func TestIsBinaryBody(t *testing.T) {
 	}
 }
 
-// TestRecordConcurrent exercises the write path under contention: ids stay
-// unique and every exchange lands in all three tables.
+// TestRecordConcurrent 는 다툼이 있는 쓰기 경로를 봅니다. id 는 고유하고
+// 모든 교환이 표 세 개에 들어갑니다.
 func TestRecordConcurrent(t *testing.T) {
 	tr, _ := openTraffic(t)
 	const n = 50

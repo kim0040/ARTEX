@@ -43,7 +43,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           <SidebarMenuItem>
             <SidebarMenuButton asChild>
               <Link prefetch={false} href="/function/tasks">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
+                {/* eslint-disable-next-line @next/next/no-img-element -- 일반 이미지 태그 예외 */}
                 <img src="/logo.png" alt="ARTEX" width={40} height={40} className="shrink-0" />
                 <span className="font-semibold text-base">{APP_CONFIG.name}</span>
               </Link>
@@ -53,8 +53,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       </SidebarHeader>
       <SidebarContent>
         <NavMain items={sidebarItems} />
-        {/* <NavDocuments items={data.documents} /> */}
-        {/* <NavSecondary items={data.navSecondary} className="mt-auto" /> */}
+        {/* 아직 쓰지 않음: <NavDocuments items={data.documents} /> */}
+        {/* 아직 쓰지 않음: <NavSecondary items={data.navSecondary} className="mt-auto" /> */}
       </SidebarContent>
       <SidebarFooter>
         <NavUser user={currentUser} />

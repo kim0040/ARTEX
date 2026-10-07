@@ -2,9 +2,9 @@ package db
 
 import "testing"
 
-// TestActivityPageSessions covers the reverse-paginated, per-session history added
-// for the SSE remediation: Main/Plan/Worker filtering, before-cursor paging without
-// gaps/overlap, hasMore, and the task-level snapshot cursor. Mirrors docs §11.1.
+// TestActivityPageSessions는 세션별 이력을 최신순으로 페이지하는 동작을 덮는다.
+// SSE 보정용이다. 메인/플랜/워커 필터, before 커서 페이징에
+// 빈틈과 겹침이 없는지, hasMore, 작업 단위 스냅샷 커서를 본다. 문서 §11.1과 같다.
 func TestActivityPageSessions(t *testing.T) {
 	d, err := Open(testDSN(t))
 	if err != nil {
@@ -28,8 +28,8 @@ func TestActivityPageSessions(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Interleave a mix of agents so a session filter must actually discriminate.
-	// 25 main, 25 planner (Goal+Planner share worker=planner), 30 workerA, 5 workerB.
+	// 에이전트를 섞어 넣어 세션 필터가 정말로 골라내야 하게 한다.
+	// 메인 25, 플래너 25(Goal과 플래너는 worker=planner를 공유), workerA 30, workerB 5.
 	appendN := func(n int, a Activity) {
 		for range n {
 			if _, err := es.AppendActivity(a); err != nil {
@@ -37,23 +37,23 @@ func TestActivityPageSessions(t *testing.T) {
 			}
 		}
 	}
-	// Interleaving order matters: emit round-robin-ish so ids of one session are
-	// scattered, proving the WHERE filter (not a contiguous range) is what selects.
+	// 넣는 순서가 중요하다. 돌아가며 넣어 한 세션의 id가
+	// 흩어지게 한다. 연속 구간이 아니라 WHERE 필터가 고른다는 것을 보인다.
 	for range 25 {
 		appendN(1, Activity{Worker: "mainagent", Kind: "text", Summary: "m"})
 		appendN(1, Activity{Worker: "planner", Kind: "text", Summary: "p"})
 		appendN(1, Activity{NodeID: &intentA, Worker: "work#1", Kind: "text", Summary: "a"})
 	}
-	appendN(5, Activity{NodeID: &intentA, Worker: "work#1", Kind: "text", Summary: "a2"}) // workerA → 30 total
+	appendN(5, Activity{NodeID: &intentA, Worker: "work#1", Kind: "text", Summary: "a2"}) // workerA → 합계 30
 	appendN(5, Activity{NodeID: &intentB, Worker: "work#2", Kind: "text", Summary: "b"})
 
-	// snapshot cursor = max id across the whole task.
+	// 스냅샷 커서 = 작업 전체의 최대 id.
 	snap, err := es.ActivityMaxID()
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	// Helper: page through a whole session backward and assert coverage.
+	// 도우미: 세션 전체를 뒤로 페이지하며 빠짐없이 덮는지 확인한다.
 	collect := func(f ActivitySessionFilter, pageSize int) []Activity {
 		var all []Activity
 		before := int64(0)
@@ -63,20 +63,20 @@ func TestActivityPageSessions(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			// ascending order within a page
+			// 페이지 안은 id 오름차순
 			for i := 1; i < len(items); i++ {
 				if items[i-1].ID >= items[i].ID {
 					t.Fatalf("page not ascending: %d >= %d", items[i-1].ID, items[i].ID)
 				}
 			}
-			// no overlap across pages
+			// 페이지끼리 겹치지 않는다
 			for _, a := range items {
 				if seen[a.ID] {
 					t.Fatalf("duplicate id %d across pages", a.ID)
 				}
 				seen[a.ID] = true
 			}
-			all = append([]Activity{}, append(items, all...)...) // prepend older page
+			all = append([]Activity{}, append(items, all...)...) // 더 오래된 페이지를 앞에 붙인다
 			if !hasMore || len(items) == 0 {
 				break
 			}
@@ -101,13 +101,13 @@ func TestActivityPageSessions(t *testing.T) {
 	if len(wb) != 5 {
 		t.Fatalf("workerB count = %d, want 5", len(wb))
 	}
-	// full ascending order across the reconstructed session
+	// 다시 모은 세션 전체는 id 오름차순
 	for i := 1; i < len(wa); i++ {
 		if wa[i-1].ID >= wa[i].ID {
 			t.Fatalf("reconstructed session not ascending at %d", i)
 		}
 	}
-	// latest page (before=0) must include the session's newest record.
+	// 최신 페이지(before=0)는 그 세션의 가장 새 기록을 포함해야 한다.
 	latest, hasMore, err := es.ActivityPage(ActivitySessionFilter{NodeID: &intentA}, 0, 10)
 	if err != nil {
 		t.Fatal(err)
@@ -118,14 +118,14 @@ func TestActivityPageSessions(t *testing.T) {
 	if latest[len(latest)-1].ID != wa[len(wa)-1].ID {
 		t.Fatalf("latest page missing newest record")
 	}
-	// snapshot cursor is the whole-task max, ≥ any session's max.
+	// 스냅샷 커서는 작업 전체 최댓값이고, 어느 세션 최댓값보다도 크거나 같다.
 	if snap < wa[len(wa)-1].ID {
 		t.Fatalf("snapshot %d < workerA max %d", snap, wa[len(wa)-1].ID)
 	}
 }
 
-// TestListByKindPage covers the paged worker(intent) list that lets the session list
-// reach past the old fixed 300 cap (docs §8 / §11.1 item 10).
+// TestListByKindPage는 세션 목록이 예전 고정 300개를 넘게 읽게 하는
+// 워커(의도) 페이지 목록을 덮는다(문서 §8 / §11.1 항목 10).
 func TestListByKindPage(t *testing.T) {
 	d, err := Open(testDSN(t))
 	if err != nil {
@@ -146,7 +146,7 @@ func TestListByKindPage(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	// Page backward in chunks of 10; expect 10,10,5 and hasMore false on last.
+	// 10개씩 뒤로 페이지한다. 10, 10, 5가 나오고 마지막 hasMore는 false.
 	seen := map[int64]bool{}
 	before := int64(0)
 	pages := 0
@@ -165,8 +165,8 @@ func TestListByKindPage(t *testing.T) {
 		if len(items) == 0 || !hasMore {
 			break
 		}
-		// newest-first within a page → the oldest (smallest id) is last; page older
-		// history before it next.
+		// 페이지 안은 최신순이라 가장 오래된(가장 작은 id) 것이 끝이다. 그 앞에서
+		// 더 오래된 이력을 다음에 읽는다.
 		before = items[len(items)-1].ID
 	}
 	if len(seen) != total {

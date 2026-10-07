@@ -27,8 +27,8 @@ func TestSortPoolStatusMatchesChainOrder(t *testing.T) {
 	}
 }
 
-// The active profile heads the chain no matter how low its own priority is —
-// that's the documented precedence, and the UI must not imply otherwise.
+// 활성 설정은 자기 우선순위가 아무리 낮아도 체인 맨 앞에 섭니다.
+// 문서의 우선순위이고, 화면이 다르게 보이면 안 됩니다.
 func TestActiveProfileHeadsStatusList(t *testing.T) {
 	in := []LLMPoolMemberStatus{
 		{ProfileID: "1", Name: "loud", Priority: 999},

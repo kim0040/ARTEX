@@ -16,34 +16,34 @@ import (
 	"github.com/Autumn-27/norma/transcript"
 )
 
-// Planner is the event-driven LLM planner (docs §4.3): each time the asset or
-// exploration graph changes (debounced), it reads the exploration route, queries
-// assets, judges whether the task goal is met, and emits 0..N exploration intents
-// into the frontier. It is the sole intent generator.
+// Planner 는 이벤트로 도는 LLM 플래너입니다(문서 §4.3). 자산 그래프나
+// 탐색 그래프가 바뀌면(디바운스) 탐색 경로를 읽고, 자산을 조회하고,
+// 작업 목표가 충족됐는지 판단한 뒤 탐색 의도 0..N 개를 프론티어에 넣습니다.
+// 의도를 만드는 유일한 역할입니다.
+// 초보: 워커는 의도를 만들지 않습니다. 플래너만 탐색 그래프에 의도를 넣고, 워커가 하나를 집어 실행합니다.
 type Planner struct {
 	findingRecorder   FindingRecorder
 	prov              llm.Provider
 	model             string
-	tx                *transcript.Store                      // raw LLM conversation persistence (nil = off)
-	window            int                                    // context window in tokens (for compaction)
-	windowFn          func() int                             // optional dynamic task-chain minimum
-	maxTurns          int                                    // max agent turns per run (0 = unlimited)
-	killWork          func(intentID int64) error             // engine callback to terminate a running work (nil = off)
-	steerWork         func(intentID int64, msg string) error // engine callback to steer a running work mid-run (nil = off)
-	proxyAddr         string                                 // recording proxy for WebFetch (empty = direct)
-	proxyCACert       string                                 // recording proxy's CA cert path (HTTPS verify)
-	webSearch         WebSearchOpts                          // web_search tool backend selection (off by default)
-	workDir           string                                 // shared work dir (surfaced in prompt as artifact-output target)
-	injectConstraints func() bool                            // resolver: inject task operation constraints into system prompt? (nil = yes)
-	nonStreamingFn    func() bool                            // resolver: use non-streaming (Complete) path? (nil = streaming)
-	noaEnabledFn      func() bool                            // resolver: use experimental noa compaction? (nil = off)
-	maxTokensFn       func() int                             // resolver: per-reply output cap (nil/0 = send no cap)
-	compactor         *Compactor                             // cold-node compaction (§7); nil = disabled
+	tx                *transcript.Store                      // LLM 원문 대화를 남김 (nil = 끔)
+	window            int                                    // 맥락 창 크기(token). 압축에 씁니다
+	windowFn          func() int                             // 선택. 작업 사슬의 동적 하한
+	maxTurns          int                                    // 실행 한 번의 최대 턴 (0 = 무제한)
+	killWork          func(intentID int64) error             // 엔진 콜백: 돌고 있는 작업을 끊음 (nil = 끔)
+	steerWork         func(intentID int64, msg string) error // 엔진 콜백: 돌고 있는 작업을 한가운데 돌림 (nil = 끔)
+	proxyAddr         string                                 // WebFetch 용 기록 프록시 (비면 직접 연결)
+	proxyCACert       string                                 // 기록 프록시 CA 인증서 경로 (HTTPS 검증)
+	webSearch         WebSearchOpts                          // web_search 뒷단 선택 (기본은 꺼짐)
+	workDir           string                                 // 공유 작업 디렉터리 (프롬프트에 산출물 위치로 나감)
+	injectConstraints func() bool                            // 해석기: 작업 조작 제약을 시스템 프롬프트에 넣을까 (nil = 넣음)
+	nonStreamingFn    func() bool                            // 해석기: 비스트리밍(Complete) 경로? (nil = 스트리밍)
+	noaEnabledFn      func() bool                            // 해석기: 실험용 noa 압축? (nil = 끔)
+	maxTokensFn       func() int                             // 해석기: 답 하나의 출력 상한 (nil/0 = 상한을 보내지 않음)
+	compactor         *Compactor                             // cold 노드 압축(§7). nil = 꺼짐
 
-	// todos keeps ONE plan-scratchpad per task (keyed by exploration id) so the
-	// planner's multi-step plan survives across wake-ups — each Plan() is a fresh
-	// session, but the shared store lets it record a serial exploit chain once and
-	// dispatch it step-by-step over rounds instead of front-loading it in parallel.
+	// todos 는 작업마다 계획 메모를 하나만 둡니다(탐색 id 가 키). 플래너의 여러 걸음 계획이
+	// 깨어남 사이에 남습니다. Plan() 마다 세션은 새것이지만, 공유 저장소 덕분에
+	// 이어지는 사슬을 한 번 적어 두고 라운드마다 한 걸음씩 보냅니다. 한 번에 병렬로 쏟지 않습니다.
 	todoMu sync.Mutex
 	todos  map[int64]*actool.TodoStore
 }
@@ -54,24 +54,24 @@ func NewPlanner(prov llm.Provider, model, workDir string, tx *transcript.Store, 
 
 func (p *Planner) SetCompactionWindowResolver(fn func() int) { p.windowFn = fn }
 
-// SetCompactor wires the cold-node compactor (cold-digest §7). Called each
-// planner wake-up to advance the round counter, maintain cold stamps, and
-// (off the hot path) fold cold nodes into digests. nil = feature disabled.
+// SetCompactor 는 cold 노드 압축기를 연결합니다(cold-digest §7). 플래너가 깨어날 때마다
+// 라운드 수를 올리고, cold 도장을 유지하고, (바쁜 경로 밖에서) cold 노드를 digest 로 접습니다.
+// nil 이면 기능이 꺼집니다.
 func (p *Planner) SetCompactor(c *Compactor) { p.compactor = c }
 
-// SetNonStreaming wires a resolver deciding whether runs use the non-streaming
-// model path (true = non-streaming). nil/unset = streaming (default).
+// SetNonStreaming 은 실행이 비스트리밍 모델 경로를 쓸지 정하는 해석기를 연결합니다
+// (true = 비스트리밍). nil 이거나 없으면 스트리밍입니다(기본).
 func (p *Planner) SetNonStreaming(fn func() bool) { p.nonStreamingFn = fn }
 
 func (p *Planner) nonStreaming() bool { return p.nonStreamingFn != nil && p.nonStreamingFn() }
 
-// SetNoaEnabled wires a resolver deciding whether runs use the experimental noa
-// context-compression mechanism. nil/unset = off (built-in compaction). Read per
-// run so the settings toggle takes effect without rebuilding the agent.
+// SetNoaEnabled 는 실행이 실험용 noa 맥락 압축을 쓸지 정하는 해석기를 연결합니다.
+// nil 이거나 없으면 꺼집니다(내장 압축). 실행마다 읽으므로, 에이전트를 다시 만들지 않아도
+// 설정 스위치가 적용됩니다.
 func (p *Planner) SetNoaEnabled(fn func() bool) { p.noaEnabledFn = fn }
 
-// SetMaxTokens wires a resolver for the per-reply output cap. nil/unset or 0 =
-// send no cap and let the endpoint decide. Read per run, like nonStreaming.
+// SetMaxTokens 는 답 하나의 출력 상한 해석기를 연결합니다. nil, 없음, 또는 0 이면
+// 상한을 보내지 않고 끝점이 정하게 둡니다. nonStreaming 처럼 실행마다 읽습니다.
 func (p *Planner) SetMaxTokens(fn func() int) { p.maxTokensFn = fn }
 
 func (p *Planner) maxTokens() int {
@@ -88,23 +88,23 @@ func (p *Planner) compactionWindow() int {
 	return p.window
 }
 
-// SetProxy points the planner's WebFetch at the recording proxy plus the CA cert
-// it trusts to verify HTTPS through it (empty addr = direct).
+// SetProxy 는 플래너의 WebFetch 를 기록 프록시와, 그 HTTPS 를 검증할 CA 인증서로 보냅니다
+// (주소가 비면 직접 연결).
 func (p *Planner) SetProxy(addr, caCert string) { p.proxyAddr, p.proxyCACert = addr, caCert }
 
-// SetWebSearch selects the web_search backend for the planner (off by default).
+// SetWebSearch 는 플래너의 web_search 뒷단을 고릅니다(기본은 꺼짐).
 func (p *Planner) SetWebSearch(o WebSearchOpts) { p.webSearch = o }
 
-// SetConstraintInject wires a resolver deciding whether this task's operation
-// constraints get injected into the planner system prompt. Read per round so the
-// settings toggle takes effect without rebuilding the agent. nil = inject (default).
+// SetConstraintInject 는 이 작업의 조작 제약을 플래너 시스템 프롬프트에 넣을지 정하는
+// 해석기를 연결합니다. 라운드마다 읽으므로, 에이전트를 다시 만들지 않아도 설정 스위치가 적용됩니다.
+// nil 이면 넣습니다(기본).
 func (p *Planner) SetConstraintInject(fn func() bool) { p.injectConstraints = fn }
 
-// wantConstraints reports whether constraint injection is enabled (default yes).
+// wantConstraints 는 제약 주입이 켜졌는지 봅니다(기본은 켬).
 func (p *Planner) wantConstraints() bool { return p.injectConstraints == nil || p.injectConstraints() }
 
-// todoFor returns the task's persistent planning todo store, creating it on first
-// use. Shared across all of this task's planner wake-ups.
+// todoFor 는 이 작업의 지속 계획 메모 저장소를 돌려줍니다. 처음 쓸 때 만듭니다.
+// 이 작업의 플래너가 깨어날 때마다 같이 씁니다.
 func (p *Planner) todoFor(expID int64) *actool.TodoStore {
 	p.todoMu.Lock()
 	defer p.todoMu.Unlock()
@@ -116,16 +116,16 @@ func (p *Planner) todoFor(expID int64) *actool.TodoStore {
 	return s
 }
 
-// SetKillWork wires the engine's per-work terminate callback so the planner's
-// kill_work tool can stop a single running worker.
+// SetKillWork 는 엔진의 작업 하나 종료 콜백을 연결합니다. 플래너의
+// kill_work 도구가 돌고 있는 워커 하나를 멈출 수 있습니다.
 func (p *Planner) SetKillWork(fn func(intentID int64) error) { p.killWork = fn }
 
-// SetSteerWork wires the engine's per-work steering callback so the planner's
-// steer_work tool can inject a mid-run course-correction into a running worker.
+// SetSteerWork 는 엔진의 작업 하나 조향 콜백을 연결합니다. 플래너의
+// steer_work 도구가 돌고 있는 워커 한가운데 방향 수정을 넣을 수 있습니다.
 func (p *Planner) SetSteerWork(fn func(intentID int64, msg string) error) { p.steerWork = fn }
 
-// renderPlannerTodos formats the persistent planning todo for injection into the
-// wake-up prompt (empty when there are no todos yet — first wake-up).
+// renderPlannerTodos 는 지속 계획 메모를 깨어남 프롬프트에 넣을 모양으로 만듭니다
+// (아직 할 일이 없으면 비어 있습니다. 첫 깨어남).
 func renderPlannerTodos(items []actool.Todo) string {
 	if len(items) == 0 {
 		return ""
@@ -143,18 +143,17 @@ func renderPlannerTodos(items []actool.Todo) string {
 	return b.String()
 }
 
-// TriggerEvent describes what concretely caused this planning round to fire, so
-// the planner looks first at the actual change instead of re-scanning the whole
-// overview. Kind:
+// TriggerEvent 는 이번 계획 라운드가 왜 일어났는지 구체적으로 적습니다. 플래너가
+// 개요 전체를 다시 훑기 전에 실제 변화를 먼저 보게 합니다. Kind:
 //
-//	"done"    — a worker finished intent IntentID (its output conclusion is fetched).
-//	"finding" — a worker reported a finding on intent IntentID (Detail = 요약).
-//	"goal"    — the human (via 메인 에이전트의 set_goals) added one OR MORE goals in a
-//	            single call (Goals = 이번에 추가된 목표 텍스트, 1개 이상. set_goals 는 일괄을 지원).
-//	"goal_deleted" — the human deleted a goal from 개요의 목표 관리 (Detail = 삭제된 목표 텍스트).
-//	"goal_edited"  — the human edited a goal from 개요의 목표 관리 (OldGoal→NewGoal 텍스트).
-//	"cancelled" — the human deleted intent IntentID (Detail = 삭제 이유). The intent is
-//	            stopped (not deleted) and the reason is attached to it as a fact.
+//	"done"    — 워커가 의도 IntentID 를 마쳤습니다(출력 결론을 가져옵니다).
+//	"finding" — 워커가 의도 IntentID 에 발견을 보고했습니다(Detail = 요약).
+//	"goal"    — 사람이(메인 에이전트의 set_goals 로) 한 호출에 목표를 하나 이상 더했습니다
+//	            (Goals = 이번에 추가된 목표 텍스트, 1개 이상. set_goals 는 일괄을 지원).
+//	"goal_deleted" — 사람이 개요의 목표 관리에서 목표를 지웠습니다(Detail = 삭제된 목표 텍스트).
+//	"goal_edited"  — 사람이 개요의 목표 관리에서 목표를 고쳤습니다(OldGoal→NewGoal 텍스트).
+//	"cancelled" — 사람이 의도 IntentID 를 지웠습니다(Detail = 삭제 이유). 그 의도는
+//	            멈춘 것이지 지워진 것이 아니고, 이유가 사실로 붙습니다.
 type TriggerEvent struct {
 	Kind     string
 	IntentID int64
@@ -166,10 +165,11 @@ type TriggerEvent struct {
 	Hints    []string // Kind=="hint" 전용: 이번 add_hint 가 추가한 힌트 텍스트(1개 또는 여러 개)
 }
 
-// renderTriggers spells out the change(s) that fired this round: for a finished
-// worker — which intent + its output conclusion; for a finding — which intent +
-// what was found. Empty for time/heartbeat wakes. Reads the store (best-effort;
-// a blank field never blocks the round).
+// renderTriggers 는 이번 라운드를 깨운 변화를 풀어 씁니다. 끝난 워커면
+// 어느 의도와 출력 결론인지, 발견이면 어느 의도와 무엇을 찾았는지입니다.
+// 시간/심장박동으로 깨어나면 비어 있습니다. 저장소를 읽습니다(최선을 다함.
+// 빈 칸이 라운드를 막지는 않습니다).
+// 초보: 탐색 그래프의 변화가 플래너 프롬프트 맨 위에 여기 문장으로 들어갑니다.
 func renderTriggers(ts *db.ExplorationStore, evs []TriggerEvent) string {
 	if len(evs) == 0 || ts == nil {
 		return ""
@@ -203,7 +203,7 @@ func renderTriggers(ts *db.ExplorationStore, evs []TriggerEvent) string {
 				sm = intentSummary(ts, ev.IntentID)
 			}
 			b.WriteString(fmt.Sprintf("\n- 意图 #%d 由用户删除，意图内容是：%s、删除原因是：%s。该意图已删除（不再执行）；请据此重新规划。", ev.IntentID, sm, ev.Detail)) // han-allow 업스트림 프롬프트·픽스처
-		default: // "done"
+		default: // "done" 기본. 워커가 의도를 마침
 			b.WriteString(fmt.Sprintf("\n- 意图 #%d（%s）的 worker 结束，输出结论：%s", ev.IntentID, intentSummary(ts, ev.IntentID), workerOutput(ts, ev.IntentID))) // han-allow 업스트림 프롬프트·픽스처
 			if fids := factIDsYielded(ts, ev.IntentID); fids != "" {
 				b.WriteString(fmt.Sprintf("；本意图新产生的事实 id：%s ", fids)) // han-allow 업스트림 프롬프트·픽스처
@@ -214,9 +214,9 @@ func renderTriggers(ts *db.ExplorationStore, evs []TriggerEvent) string {
 	return b.String()
 }
 
-// factIDsYielded lists the fact ids an intent produced this run as "#12、#15", so the
-// planner can jump straight to the round's incremental facts. Empty (best-effort) when
-// the intent yielded no facts or the lookup fails.
+// factIDsYielded 는 이 실행에서 의도가 만든 사실 id 를 "#12、#15" 로 나열합니다.
+// 플래너가 이번 라운드의 새 사실로 바로 갈 수 있습니다. 사실이 없거나 조회가 실패하면
+// 비어 있습니다(최선을 다함).
 func factIDsYielded(ts *db.ExplorationStore, id int64) string {
 	ids, err := ts.FactsYielded(id)
 	if err != nil || len(ids) == 0 {
@@ -229,7 +229,7 @@ func factIDsYielded(ts *db.ExplorationStore, id int64) string {
 	return strings.Join(parts, "、")
 }
 
-// intentSummary reads an intent node's one-line summary (best-effort, "?" on miss).
+// intentSummary 는 의도 노드의 한 줄 요약을 읽습니다(최선을 다함. 없으면 "?").
 func intentSummary(ts *db.ExplorationStore, id int64) string {
 	n, err := ts.GetNode(id)
 	if err != nil || n == nil {
@@ -244,8 +244,8 @@ func intentSummary(ts *db.ExplorationStore, id int64) string {
 	return "?"
 }
 
-// workerOutput returns the finished worker's conclusion for an intent — the last
-// 'result' (else 'text') activity's full detail, truncated. Same source get_worker_output uses.
+// workerOutput 는 끝난 워커가 그 의도에 남긴 결론을 돌려줍니다. 마지막
+// 'result'(없으면 'text') 활동의 전체 상세를 잘라 냅니다. get_worker_output 과 같은 출처입니다.
 func workerOutput(ts *db.ExplorationStore, id int64) string {
 	acts, _, err := ts.ActivityList(&id, 0, 1000)
 	if err != nil {
@@ -269,8 +269,8 @@ func workerOutput(ts *db.ExplorationStore, id int64) string {
 	return truncOutput(out, 800)
 }
 
-// truncOutput caps a worker-output blob so the trigger context doesn't bloat the
-// system prompt every round; full text is one get_worker_output call away.
+// truncOutput 는 워커 출력 덩어리를 잘라, 트리거 맥락이 라운드마다 시스템 프롬프트를
+// 부풀리지 않게 합니다. 전문은 get_worker_output 한 번이면 됩니다.
 func truncOutput(s string, n int) string {
 	r := []rune(s)
 	if len(r) <= n {
@@ -279,22 +279,21 @@ func truncOutput(s string, n int) string {
 	return string(r[:n]) + " …(잘렸습니다. 전체는 get_worker_output)"
 }
 
-// renderGraphOverview folds the pre-computed graph_overview snapshot into the
-// wake-up prompt so the planner starts each round with the full situation in
-// hand — saving the round-trip it would otherwise spend calling the tool. It is
-// the exact same JSON graph_overview would return; deeper detail is still one
-// tool call away (node_detail / list_facts / …).
+// renderGraphOverview 는 미리 계산한 graph_overview 스냅샷을 깨어남 프롬프트에 접어 넣습니다.
+// 플래너가 라운드마다 전체 상황을 손에 쥔 채 시작합니다. 도구를 한 번 왕복하지 않아도 됩니다.
+// graph_overview 가 돌려줄 JSON 과 정확히 같습니다. 더 깊은 내용은 여전히 도구 한 번입니다
+// (node_detail / list_facts 같은 도구 한 번).
 func renderGraphOverview(data map[string]any) string {
 	b, err := json.Marshal(data)
 	if err != nil {
-		return "" // fall back to the model calling graph_overview itself
+		return "" // 모델이 graph_overview 를 직접 부르게 폴백합니다
 	}
 	return "\n\n【本轮态势（graph_overview 预取，等同你调用该工具的返回；需要细节再按需调 node_detail/list_facts 等）】：\n" + string(b) // han-allow 업스트림 프롬프트·픽스처
 }
 
-// plannerDefaultTmpl is the built-in EDITABLE body (구간 [A]) of the planner prompt,
-// seeded into agent_prompts. Goal is a {{.Goal}} template var; the 중간 산출물 출력 규약
-// tail is code-owned (artifactSpec) and appended by plannerSystem after rendering.
+// plannerDefaultTmpl 은 플래너 프롬프트의 내장 편집 본문(구간 [A])입니다.
+// agent_prompts 에 심습니다. Goal 은 {{.Goal}} 템플릿 변수입니다. 중간 산출물 출력 규약
+// 꼬리는 코드가 소유합니다(artifactSpec). plannerSystem 이 렌더 뒤에 붙입니다.
 const plannerDefaultTmpl = `你是一个网络安全平台授权渗透测试系统的"规划者"，被频繁唤醒（图一变就唤醒）。职责：读态势 → 判目标 → **只在确有未被覆盖的新方向时**补充探索意图。你是规划者、不是执行者：本轮所有产物只能是【生成/说清意图】或【判定目标】，绝不在 plan 里把活干了。
 
 任务目标：{{.Goal}}
@@ -344,19 +343,16 @@ func plannerSystem(goal, dataDir, workDir string) string {
 	return body + artifactSpec(workDir)
 }
 
-// Plan runs one planning round. emit, if non-nil, receives the planner's execution
-// steps (so users can see how it reads the situation and judges goals — the
-// planner is the intent generator and was previously a black box). Returns whether
-// the planner judged the goal met.
-// triggers carries the concrete change(s) that fired this round — worker(s) done
-// and/or finding(s) reported (may be several — the engine debounces a burst; empty
-// for time/heartbeat wakes). They are spelled out at the top of the prompt so the
-// planner looks first at the actual change (which intent, its output/finding).
+// Plan 은 계획 라운드 하나를 돌립니다. emit 이 nil 이 아니면 플래너의 실행 단계를 받습니다
+// (상황을 어떻게 읽고 목표를 판단하는지 사람이 봅니다. 플래너는 의도를 만드는 쪽이고
+// 예전에는 검은 상자였습니다). 플래너가 목표 달성을 판정했는지를 돌려줍니다.
+// triggers 는 이번 라운드를 깨운 구체적 변화입니다. 워커가 끝났거나 발견이 보고됐거나
+// (여러 개일 수 있습니다. 엔진이 폭주를 디바운스합니다. 시간/심장박동이면 비어 있음).
+// 프롬프트 맨 위에 풀어 써서, 플래너가 실제 변화(어느 의도, 그 출력/발견)를 먼저 보게 합니다.
 func (p *Planner) Plan(ctx context.Context, taskID int64, as *db.AssetStore, ts *db.ExplorationStore, goal string, triggers []TriggerEvent, emit func(db.Activity)) (met bool, reason string, err error) {
-	// cold-digest §2.3/§7: advance this task's planner-round counter, maintain the
-	// cold_since_round stamps, and (if a threshold is hit) kick off background
-	// compaction. Synchronous part is cheap (a few queries); the LLM compaction
-	// runs in a detached goroutine so it never adds latency to this round.
+	// cold-digest §2.3/§7: 이 작업의 플래너 라운드 수를 올리고, cold_since_round 도장을
+	// 유지하고, 문턱에 닿으면 백그라운드 압축을 띄웁니다. 동기 부분은 쌉니다(쿼리 몇 개).
+	// LLM 압축은 떨어진 고루틴에서 돌아, 이번 라운드에 지연을 더하지 않습니다.
 	p.compactor.OnPlannerRound(ctx, ts)
 	tsx := NewToolSet(ts, "planner")
 	tsx.SetFindingRecorder(p.findingRecorder)
@@ -365,10 +361,10 @@ func (p *Planner) Plan(ctx context.Context, taskID int64, as *db.AssetStore, ts 
 	}
 	tsx.SetTaskID(taskID)
 	tsx.SetCoverageEnabled(as == nil || as.CoverageEnabled(taskID))
-	tsx.killWork = p.killWork   // enable kill_work tool (nil = unavailable)
-	tsx.steerWork = p.steerWork // enable steer_work tool (nil = unavailable)
+	tsx.killWork = p.killWork   // kill_work 도구를 켭니다(nil = 없음)
+	tsx.steerWork = p.steerWork // steer_work 도구를 켭니다(nil = 없음)
 	if origin, _ := ts.OriginFactID(); origin > 0 {
-		tsx.SetOwnerNode(origin) // planner-side anchors default to the task root (origin fact)
+		tsx.SetOwnerNode(origin) // 플래너 쪽 앵커의 기본은 작업 뿌리(origin 사실)입니다
 	}
 	// 도메인 도구 + 기본 도구 묶음(Read/Write/Edit/MultiEdit/LS/Glob/Grep/Bash)
 	// 자산 커버리지를 끄면 add_task_scope/list_untested_assets 를 뺍니다(프롬프트에 넣지 않음).
@@ -426,7 +422,7 @@ func (p *Planner) Plan(ctx context.Context, taskID int64, as *db.AssetStore, ts 
 		BashEnv:               proxyEnv(p.proxyAddr, p.proxyCACert), // Bash 자식 프로세스는 기본적으로 프록시를 타고 CA 를 신뢰합니다
 		WorkingDir:            taskDir,                              // 이 작업 작업 디렉터리 <workDir>/tasks/<taskID>
 		ToolOutputDir:         cmdOutDir(taskDir),
-		MaxTurns:              p.maxTurns, // 0 = unlimited (configurable in agent management)
+		MaxTurns:              p.maxTurns, // 0 = 무제한(에이전트 관리에서 고칠 수 있음)
 		MaxDuration:           maxDur,     // 0=제한 없음. deadline 이 있으면 deadline 까지 남은 시간
 		Compaction:            compactionConfig(p.compactionWindow()),
 		// 깨어날 때마다 공유하는 계획 할 일: 직렬 사슬을 여러 턴에 걸쳐 유지합니다(session 은 새것이고 store 는 아닙니다).
@@ -438,7 +434,7 @@ func (p *Planner) Plan(ctx context.Context, taskID int64, as *db.AssetStore, ts 
 		NonStreaming: p.nonStreaming(), // 이 profile 이 비스트리밍이면 Provider.Complete 를 탑니다
 		MaxTokens:    p.maxTokens(),    // 0 = 상한을 보내지 않음. 서버 기본값
 	}
-	if p.tx != nil { // persist raw LLM conversation; one accumulating file per task's planner
+	if p.tx != nil { // LLM 원문 대화를 남깁니다. 작업의 플래너마다 파일이 하나씩 쌓입니다
 		opts.Transcript = p.tx
 		opts.SessionID = fmt.Sprintf("exp%d-planner", ts.ID())
 	}
@@ -465,7 +461,7 @@ func (p *Planner) Plan(ctx context.Context, taskID int64, as *db.AssetStore, ts 
 	_, _, err = captureRun(ctx, opts, input,
 		func(r db.Activity) {
 			if emit != nil {
-				r.Worker = "planner" // planner activity has no intent_id (it generates them)
+				r.Worker = "planner" // 플래너 활동에는 intent_id 가 없습니다(의도를 만드는 쪽입니다)
 				emit(r)
 			}
 		})

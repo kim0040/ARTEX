@@ -18,20 +18,21 @@ import (
 	"github.com/Autumn-27/norma/llm"
 )
 
-// judgeWorkerLane is the usage-ledger "worker" label for intercept fallback-judge
-// calls, so judge spend can be queried apart from the worker/planner/main lanes.
+// judgeWorkerLane은 사용 장부의 worker 칸에 넣는, 가로채기 폴백 판정 호출용 라벨입니다.
+// 그래서 판정 비용을 워커/플래너/메인 레인과 따로 조회할 수 있습니다.
 const judgeWorkerLane = "judge"
 
-// chatGuard returns a guard wired with the manager's interceptor, used for chat
-// conversations. Called once per applyLLM so a new LLM config always gets a fresh guard.
+// chatGuard는 매니저의 가로채기에 연결한 가드를 돌려줍니다. 채팅
+// 대화에 씁니다. applyLLM마다 한 번 불러, 새 LLM 설정은 항상 새 가드를 받습니다.
 func (s *Server) chatGuard() *guard.Guard {
 	return guard.NewWithInterceptor(s.m.interceptor)
 }
 
-// wireInterceptReviewer installs the LLM fallback judge into the interceptor. The
-// judge runs only on tool calls that matched no rule (see intercept.Judge). It
-// resolves the configured judge profile (0 → active/default), builds a provider,
-// runs a one-shot JSON classification with an explanation for every verdict.
+// wireInterceptReviewer는 LLM 폴백 판정기를 가로채기에 넣습니다.
+// 판정기는 어떤 규칙에도 안 걸린 도구 호출에서만 돕니다(intercept.Judge).
+// 설정된 판정 프로필을 고르고(0이면 활성/기본), 프로바이더를 만든 뒤
+// 한 번의 JSON 분류를 돌립니다. 모든 판정에 설명을 붙입니다.
+// 초보용: 규칙에 안 걸린 도구 호출을, 엔진의 가드가 모델에게 한 번 더 묻게 합니다.
 func (s *Server) wireInterceptReviewer() {
 	s.m.interceptor.SetReviewer(func(ctx context.Context, profileID int64, prompt string, input intercept.ReviewInput) (intercept.Decision, error) {
 		if profileID == 0 {
@@ -46,8 +47,8 @@ func (s *Server) wireInterceptReviewer() {
 		if !ok {
 			return intercept.Decision{ProfileID: profileID}, fmt.Errorf("판정 모델 profile %d 을(를) 쓸 수 없습니다", profileID)
 		}
-		// Tag this call's usage as the "judge" lane so the config page can report
-		// how much the fallback approval has spent, separate from model profiles.
+		// 이 호출의 사용량을 "judge" 레인으로 표시합니다. 설정 화면이
+		// 폴백 승인이 얼마나 썼는지, 모델 설정과 따로 보여 주게 합니다.
 		ctx = llmrec.WithWorker(ctx, judgeWorkerLane)
 		text, err := reviewCompletion(ctx, prov, prompt, input)
 		if err != nil {
@@ -69,9 +70,9 @@ func reviewCompletion(ctx context.Context, prov llm.Provider, prompt string, inp
 	return streamCollectText(ctx, prov, prompt, string(user))
 }
 
-// streamCollectText runs a single non-streaming-style completion (thinking off,
-// low temperature, bounded output) and returns the concatenated text. The
-// budget includes the explanation and complete closing JSON delimiters.
+// streamCollectText는 스트리밍이 아닌 것처럼 완성을 한 번 돌리고(생각 끄기,
+// 낮은 온도, 출력 상한), 이어 붙인 글을 돌려줍니다.
+// 예산에는 설명과, JSON을 닫는 구분자 전체가 들어갑니다.
 func streamCollectText(ctx context.Context, prov llm.Provider, system, user string) (string, error) {
 	temp := 0.0
 	req := llm.CompletionRequest{
@@ -93,7 +94,7 @@ func streamCollectText(ctx context.Context, prov llm.Provider, system, user stri
 	return sb.String(), nil
 }
 
-// --- intercept rule CRUD ---
+// --- 가로채기 규칙 생성·조회·수정·삭제 ---
 
 func (s *Server) interceptListRules(w http.ResponseWriter, r *http.Request) {
 	pg := s.pg(w)
@@ -205,7 +206,7 @@ func (s *Server) interceptToggleRule(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"ok": true, "enabled": req.Enabled})
 }
 
-// --- pending (ask) ---
+// --- 대기(ask) ---
 
 func (s *Server) interceptListPending(w http.ResponseWriter, r *http.Request) {
 	pg := s.pg(w)
@@ -357,7 +358,7 @@ func (s *Server) interceptDecide(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Decision string `json:"decision"` // "allowed" | "denied"
+		Decision string `json:"decision"` // "allowed"=허용 | "denied"=거부
 	}
 	if err := decode(r, &req); err != nil {
 		writeErr(w, 400, err.Error())
@@ -380,8 +381,8 @@ func (s *Server) interceptDecide(w http.ResponseWriter, r *http.Request) {
 
 // --- tool-config (전역 도구 가로채기 범위) --- 이 조각은 엔진이 도구 호출을 가로채기(intercept)하는 경계를 정하고, 자산 그래프와 탐색 그래프에 남길 호출과 연결된다.
 
-// interceptGetToolConfig returns the list of tool names that are currently
-// configured to enter the intercept rule system.
+// interceptGetToolConfig는 지금 가로채기 규칙 체계에
+// 들어가도록 설정된 도구 이름 목록을 돌려줍니다.
 func (s *Server) interceptGetToolConfig(w http.ResponseWriter, r *http.Request) {
 	tools, err := s.m.interceptor.GetEnabledTools()
 	if err != nil {
@@ -391,8 +392,8 @@ func (s *Server) interceptGetToolConfig(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, 200, map[string]any{"enabled_tools": tools})
 }
 
-// interceptSetToolConfig replaces the list of tool names that should enter
-// the intercept rule system.
+// interceptSetToolConfig는 가로채기 규칙 체계에 들어갈
+// 도구 이름 목록을 통째로 바꿉니다.
 func (s *Server) interceptSetToolConfig(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		EnabledTools []string `json:"enabled_tools"`
@@ -413,13 +414,13 @@ func (s *Server) interceptSetToolConfig(w http.ResponseWriter, r *http.Request) 
 
 // --- LLM fallback judge config (전역 모델 폴백) --- 이 조각은 엔진이 작업의 판정 모델을 고를 때 쓰는 전역 폴백이며, UI는 탐색 그래프에 적힌 작업 상태를 읽는다.
 
-// interceptGetJudgeConfig returns the resolved judge configuration. Prompt is the
-// effective prompt (built-in template when unset), so the UI can prefill it.
+// interceptGetJudgeConfig는 풀린 판정 설정을 돌려줍니다. Prompt는
+// 실제로 쓰는 프롬프트입니다(비어 있으면 내장 템플릿). 화면이 미리 채울 수 있습니다.
 func (s *Server) interceptGetJudgeConfig(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, s.m.interceptor.GetJudgeConfig())
 }
 
-// interceptSetJudgeConfig persists the judge configuration.
+// interceptSetJudgeConfig는 판정 설정을 저장합니다.
 func (s *Server) interceptSetJudgeConfig(w http.ResponseWriter, r *http.Request) {
 	var req intercept.JudgeConfig
 	if err := decode(r, &req); err != nil {
@@ -445,8 +446,8 @@ func (s *Server) interceptSetJudgeConfig(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, 200, map[string]any{"ok": true})
 }
 
-// interceptJudgeUsage returns the fallback judge's cumulative token spend plus a
-// recent daily series, for the config page. ?days bounds the daily series (default 30).
+// interceptJudgeUsage는 폴백 판정기의 누적 토큰과
+// 최근 일별 수열을 돌려줍니다. 설정 화면용입니다. ?days가 일별 구간입니다(기본 30).
 func (s *Server) interceptJudgeUsage(w http.ResponseWriter, r *http.Request) {
 	pg := s.m.PG()
 	if pg == nil {
@@ -462,7 +463,7 @@ func (s *Server) interceptJudgeUsage(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, usage)
 }
 
-// --- helpers ---
+// --- 도우미 ---
 
 type interceptRuleReq struct {
 	Name           string `json:"name"`
@@ -530,7 +531,7 @@ func (s *Server) interceptDetail(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, detail)
 }
 
-// The navigation endpoint returns only the original call and its paired result.
+// 이동용 엔드포인트는 원래 호출과 짝인 결과만 돌려줍니다.
 func (s *Server) interceptExecution(w http.ResponseWriter, r *http.Request) {
 	pg := s.pg(w)
 	if pg == nil {
@@ -555,9 +556,9 @@ func (s *Server) interceptExecution(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if target == nil {
-		// Conversation deletion cascades approval rows. A stale source link still
-		// carries its conversation ID, allowing a precise message without retaining
-		// deleted conversations or changing their deletion semantics.
+		// 대화를 지우면 승인 행도 연쇄로 지워집니다. 낡은 출처 링크에도
+		// 대화 id는 남아, 지운 대화를 붙잡아 두지 않고도 정확한 문장을 만들 수 있습니다.
+		// 삭제 의미도 바꾸지 않습니다.
 		if convID, parseErr := strconv.ParseInt(r.URL.Query().Get("conversation"), 10, 64); parseErr == nil && convID > 0 {
 			conv, getErr := pg.GetConversation(convID)
 			if getErr != nil {

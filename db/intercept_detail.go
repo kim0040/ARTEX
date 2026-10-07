@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// InterceptContextEntry is a bounded, recorded session event, not model reasoning.
+// InterceptContextEntry는 길이를 자른, 기록된 세션 사건이다. 모델의 생각이 아니다.
 type InterceptContextEntry struct {
 	Kind      string `json:"kind"`
 	Tool      string `json:"tool,omitempty"`
@@ -16,12 +16,12 @@ type InterceptContextEntry struct {
 	Truncated bool   `json:"truncated,omitempty"`
 }
 
-// InterceptAudit is captured at review time. It is deliberately excluded from
-// polling/list responses; old rows have no audit instead of reconstructed data.
+// InterceptAudit은 검토할 때 남긴 기록이다. 폴링·목록 응답에는 일부러 넣지 않는다.
+// 옛 행은 기록을 다시 만들지 않고, 감사 정보가 없는 채로 둔다.
 type InterceptAudit struct {
 	RunID            string                  `json:"run_id,omitempty"`
 	ToolUseID        string                  `json:"tool_use_id,omitempty"`
-	Correlation      string                  `json:"correlation"` // exact | ambiguous | unavailable
+	Correlation      string                  `json:"correlation"` // exact(정확히 하나) | ambiguous(여러 개) | unavailable(없음)
 	InputDigest      string                  `json:"input_digest"`
 	UserMessage      string                  `json:"user_message"`
 	UserTruncated    bool                    `json:"user_truncated,omitempty"`
@@ -71,8 +71,8 @@ func (d *DB) GetInterceptDetail(id int64) (*InterceptDetail, error) {
 	return &out, nil
 }
 
-// ResolveIntercept atomically settles a pending request. A timeout cannot
-// overwrite a human decision and repeat decisions cannot rewrite history.
+// ResolveIntercept는 대기 중인 가로채기 요청을 한 번에 결정한다.
+// 시간 초과가 사람의 결정을 덮어쓸 수 없고, 같은 결정을 다시 해도 기록을 고치지 못한다.
 func (d *DB) ResolveIntercept(id int64, status, action, reason string) (bool, error) {
 	execution := "not_executed"
 	if action == "allow" {
@@ -96,8 +96,8 @@ func (d *DB) ResolveIntercept(id int64, status, action, reason string) (bool, er
 	return n == 1, err
 }
 
-// CompleteIntercept only updates the exact recorded call after it was allowed.
-// A blocked tool_result must never be presented as a failed execution.
+// CompleteIntercept는 허용된 뒤에, 정확히 기록된 그 호출만 갱신한다.
+// 막힌 tool_result를 실행 실패인 것처럼 보여 주면 안 된다.
 func (d *DB) CompleteIntercept(id int64, runID, toolUseID, status, output string, truncated bool) error {
 	patch, err := json.Marshal(map[string]any{
 		"execution_status": status, "output": output, "output_truncated": truncated,

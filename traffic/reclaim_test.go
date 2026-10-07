@@ -9,9 +9,9 @@ import (
 	"testing"
 )
 
-// bulkRecord fills the index with inline bodies — the ones that actually make
-// index.sqlite grow. Binary content type keeps them out of the full-text index so
-// the test stays fast; the FTS side is covered by TestReclaimMergesFTSTombstones.
+// bulkRecord 는 색인을 칸 안의 본문으로 채웁니다. index.sqlite 를 실제로
+// 키우는 것들입니다. 이진 content type 은 전문 색인에서 빼서 테스트를
+// 빠르게 합니다. FTS 쪽은 TestReclaimMergesFTSTombstones 가 덮습니다.
 func bulkRecord(tr *Traffic, host string, n, size int) {
 	body := []byte(strings.Repeat("A", size))
 	for i := 0; i < n; i++ {
@@ -34,14 +34,14 @@ func TestNewIndexEnablesIncrementalVacuum(t *testing.T) {
 	}
 }
 
-// TestDeleteReclaimsIndexSpace is the regression: deleting traffic used to leave
-// index.sqlite at its high-water mark forever, because SQLite only chains freed
-// pages onto its freelist and nothing ever returned them to the filesystem.
+// TestDeleteReclaimsIndexSpace 는 회귀입니다. 트래픽을 지워도 index.sqlite 가
+// 최고 수위에 영원히 남았습니다. SQLite 는 빈 페이지를 프리리스트에만
+// 매달고, 파일 시스템으로 되돌리는 일이 없었기 때문입니다.
 func TestDeleteReclaimsIndexSpace(t *testing.T) {
 	tr, _ := openTraffic(t)
 	const host = "bulk.example.com"
-	// 30 × 200KB stays under maxInlineBody, so every body lands in the database
-	// itself rather than the blob store — that is where the growth was invisible.
+	// 30 × 200KB 는 maxInlineBody 아래입니다. 모든 본문이 blob 이 아니라
+	// 데이터베이스 자체에 들어갑니다. 커짐이 안 보이던 곳이 거기입니다.
 	bulkRecord(tr, host, 30, 200*1024)
 	grown := tr.indexBytes()
 	if grown < 5<<20 {
@@ -57,8 +57,8 @@ func TestDeleteReclaimsIndexSpace(t *testing.T) {
 	if after > grown/4 {
 		t.Fatalf("删除后索引仍占 %d 字节（删除前 %d），空间没有还给文件系统", after, grown) // han-allow 업스트림 프롬프트·픽스처
 	}
-	// A handful of pages incremental_vacuum could not move to the end of the file
-	// is a normal residual; the ~1500 that the deletion freed must be gone.
+	// incremental_vacuum 이 파일 끝으로 못 옮긴 페이지 몇 장은 정상 잔여입니다.
+	// 삭제가 비운 약 1500장은 사라져야 합니다.
 	var free int
 	if err := tr.DB().QueryRow(`PRAGMA freelist_count`).Scan(&free); err != nil {
 		t.Fatal(err)
@@ -68,16 +68,16 @@ func TestDeleteReclaimsIndexSpace(t *testing.T) {
 	}
 }
 
-// TestReclaimMergesFTSTombstones covers the second half of the leak: ex_fts is a
-// contentless_delete index, so a DELETE only writes tombstones. Without a merge
-// the index keeps growing on every deletion — deleting traffic made it bigger.
+// TestReclaimMergesFTSTombstones 는 누수의 나머지입니다. ex_fts 는
+// contentless_delete 색인이라 DELETE 는 묘비 표시만 씁니다. 병합이 없으면
+// 지울 때마다 색인이 커집니다. 트래픽을 지우면 오히려 커졌습니다.
 func TestReclaimMergesFTSTombstones(t *testing.T) {
 	tr, _ := openTraffic(t)
 	if !tr.fts {
 		t.Skip("驱动未启用 FTS5") // han-allow 업스트림 프롬프트·픽스처
 	}
-	// Deleted in batches, which is what leaves tombstones spread over many
-	// segments rather than emptying the index in one shot.
+	// 묶음으로 지웁니다. 색인을 한 번에 비우지 않고 묘비 표시가
+	// 여러 세그먼트에 퍼지게 하는 방식입니다.
 	for round := 0; round < 4; round++ {
 		host := fmt.Sprintf("fts%d.example.com", round)
 		for i := 0; i < 20; i++ {
@@ -100,23 +100,23 @@ func TestReclaimMergesFTSTombstones(t *testing.T) {
 	if exchanges != 0 {
 		t.Fatalf("还剩 %d 条流量", exchanges) // han-allow 업스트림 프롬프트·픽스처
 	}
-	// A fully merged, empty contentless index keeps only its structure rows.
+	// 완전히 병합된 빈 contentless 색인은 구조 행만 남깁니다.
 	if segments > 8 {
 		t.Fatalf("全文索引残留 %d 行段数据，tombstone 未被合并回收", segments) // han-allow 업스트림 프롬프트·픽스처
 	}
 }
 
-// TestReclaimOnLegacyIndexIsHarmless covers installs created before
-// auto_vacuum=incremental became the default: incremental_vacuum is a silent
-// no-op there, so reclamation must report the situation and finish rather than
-// spin or fail. Only a full compaction can convert such a file.
+// TestReclaimOnLegacyIndexIsHarmless 는 auto_vacuum=incremental 이 기본이
+// 되기 전에 만든 설치입니다. 거기서는 incremental_vacuum 이 조용히 아무
+// 일도 안 하므로, 회수는 그 사실을 알리고 끝나야 합니다. 돌거나 실패하면
+// 안 됩니다. 그런 파일은 전체 압축만 바꿉니다.
 func TestReclaimOnLegacyIndexIsHarmless(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dir, "_index"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	// Create the tables first, with auto_vacuum left at its default 0 — exactly the
-	// shape Open used to leave behind.
+	// 테이블을 먼저 만듭니다. auto_vacuum 은 기본 0 입니다. Open 이
+	// 예전에 남기던 모양 그대로입니다.
 	legacy, err := sql.Open("sqlite", filepath.Join(dir, "_index", "index.sqlite"))
 	if err != nil {
 		t.Fatal(err)
@@ -144,8 +144,8 @@ func TestReclaimOnLegacyIndexIsHarmless(t *testing.T) {
 	}
 	tr.reaping.Wait() // 반드시 수렴해야 하며, 예산 안에 멈춰 있으면 안 됩니다
 
-	// The freelist stays populated: that is the whole reason a compaction entry
-	// point is needed for pre-existing databases.
+	// 프리리스트는 채워진 채입니다. 이미 있는 데이터베이스에 압축 진입점이
+	// 필요한 이유가 이것입니다.
 	var free int
 	if err := tr.DB().QueryRow(`PRAGMA freelist_count`).Scan(&free); err != nil {
 		t.Fatal(err)
@@ -155,21 +155,20 @@ func TestReclaimOnLegacyIndexIsHarmless(t *testing.T) {
 	}
 }
 
-// TestDeleteAllPurgesAndCompacts covers the page's clear-everything action: it
-// must leave nothing behind — including host directories the index no longer
-// knows about — and it must hand the index space back, since an emptied index is
-// the one moment a full rewrite is cheap.
+// TestDeleteAllPurgesAndCompacts 는 화면의 전부 지우기입니다. 아무것도
+// 남기면 안 됩니다. 색인이 더 이상 모르는 호스트 디렉터리도 포함합니다.
+// 색인 공간도 되돌려야 합니다. 빈 색인이 전체 다시 쓰기가 싼 유일한 순간입니다.
 func TestDeleteAllPurgesAndCompacts(t *testing.T) {
 	tr, dir := openTraffic(t)
 	bulkRecord(tr, "a.example.com", 10, 200*1024)
 	bulkRecord(tr, "b.example.com", 10, 200*1024)
-	// A text body so the full-text index has real content, and a spilled one so a
-	// blob exists to collect.
+	// 글 본문은 전문 색인에 실제 내용이 있게 하고, 넘긴 본문은
+	// 수거할 blob 이 있게 합니다.
 	tr.record(newFlow("c.example.com", "GET", "/page", nil, []byte(strings.Repeat("secret-token ", 500))))
 	tr.record(newFlow("c.example.com", "GET", "/big", nil,
 		[]byte(strings.Repeat("B", maxInlineBody+1024)), withRespType("application/sql")))
-	// An orphaned legacy directory: no index row points at it, so only a
-	// clear-everything should take it.
+	// 고아 레거시 디렉터리입니다. 가리키는 색인 행이 없어서,
+	// 전부 지우기만 그것을 가져갑니다.
 	orphan := filepath.Join(dir, "orphan.example.com")
 	if err := os.MkdirAll(orphan, 0o755); err != nil {
 		t.Fatal(err)
@@ -210,17 +209,17 @@ func TestDeleteAllPurgesAndCompacts(t *testing.T) {
 	if _, err := os.Stat(orphan); !os.IsNotExist(err) {
 		t.Fatalf("孤立的历史 host 目录未被清理：%v", err) // han-allow 업스트림 프롬프트·픽스처
 	}
-	// Recording must keep working against the freshly rewritten file.
+	// 방금 다시 쓴 파일에도 기록이 계속 되어야 합니다.
 	tr.record(newFlow("d.example.com", "GET", "/after", nil, []byte("清空后仍可录制"))) // han-allow 업스트림 프롬프트·픽스처
 	if n, err := tr.Count(); err != nil || n != 1 {
 		t.Fatalf("清空后 Count=(%d,%v)，应为 (1,nil)", n, err) // han-allow 업스트림 프롬프트·픽스처
 	}
 }
 
-// TestDeleteAllConvertsLegacyIndex is why the purge compacts rather than just
-// deleting: auto_vacuum cannot be switched on after the fact except through a
-// VACUUM, and an emptied index is the cheapest place to pay for one. After this,
-// ordinary deletions reclaim space on their own.
+// TestDeleteAllConvertsLegacyIndex 는 비우기가 삭제만 하지 않고 압축하는
+// 이유입니다. auto_vacuum 은 VACUUM 을 통하지 않고는 나중에 켤 수 없고,
+// 빈 색인이 그 비용을 치르기 가장 쌉니다. 이후에는 보통 삭제가
+// 스스로 공간을 되돌립니다.
 func TestDeleteAllConvertsLegacyIndex(t *testing.T) {
 	dir := t.TempDir()
 	old := openLegacyIndex(t, dir)
@@ -244,7 +243,7 @@ func TestDeleteAllConvertsLegacyIndex(t *testing.T) {
 		t.Fatal("清空后旧库未被转换为增量回收模式") // han-allow 업스트림 프롬프트·픽스처
 	}
 
-	// The converted database now reclaims on an ordinary host deletion.
+	// 바뀐 데이터베이스는 이제 보통 호스트 삭제에서 공간을 되돌립니다.
 	bulkRecord(tr, "again.example.com", 10, 200*1024)
 	grown := tr.indexBytes()
 	if _, err := tr.DeleteHostsExact([]string{"again.example.com"}); err != nil {

@@ -215,7 +215,7 @@ export default function FindingsPage() {
         if (typeof parsed.task === "string" && parsed.task) setTask(parsed.task);
         if (parsed.sort === "severity" || parsed.sort === "time") setSort(parsed.sort);
       } catch {
-        // Ignore malformed or legacy preferences and retain the defaults.
+        // 깨졌거나 예전 형식의 설정은 무시하고 기본값을 유지합니다.
       }
     }
     setPreferencesHydrated(true);
@@ -336,7 +336,7 @@ export default function FindingsPage() {
       setFlat({ items: result.items, total: result.total, loaded: true, loading: false });
     } catch {
       if (request !== flatRequest.current || activeFilterFingerprint.current !== requestFilter) return;
-      // Polling keeps the last successful snapshot visible.
+      // 주기 조회가 실패해도 마지막으로 성공한 화면을 그대로 보여 줍니다.
       setFlat((current) => ({ ...current, loading: false }));
     }
   }, [activeAssetScope, filterFingerprint, flatPage, flatPageSize, severity, status, vulnclass, task, query, sort]);
@@ -386,7 +386,7 @@ export default function FindingsPage() {
       setGroupTotal(result.total);
       setTotal(result.finding_total);
     } catch {
-      // Polling keeps the last successful snapshot visible.
+      // 주기 조회가 실패해도 마지막으로 성공한 화면을 그대로 보여 줍니다.
     }
   }, [filterFingerprint, page, pageSize, severity, status, vulnclass, task, query, sort]);
 
@@ -499,7 +499,7 @@ export default function FindingsPage() {
     [loadAssetTree, loadFlat, loadGroup, refreshGroups, view],
   );
 
-  // Reset every view's pagination and expansion when a shared finding filter changes.
+  // 발견 필터가 바뀌면 모든 보기의 페이지와 펼침을 처음으로 되돌립니다.
   React.useEffect(() => {
     void filterFingerprint;
     setPage(1);
@@ -562,8 +562,8 @@ export default function FindingsPage() {
     if (flatPage > lastPage) setFlatPage(lastPage);
   }, [flat.loaded, flat.total, flatPage, flatPageSize]);
 
-  // Whole-table aggregates (stat cards + vuln-class options) — independent of the
-  // current page, so they stay exact.
+  // 표 전체 합계(통계 카드와 취약 유형 목록)는 지금 페이지와 상관없이
+  // 계산해서, 숫자가 페이지에 잘리지 않습니다.
   React.useEffect(() => {
     let alive = true;
     const load = () => {
@@ -576,7 +576,7 @@ export default function FindingsPage() {
           }
         })
         .catch(() => {
-          // Keep the previous aggregate snapshot until the next poll.
+          // 다음 주기 조회 전까지 이전 합계를 유지합니다.
         });
     };
     load();
@@ -599,7 +599,7 @@ export default function FindingsPage() {
     }
   }, [stats, statsLoaded, task, vulnclass]);
 
-  // updateStatus optimistically flips one finding's triage state, reverting on error.
+  // updateStatus는 발견 하나의 분류를 먼저 화면에 바꾸고, 실패하면 되돌립니다.
   const updateStatus = React.useCallback(
     async (f: Finding, next: FindingStatus) => {
       if (!f.finding_id || next === f.status) return;
@@ -608,12 +608,12 @@ export default function FindingsPage() {
       try {
         await api.setFindingStatus(f.finding_id, next);
         toast.success(`표시됨 「${statusMeta("finding", next).label}」`);
-        // refresh stat cards (pending count) and drop the row if it no longer matches the status filter
+        // 통계 카드(대기 수)를 갱신하고, 상태 필터에 더 이상 안 맞으면 그 줄을 뺍니다
         api
           .findingStats()
           .then(setStats)
           .catch(() => {
-            // The row update remains valid even if the aggregate refresh fails.
+            // 합계 갱신이 실패해도 줄 수정 자체는 유효합니다.
           });
         if (status !== "all" && next !== status) {
           setFindings((cur) => cur.filter((x) => !isSameFinding(x, f)));
@@ -683,7 +683,7 @@ export default function FindingsPage() {
           .findingStats()
           .then(setStats)
           .catch(() => {
-            // The edit remains valid even if the aggregate refresh fails.
+            // 합계 갱신이 실패해도 수정 자체는 유효합니다.
           });
         refreshAfterMutation(f);
       } catch (e) {
@@ -716,7 +716,7 @@ export default function FindingsPage() {
           .findingStats()
           .then(setStats)
           .catch(() => {
-            // The deletion remains valid even if the aggregate refresh fails.
+            // 합계 갱신이 실패해도 삭제 자체는 유효합니다.
           });
         refreshAfterMutation(f, true);
       } catch (e) {

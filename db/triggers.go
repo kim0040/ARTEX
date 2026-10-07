@@ -6,11 +6,11 @@ import (
 	"time"
 )
 
-// AgentTrigger is one P3 trigger attached to a custom agent. Six trigger
-// conditions can be on at once: interval / on_finding / on_goal_met /
-// on_task_timeout / on_tool_call / on_task_create. ToolNames scopes the tool-call
-// trigger to a non-empty set of tool keys (empty is rejected at the API layer for
-// on_tool_call).
+// AgentTrigger는 사용자 에이전트에 붙은 P3 트리거 하나다. 여섯 조건이
+// 동시에 켜질 수 있다. interval / on_finding / on_goal_met /
+// on_task_timeout / on_tool_call / on_task_create. ToolNames는 도구 호출
+// 트리거를 비어 있지 않은 도구 키 묶음으로 제한한다(on_tool_call에서 빈 목록은 API가 거절한다).
+// 발견·목표 달성·작업 시간 초과는 탐색 그래프의 사건이 이 트리거를 깨운다.
 type AgentTrigger struct {
 	ID                 int64      `json:"id"`
 	AgentKey           string     `json:"agent_key"`
@@ -33,8 +33,8 @@ type AgentTrigger struct {
 
 const triggerCols = `id, agent_key, enabled, interval_sec, on_finding, on_goal_met, on_task_timeout, on_tool_call, on_task_create, interval_message, finding_message, goal_message, task_timeout_message, tool_call_message, task_create_message, tool_names, last_fire`
 
-// marshalToolNames encodes the tool-key list as JSON text for the tool_names column.
-// A nil/empty list stores "" (not "null"/"[]") so the column default stays clean.
+// marshalToolNames는 도구 키 목록을 tool_names 열용 JSON 글로 바꾼다.
+// nil이거나 빈 목록은 "null"/"[]"이 아니라 ""로 저장해, 열 기본값이 깨끗하게 남는다.
 func marshalToolNames(names []string) string {
 	if len(names) == 0 {
 		return ""
@@ -64,7 +64,7 @@ func scanTrigger(sc interface{ Scan(...any) error }) (*AgentTrigger, error) {
 	return &t, nil
 }
 
-// CreateTrigger inserts a trigger for agentKey and returns it.
+// CreateTrigger는 agentKey의 트리거를 넣고 그 행을 돌려준다.
 func (d *DB) CreateTrigger(t *AgentTrigger) (*AgentTrigger, error) {
 	row := d.QueryRow(`
 INSERT INTO agent_triggers(agent_key, enabled, interval_sec, on_finding, on_goal_met, on_task_timeout, on_tool_call, on_task_create, interval_message, finding_message, goal_message, task_timeout_message, tool_call_message, task_create_message, tool_names)
@@ -74,7 +74,7 @@ VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING `+triggerC
 	return scanTrigger(row)
 }
 
-// UpdateTrigger updates a trigger's fields (not last_fire).
+// UpdateTrigger는 트리거 필드를 고친다. last_fire는 건드리지 않는다.
 func (d *DB) UpdateTrigger(t *AgentTrigger) error {
 	_, err := d.Exec(`UPDATE agent_triggers SET enabled=$2, interval_sec=$3, on_finding=$4, on_goal_met=$5, on_task_timeout=$6, on_tool_call=$7, on_task_create=$8, interval_message=$9, finding_message=$10, goal_message=$11, task_timeout_message=$12, tool_call_message=$13, task_create_message=$14, tool_names=$15 WHERE id=$1`,
 		t.ID, t.Enabled, t.IntervalSec, t.OnFinding, t.OnGoalMet, t.OnTaskTimeout, t.OnToolCall, t.OnTaskCreate,
@@ -82,18 +82,18 @@ func (d *DB) UpdateTrigger(t *AgentTrigger) error {
 	return err
 }
 
-// DeleteTrigger removes a trigger.
+// DeleteTrigger는 트리거를 지운다.
 func (d *DB) DeleteTrigger(id int64) error {
 	_, err := d.Exec(`DELETE FROM agent_triggers WHERE id=$1`, id)
 	return err
 }
 
-// ListTriggersFor returns an agent's triggers.
+// ListTriggersFor는 에이전트의 트리거를 돌려준다.
 func (d *DB) ListTriggersFor(agentKey string) ([]*AgentTrigger, error) {
 	return d.queryTriggers(`SELECT `+triggerCols+` FROM agent_triggers WHERE agent_key=$1 ORDER BY id`, agentKey)
 }
 
-// ListEnabledTriggers returns all enabled triggers (for the scheduler).
+// ListEnabledTriggers는 켜진 트리거를 모두 돌려준다. 스케줄러가 쓴다.
 func (d *DB) ListEnabledTriggers() ([]*AgentTrigger, error) {
 	return d.queryTriggers(`SELECT ` + triggerCols + ` FROM agent_triggers WHERE enabled ORDER BY id`)
 }
@@ -115,19 +115,19 @@ func (d *DB) queryTriggers(q string, args ...any) ([]*AgentTrigger, error) {
 	return out, rows.Err()
 }
 
-// TouchTriggerFire records an interval trigger's fire time (now).
+// TouchTriggerFire는 간격 트리거가 지금 발화했다고 기록한다.
 func (d *DB) TouchTriggerFire(id int64) error {
 	_, err := d.Exec(`UPDATE agent_triggers SET last_fire=now() WHERE id=$1`, id)
 	return err
 }
 
-// DeleteTriggersForAgent removes all triggers of an agent (custom agent delete).
+// DeleteTriggersForAgent는 에이전트의 트리거를 모두 지운다. 사용자 에이전트를 삭제할 때 쓴다.
 func (d *DB) DeleteTriggersForAgent(agentKey string) error {
 	_, err := d.Exec(`DELETE FROM agent_triggers WHERE agent_key=$1`, agentKey)
 	return err
 }
 
-// ---------- scheduler_state (kv watermarks) ----------
+// ---------- scheduler_state (키-값 워터마크) ----------
 
 func (d *DB) GetSchedState(key string) (string, error) {
 	var v string
@@ -144,26 +144,25 @@ ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value`, key, value)
 	return err
 }
 
-// ---------- event queries (cross-exploration, for the scheduler) ----------
+// ---------- 사건 조회 (모든 탐색을 가로질러, 스케줄러용) ----------
 
-// TaskEvent is a finding/goal event carrying the owning task's info, used to
-// compose the trigger message context.
+// TaskEvent는 발견·목표 사건이다. 그 작업의 정보를 담아 트리거 메시지 맥락을 만든다.
 type TaskEvent struct {
 	NodeID     int64  `json:"node_id"`
 	TaskID     int64  `json:"task_id"`
 	TaskDesc   string `json:"task_description"`
 	TaskGoal   string `json:"task_goal"`
-	Summary    string `json:"summary"`     // finding summary / goal text
-	VulnClass  string `json:"vulnclass"`   // finding only
-	Severity   string `json:"severity"`    // finding only
-	Tool       string `json:"tool"`        // tool-call only: tool name
+	Summary    string `json:"summary"`     // 발견 요약 / 목표 글
+	VulnClass  string `json:"vulnclass"`   // 발견만
+	Severity   string `json:"severity"`    // 발견만
+	Tool       string `json:"tool"`        // 도구 호출만: 도구 이름
 	ToolInput  string `json:"tool_input"`  // tool-call only: 입력 인자(JSON 텍스트)
 	ToolOutput string `json:"tool_output"` // tool-call only: 반환 내용
 	ToolIsErr  bool   `json:"tool_is_err"` // tool-call only: 도구 반환이 오류인지 여부
 }
 
-// NewFindingsSince returns findings with node id > lastID across all live tasks,
-// ordered by id (monotonic watermark → no double-fire).
+// NewFindingsSince는 살아있는 모든 작업에서 노드 id가 lastID보다 큰 발견을
+// id 순으로 돌려준다. 워터마크가 단조라 같은 사건이 두 번 발화하지 않는다.
 func (d *DB) NewFindingsSince(lastID int64) ([]TaskEvent, error) {
 	rows, err := d.Query(`
 SELECT n.id, t.id, t.description, t.goal, n.payload
@@ -189,8 +188,8 @@ ORDER BY n.id`, lastID)
 	return out, rows.Err()
 }
 
-// TimedOutTasksSince returns tasks that reached status='timeout' with id > lastID,
-// ordered by id (monotonic watermark → no double-fire across restarts).
+// TimedOutTasksSince는 status가 'timeout'이고 id가 lastID보다 큰 작업을
+// id 순으로 돌려준다. 워터마크가 단조라 재시작 뒤에도 두 번 발화하지 않는다.
 func (d *DB) TimedOutTasksSince(lastID int64) ([]TaskEvent, error) {
 	rows, err := d.Query(`
 SELECT id, description, goal FROM tasks
@@ -206,16 +205,16 @@ ORDER BY id`, lastID)
 		if err := rows.Scan(&e.NodeID, &e.TaskDesc, &e.TaskGoal); err != nil {
 			return nil, err
 		}
-		e.TaskID = e.NodeID // task id doubles as NodeID for the watermark
+		e.TaskID = e.NodeID // 작업 id를 워터마크용 NodeID로 같이 쓴다
 		e.Summary = e.TaskGoal
 		out = append(out, e)
 	}
 	return out, rows.Err()
 }
 
-// NewTasksSince returns tasks created with id > lastID (excluding deleted),
-// ordered by id (monotonic watermark → no double-fire across restarts). Triggered
-// agent runs are conversations, not tasks, so this never fires on its own output.
+// NewTasksSince는 id가 lastID보다 큰, 지워지지 않은 작업을 id 순으로 돌려준다.
+// 워터마크가 단조라 재시작 뒤에도 두 번 발화하지 않는다. 트리거로 깨어난
+// 에이전트 실행은 작업이 아니라 대화라, 자기 출력으로는 다시 발화하지 않는다.
 func (d *DB) NewTasksSince(lastID int64) ([]TaskEvent, error) {
 	rows, err := d.Query(`
 SELECT id, description, goal FROM tasks
@@ -231,19 +230,18 @@ ORDER BY id`, lastID)
 		if err := rows.Scan(&e.NodeID, &e.TaskDesc, &e.TaskGoal); err != nil {
 			return nil, err
 		}
-		e.TaskID = e.NodeID // task id doubles as NodeID for the watermark
+		e.TaskID = e.NodeID // 작업 id를 워터마크용 NodeID로 같이 쓴다
 		e.Summary = e.TaskGoal
 		out = append(out, e)
 	}
 	return out, rows.Err()
 }
 
-// NewToolCallsSince returns completed tool calls (a tool_result row) with activity
-// id > lastID across all live tasks, ordered by id (monotonic watermark → no
-// double-fire). It is driven by tool_result rows (the tool finished, so both input
-// and output are available) and joins back to the paired tool_use row for the input.
-// Only task-execution activity is scanned — triggered agent runs are conversations
-// (conversation_activities), so a tool-call trigger never fires on its own output.
+// NewToolCallsSince는 끝난 도구 호출(tool_result 행) 중 활동 id가 lastID보다 큰 것을
+// 살아있는 모든 작업에서 id 순으로 돌려준다. 워터마크가 단조라 두 번 발화하지 않는다.
+// tool_result가 기준이다. 도구가 끝났으므로 입력과 출력이 모두 있고, 짝인 tool_use에서 입력을 가져온다.
+// 작업 실행 활동만 본다. 트리거로 깨어난 실행은 대화(conversation_activities)라,
+// 도구 호출 트리거가 자기 출력으로 다시 발화하지 않는다.
 func (d *DB) NewToolCallsSince(lastID int64) ([]TaskEvent, error) {
 	rows, err := d.Query(`
 SELECT r.id, t.id, t.description, t.goal, r.tool, COALESCE(u.detail,''), COALESCE(r.detail,''), r.is_error
@@ -267,8 +265,8 @@ ORDER BY r.id`, lastID)
 	return out, rows.Err()
 }
 
-// MetGoals returns all met goals across live tasks (the scheduler filters out the
-// ones it already fired for via the persisted fired-set).
+// MetGoals는 살아있는 작업에서 달성한 목표를 모두 돌려준다.
+// 스케줄러가 이미 발화한 것은 저장된 발화 집합으로 걸러 낸다.
 func (d *DB) MetGoals() ([]TaskEvent, error) {
 	rows, err := d.Query(`
 SELECT n.id, t.id, t.description, t.goal, n.payload

@@ -120,10 +120,10 @@ func (s *Server) pgDeleteTaskCategory(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"deleted": id})
 }
 
-// parseCategoryIDField reads the category_id field shared by the single-task and
-// batch endpoints. The field is required but may be null — that clears the
-// category — so it arrives as RawMessage instead of *int64, which cannot tell
-// an explicit null from an omitted key.
+// parseCategoryIDField는 단일 작업과 일괄 엔드포인트가 같이 쓰는 category_id를 읽습니다.
+// 필드는 필수지만 null일 수 있습니다. null은 분류를 지웁니다.
+// 그래서 *int64가 아니라 RawMessage로 옵니다. *int64는
+// 명시적 null과 뺀 키를 구분하지 못합니다.
 func parseCategoryIDField(w http.ResponseWriter, raw json.RawMessage) (*int64, bool) {
 	if len(raw) == 0 {
 		writeErr(w, http.StatusBadRequest, "category_id 는 필수입니다")
@@ -166,18 +166,18 @@ func (s *Server) updateTaskCategory(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, taskDTO(task, s.resolvedTaskStatus(task)))
 }
 
-// batchCategoryItem reports one requested task. Unlike batch pause/resume there
-// is no per-task runtime outcome, so only the failure reason is carried.
+// batchCategoryItem은 요청한 작업 하나를 보고합니다. 일괄 일시정지/재개와 달리
+// 작업마다의 실행 결과는 없고, 실패 이유만 담습니다.
 type batchCategoryItem struct {
 	ID    string `json:"id"`
 	OK    bool   `json:"ok"`
 	Error string `json:"error,omitempty"`
 }
 
-// updateTasksCategoryBatch moves every selected task into one category, or
-// clears it when category_id is null. The database write is atomic; per-task
-// entries only distinguish ids that never resolved to a live task, so a partial
-// success here means those tasks were deleted, not that the move half-applied.
+// updateTasksCategoryBatch는 고른 작업을 모두 한 분류로 옮기거나,
+// category_id가 null이면 분류를 지웁니다. DB 쓰기는 원자적입니다. 작업별
+// 항목은 살아있는 작업으로 안 풀린 id만 구분합니다. 여기서 일부
+// 성공은 그 작업이 지워졌다는 뜻이지, 옮기기가 반만 적용됐다는 뜻이 아닙니다.
 func (s *Server) updateTasksCategoryBatch(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxTaskCategoryRequestBytes)
 	var request struct {

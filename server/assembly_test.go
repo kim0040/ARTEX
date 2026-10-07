@@ -11,7 +11,7 @@ import (
 	actool "github.com/Autumn-27/norma/tool"
 )
 
-// hasSkillTool reports whether the packed tool set contains the Skill meta-tool.
+// hasSkillTool은 묶인 도구 안에 Skill 메타 도구가 있는지 알려 줍니다.
 func hasSkillTool(tools []actool.CoreTool) bool {
 	for _, t := range tools {
 		if t.Name() == "Skill" {
@@ -21,10 +21,10 @@ func hasSkillTool(tools []actool.CoreTool) bool {
 	return false
 }
 
-// TestAssembleVisibleSkill verifies a filesystem skill made visible to an agent is
-// packed into that agent's tool set (as the single Skill meta-tool) via the wired
-// ToolAugment hook. Skills live on disk under skillDir; visibility is a per-agent
-// (agent × skill_name) row keyed by the skill's directory name.
+// TestAssembleVisibleSkill은, 에이전트에게 보이게 한 디스크 스킬이
+// 그 에이전트 도구에 Skill 메타 도구 하나로 들어가는지 확인합니다. 연결된
+// ToolAugment 훅을 탑니다. 스킬은 skillDir 아래 디스크에 있고, 보임 여부는 에이전트마다
+// (에이전트 × skill_name) 행이며 키는 스킬 디렉터리 이름입니다.
 func TestAssembleVisibleSkill(t *testing.T) {
 	dsn, _, err := db.DSN()
 	if err != nil {
@@ -36,8 +36,8 @@ func TestAssembleVisibleSkill(t *testing.T) {
 	}
 	defer pg.Close()
 
-	// Filesystem skill fixture: <skillDir>/t-assemble/SKILL.md. The directory name
-	// (t-assemble) is the visibility key matched against AgentSkillNames.
+	// 디스크 스킬 예시: <skillDir>/t-assemble/SKILL.md. 디렉터리 이름
+	// (t-assemble)이 AgentSkillNames와 맞추는 보임 키입니다.
 	skillDir := t.TempDir()
 	const skillName = "t-assemble"
 	if err := os.MkdirAll(filepath.Join(skillDir, skillName), 0o755); err != nil {
@@ -56,35 +56,35 @@ func TestAssembleVisibleSkill(t *testing.T) {
 		t.Fatal("planner agent missing")
 	}
 
-	// Isolate this test from whatever skill visibility the planner already has in the
-	// shared DB: clear it now, restore it on cleanup.
+	// 이 테스트를, 공유 DB에 플래너가 이미 가진 스킬 보임과 떼어 둡니다.
+	// 지금 지우고, 끝날 때 되돌립니다.
 	orig, _ := pg.AgentSkillNames(ag.ID)
 	if err := pg.SetAgentSkillVisibility(ag.ID, nil); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = pg.SetAgentSkillVisibility(ag.ID, orig) })
 
-	// before: skill not visible → no Skill meta-tool
+	// 전: 스킬이 안 보이면 Skill 메타 도구도 없습니다.
 	extra, _, cleanup := agent.ToolAugment(context.Background(), "planner")
 	cleanup()
 	if hasSkillTool(extra) {
 		t.Fatalf("expected no Skill meta-tool before the skill is made visible")
 	}
 
-	// make the skill visible to planner
+	// 플래너에게 이 스킬을 보이게 합니다.
 	if err := pg.ToggleSkillVisibility(ag.ID, skillName, true); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = pg.ToggleSkillVisibility(ag.ID, skillName, false) })
 
-	// after: the Skill meta-tool is packed in
+	// 후: Skill 메타 도구가 들어 있습니다.
 	extra, _, cleanup = agent.ToolAugment(context.Background(), "planner")
 	defer cleanup()
 	if !hasSkillTool(extra) {
 		t.Fatalf("expected the Skill meta-tool after making the skill visible")
 	}
 
-	// AugmentTools appends extra to base without filtering base
+	// AugmentTools는 기본 목록을 거르지 않고 extra를 뒤에 붙입니다.
 	combined, _, c2 := agent.AugmentTools(context.Background(), "planner", nil)
 	defer c2()
 	if !hasSkillTool(combined) {

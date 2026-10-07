@@ -124,7 +124,7 @@ export function useSideQuestions(parent: string | null) {
     return () => clearInterval(timer);
   }, [open, parent, load]);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: Reconnect after a clear attempt invalidates older callbacks.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 지우기 시도 뒤 다시 연결하면 이전 콜백은 무효입니다.
   useEffect(() => {
     if (!runningID) return;
     const version = epoch.current;

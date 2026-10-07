@@ -16,7 +16,7 @@ import (
 
 	"github.com/Autumn-27/artex/config"
 	"github.com/jackc/pgx/v5/pgconn"
-	_ "github.com/jackc/pgx/v5/stdlib" // pgx database/sql driver ("pgx")
+	_ "github.com/jackc/pgx/v5/stdlib" // pgx의 database/sql 드라이버("pgx")
 )
 
 //go:embed schema.sql
@@ -53,9 +53,9 @@ func applySchemaWithRetry(ctx context.Context, execer schemaExecer, sleep func(t
 	}
 }
 
-// withSchemaMigrationLock pins the session-level lock to one checked-out
-// connection. Running pg_advisory_lock through *sql.DB is incorrect because a
-// later schema or unlock call may use a different pooled PostgreSQL session.
+// withSchemaMigrationLock은 세션 잠금을 꺼내 둔 연결 하나에 고정한다.
+// *sql.DB로 pg_advisory_lock을 돌리면 안 된다. 나중 스키마나 잠금 해제가
+// 풀의 다른 PostgreSQL 세션을 쓸 수 있다.
 func withSchemaMigrationLock(ctx context.Context, sqlDB *sql.DB, action func(*sql.Conn) error) (err error) {
 	conn, err := sqlDB.Conn(ctx)
 	if err != nil {
@@ -73,9 +73,8 @@ func withSchemaMigrationLock(ctx context.Context, sqlDB *sql.DB, action func(*sq
 	return action(conn)
 }
 
-// coordinateWithSchemaMigration makes long, multi-table archive transactions
-// mutually exclusive with startup DDL while allowing ordinary runtime queries
-// to continue normally.
+// coordinateWithSchemaMigration은 길고 여러 테이블에 걸친 보관 트랜잭션이
+// 시작 DDL과 동시에 돌지 않게 한다. 평범한 실행 중 조회는 그대로 계속된다.
 func coordinateWithSchemaMigration(tx *sql.Tx) error {
 	if _, err := tx.Exec(`SELECT pg_advisory_xact_lock($1)`, schemaMigrationLockKey); err != nil {
 		return fmt.Errorf("coordinate with schema migration: %w", err)
@@ -83,34 +82,34 @@ func coordinateWithSchemaMigration(tx *sql.Tx) error {
 	return nil
 }
 
-// DSN resolves the PostgreSQL connection string and reports where it came from.
-// Precedence: env ARTEX_PG_DSN > config file (config.json). There is no
-// built-in default — it errors if neither source is configured.
+// DSN은 PostgreSQL 연결 문자열을 찾고, 어디서 왔는지도 알려 준다.
+// 우선순위: 환경 변수 ARTEX_PG_DSN > 설정 파일(config.json). 내장 기본값은 없다.
+// 둘 다 없으면 오류다.
 func DSN() (dsn, source string, err error) {
 	return config.PostgresDSN()
 }
 
-// DB wraps the shared *sql.DB. PG handles its own connection pool + concurrency
-// (MVCC), so unlike the old SQLite store there is no process-wide write mutex.
+// DB는 공유 *sql.DB를 감싼다. PG가 연결 풀과 동시성(MVCC)을 스스로 다루므로,
+// 예전 SQLite 저장소와 달리 프로세스 전체 쓰기 잠금이 없다.
 type DB struct{ *sql.DB }
 
-// ensureDatabase connects to the postgres system database and creates the target
-// database if it does not exist. dsn must be a postgres:// URL.
+// ensureDatabase는 postgres 시스템 데이터베이스에 연결하고, 대상
+// 데이터베이스가 없으면 만든다. dsn은 postgres:// URL이어야 한다.
 func ensureDatabase(dsn string) error {
 	u, err := url.Parse(dsn)
 	if err != nil {
-		return nil // unparseable DSN — let the normal Open fail with a clear error
+		return nil // 해석할 수 없는 DSN. 일반 Open이 분명한 오류로 실패하게 둔다
 	}
 	dbName := strings.TrimPrefix(u.Path, "/")
 	if dbName == "" || dbName == "postgres" {
 		return nil
 	}
-	// connect to the postgres maintenance database instead
+	// 대신 postgres 유지보수 데이터베이스에 연결한다
 	adminDSN := *u
 	adminDSN.Path = "/postgres"
 	admin, err := sql.Open("pgx", adminDSN.String())
 	if err != nil {
-		return nil // best-effort; let Open surface the real error
+		return nil // 최선을 다할 뿐. 진짜 오류는 Open이 보여 주게 둔다
 	}
 	defer admin.Close()
 	if err := admin.Ping(); err != nil {
@@ -126,7 +125,7 @@ func ensureDatabase(dsn string) error {
 	return nil
 }
 
-// Open connects, applies the schema (idempotent), and seeds builtin rows.
+// Open은 연결하고, 스키마를 적용하고(반복 실행 가능), 내장 행을 심는다.
 func Open(dsn string) (*DB, error) {
 	if err := ensureDatabase(dsn); err != nil {
 		return nil, err
@@ -140,9 +139,9 @@ func Open(dsn string) (*DB, error) {
 		return nil, fmt.Errorf("ping postgres (%s): %w", config.Redact(dsn), err)
 	}
 	d := &DB{sqlDB}
-	// pgx runs multi-statement Exec via the simple protocol when there are no args.
-	// Keep the dedicated lock connection checked out until both DDL and seeding
-	// finish so concurrent application instances cannot initialize out of order.
+	// pgx는 인자가 없으면 단순 프로토콜로 여러 문 Exec를 돌린다.
+	// DDL과 심기가 끝날 때까지 전용 잠금 연결을 꺼내 둔다.
+	// 그래야 동시에 뜨는 인스턴스가 순서를 어기고 초기화하지 못한다.
 	err = withSchemaMigrationLock(context.Background(), sqlDB, func(conn *sql.Conn) error {
 		if err := applySchemaWithRetry(context.Background(), conn, time.Sleep); err != nil {
 			return fmt.Errorf("apply schema: %w", err)
@@ -159,7 +158,7 @@ func Open(dsn string) (*DB, error) {
 	return d, nil
 }
 
-// builtinAgent describes one of the fixed agents and its prompt-variable catalog.
+// builtinAgent는 고정 에이전트 하나와 그 프롬프트 변수 목록을 설명한다.
 type builtinAgent struct {
 	key, name, role, desc string
 	vars                  []promptVar
@@ -201,7 +200,7 @@ var builtinAgents = []builtinAgent{
 	{"pentest", "독립 점검", "assistant", "독립 에이전트. 한 명이 계획하고, 실행하고, 결과를 확인한다.", nil, true, intp(0)},
 }
 
-// seedBuiltins inserts the fixed built-in agents and their variable catalog (idempotent).
+// seedBuiltins는 고정 내장 에이전트와 변수 목록을 넣는다. 반복 실행해도 된다.
 func (d *DB) seedBuiltins() error {
 	for _, a := range builtinAgents {
 		var agentID int64
@@ -224,16 +223,16 @@ ON CONFLICT (agent_id, var_name) DO UPDATE
 			}
 		}
 	}
-	// Drop catalog entries for variables that were renamed, so the white-list no
-	// longer advertises a name templates can't resolve (EngagementTitle→Description).
+	// 이름이 바뀐 변수의 카탈로그 항목을 지운다. 화이트리스트가
+	// 템플릿이 풀 수 없는 이름을 더 알리지 않게 한다(EngagementTitle→Description).
 	// 'Now'를 각 에이전트 목록에서 전역 runtime 변수로 올린 뒤에도, 옛 저장소의 goals에는
 	// 'Now'가 남아 전역 항목과 이름이 부딪힌다(프론트 변수 목록 key 중복). 같이 지운다.
 	if _, err := d.Exec(`DELETE FROM agent_prompt_vars WHERE var_name IN ('EngagementTitle', 'CoverageGaps', 'Now')`); err != nil {
 		return fmt.Errorf("cleanup renamed vars: %w", err)
 	}
-	// Default-on interactive_shell for the runtime agents (planner/worker/mainagent/auto)
-	// ONCE — respects a later user toggle-off (guarded by a settings flag). goals(one-shot
-	// decomposer) stays off. Runs after the column exists (schema applied before seed).
+	// 실행 에이전트(플래너/워커/메인 에이전트/auto)의 interactive_shell을 한 번만 기본으로 켠다.
+	// 나중에 사용자가 끄면 그 선택을 존중한다(설정 플래그가 지킨다). goals(한 번 도는
+	// 분해기)는 꺼 둔다. 열이 생긴 뒤에 돈다(심기 전에 스키마를 적용한다).
 	if v, _, _ := d.GetSetting("interactive_shell_default_v1"); v != "true" {
 		if _, err := d.Exec(`UPDATE agents SET interactive_shell=true WHERE key IN ('planner','worker','mainagent','auto')`); err != nil {
 			return fmt.Errorf("seed interactive_shell defaults: %w", err)
@@ -242,9 +241,9 @@ ON CONFLICT (agent_id, var_name) DO UPDATE
 	}
 	// 내장 브라우저(Playwright) MCP는 한 번만 심고, 기본은 꺼 둔다(필요할 때 사용자가 켠다).
 	// 프록시도 기본은 없다. 트래픽 캡처 토글이 실행 중에 기록 프록시와 CA를 넣거나 뺀다
-	// the recording proxy + CA at runtime (server.Manager.syncBrowserMCPProxy).
-	// Insert only if absent so we never clobber user edits (args/env/enabled/
-	// visibility) on restart.
+	// 실행 중에 기록 프록시와 CA를 넣거나 뺀다(server.Manager.syncBrowserMCPProxy).
+	// 없을 때만 넣는다. 재시작할 때 사람이 고친 값(args/env/enabled/
+	// 가시성)을 덮지 않으려는 것이다.
 	if _, err := d.Exec(`
 INSERT INTO mcp_servers(name, transport, command, args, env, enabled)
 VALUES ('browser', 'stdio', 'npx', $1, '{}', false)
@@ -252,9 +251,9 @@ ON CONFLICT (name) DO NOTHING`,
 		`["@playwright/mcp","--headless"]`); err != nil {
 		return fmt.Errorf("seed browser mcp: %w", err)
 	}
-	// NOTE: the placeholder ScopeSentry data-source MCP (empty URL + empty X-API-Key,
-	// disabled) is seeded directly in schema.sql §F so a raw `psql < schema.sql` init
-	// also gets it. schema.sql is Exec'd on every startup, so it stays idempotent.
+	// 참고: 자리표시용 ScopeSentry 데이터 원본 MCP(빈 URL + 빈 X-API-Key,
+	// 꺼짐)는 schema.sql §F에서 직접 심는다. 그래서 `psql < schema.sql`만으로 초기화해도 생긴다.
+	// schema.sql은 시작마다 Exec되므로 반복 실행해도 된다.
 	if err := d.seedBuiltinSkillVisibility(); err != nil {
 		return fmt.Errorf("seed skill visibility: %w", err)
 	}
@@ -273,10 +272,9 @@ ON CONFLICT (name) DO NOTHING`,
 	return nil
 }
 
-// seedDefaultAssetInterceptRules inserts the built-in asset blocklist (fuzzy
-// domain matches for government / education sites) once on first startup. Gated
-// by a settings flag so a user's later disable/delete is never resurrected on
-// restart — same policy as the intercept-rule seed.
+// seedDefaultAssetInterceptRules는 내장 자산 가로채기 목록(정부·교육 사이트의
+// 비슷한 도메인 맞춤)을 첫 시작 때 한 번 넣는다. 설정 플래그로 막아,
+// 사용자가 나중에 끄거나 지운 것이 재시작 때 되살아나지 않게 한다. 가로채기 규칙 심기와 같은 정책이다.
 func (d *DB) seedDefaultAssetInterceptRules() error {
 	if v, _, _ := d.GetSetting("asset_intercept_default_rules_v1"); v == "done" {
 		return nil
@@ -302,20 +300,18 @@ ON CONFLICT DO NOTHING`, r.kind, r.pattern, r.note); err != nil {
 	return d.SetSetting("asset_intercept_default_rules_v1", "done")
 }
 
-// builtinSkillVisibility maps a shipped skill's directory name → the built-in
-// agent keys that should see it by default. The skill FILES themselves live on the
-// filesystem (SkillDir, loaded by norma at runtime); DB only carries this visibility
-// binding. Skills omitted here (e.g. playwright-cli, scopesentry) ship invisible by
-// default — the user turns them on per-agent when needed. scopesentry additionally
-// declares `mcps: ScopeSentry`, which only takes effect once it's made visible and
-// that MCP is enabled/configured.
+// builtinSkillVisibility는 함께 배포된 스킬 디렉터리 이름 → 기본으로 그것을 볼
+// 내장 에이전트 키다. 스킬 파일 자체는 파일 시스템(SkillDir, 실행 때 norma가 읽음)에 있고,
+// DB는 이 보임 연결만 담는다. 여기에 없는 스킬(예: playwright-cli, scopesentry)은
+// 기본으로 보이지 않는다. 필요할 때 사용자가 에이전트마다 켠다. scopesentry는 추가로
+// `mcps: ScopeSentry`를 선언하는데, 보이게 하고 그 MCP를 켜고 설정한 뒤에만 효과가 있다.
 var builtinSkillVisibility = map[string][]string{
 	"api-recon": {"auto", "pentest", "worker"},
 }
 
-// seedBuiltinSkillVisibility binds the shipped built-in skills to their default
-// agents. Insert-if-absent (ON CONFLICT DO NOTHING) so a user's later toggle-off is
-// never resurrected on restart — matches the browser-MCP / intercept-rule seed policy.
+// seedBuiltinSkillVisibility는 함께 배포된 내장 스킬을 기본 에이전트에 묶는다.
+// 없을 때만 넣는다(ON CONFLICT DO NOTHING). 사용자가 나중에 끈 것이
+// 재시작 때 되살아나지 않는다. 브라우저 MCP·가로채기 규칙 심기와 같은 정책이다.
 func (d *DB) seedBuiltinSkillVisibility() error {
 	for skillName, agentKeys := range builtinSkillVisibility {
 		for _, key := range agentKeys {
@@ -330,17 +326,17 @@ ON CONFLICT (agent_id, skill_name) DO NOTHING`, key, skillName); err != nil {
 	return nil
 }
 
-// seedDefaultInterceptRules inserts built-in safety intercept rules once on
-// first startup. The seed is gated by a settings flag so user edits (disable,
-// delete, re-order) are never overwritten on subsequent restarts.
+// seedDefaultInterceptRules는 내장 안전 가로채기 규칙을 첫 시작 때 한 번 넣는다.
+// 설정 플래그로 막아, 사용자가 끄거나 지우거나 순서를 바꾼 것이
+// 이후 재시작 때 덮어쓰이지 않게 한다.
 func (d *DB) seedDefaultInterceptRules() error {
 	if v, _, _ := d.GetSetting("intercept_default_rules_v1"); v == "done" {
 		return nil
 	}
 	type rule struct {
 		name     string
-		target   string // tool_name | tool_input
-		typ      string // string | regex
+		target   string // tool_name(도구 이름) | tool_input(도구 입력)
+		typ      string // string(문자열) | regex(정규식)
 		pattern  string
 		action   string
 		message  string
@@ -521,13 +517,13 @@ ON CONFLICT DO NOTHING`,
 	return d.SetSetting("intercept_default_rules_v1", "done")
 }
 
-// seedDefaultInterceptRulesV2 migrates the two safety patterns that used to be
-// hard-coded in guard.go (destructive shell + data-exfil pipe) into ordinary
-// intercept rules. Gated by its own flag so it also lands on DBs that already ran
-// v1. Unlike the old guard.go floor, these are plain [내장] rules — the user can
-// disable or delete them. The exfil rule ships DISABLED by default (its
-// curl/wget/nc pipe pattern mis-fires on legitimate CTF/pentest reverse-shell and
-// data-transfer pipes); enable it manually when exfil gating is actually wanted.
+// seedDefaultInterceptRulesV2는 예전에
+// guard.go에 박혀 있던 두 안전 패턴(파괴적 셸과 데이터 반출 파이프)을 일반
+// 가로채기 규칙으로 옮긴다. 자기 플래그로 막아, v1을 이미 돌린 DB에도
+// 들어간다. 예전 guard.go 바닥과 달리 평범한 [내장] 규칙이라 사용자가
+// 끄거나 지울 수 있다. 반출 규칙은 기본이 꺼져 있다(그
+// curl/wget/nc 파이프 패턴은 정당한 역방향 셸과
+// 데이터 전송 파이프에도 잘못 맞는다). 반출 차단이 필요할 때만 직접 켠다.
 func (d *DB) seedDefaultInterceptRulesV2() error {
 	if v, _, _ := d.GetSetting("intercept_default_rules_v2"); v == "done" {
 		return nil
@@ -570,20 +566,20 @@ ON CONFLICT DO NOTHING`,
 	return d.SetSetting("intercept_default_rules_v2", "done")
 }
 
-// seedDefaultInterceptRulesV3 adds the delete-endpoint path rule. The v1 HTTP rules
-// only catch the DELETE *method* (curl -X DELETE, requests.delete(, method:'DELETE'),
-// and v1's path rule covers only /clear /wipe /flush /purge /truncate /drop /destroy
-// /factory-reset /reset-all — so a plain `curl 'http://t/api/user/delete?id=1'` (a
-// delete endpoint reached with GET/POST, which is how most web apps expose deletion)
-// slipped through every built-in rule. Own flag so it also lands on DBs that already
-// ran v1/v2, where editing the v1 seed would have no effect.
+// seedDefaultInterceptRulesV3는 삭제 endpoint 경로 규칙을 더한다. v1 HTTP 규칙은
+// DELETE *메서드*만 잡는다(curl -X DELETE, requests.delete(, method:'DELETE').
+// v1 경로 규칙은 /clear /wipe /flush /purge /truncate /drop /destroy
+// /factory-reset /reset-all만 덮는다. 그래서 `curl 'http://t/api/user/delete?id=1'`처럼
+// GET/POST로 닿는 삭제 endpoint(대부분의 웹 앱이 삭제를 이렇게 연다)는
+// 내장 규칙을 모두 빠져나갔다. 별도 플래그를 둬, v1/v2를 이미 돌린 DB에도 들어간다.
+// v1 심기를 고쳐도 그 DB에는 효과가 없기 때문이다.
 //
-// The pattern deliberately requires a separator after the verb so /delivery,
-// /details, /delta and /delegate do not match, while /deleteAll, /delete_user and
-// /delete-user do. destroy is re-covered here because v1's rule does not allow a
-// suffix (/destroyAll was missed).
+// 패턴은 동사 뒤에 구분자가 있게 일부러 만들었다. /delivery,
+// /details, /delta, /delegate는 맞지 않고, /deleteAll, /delete_user,
+// /delete-user는 맞는다. destroy를 여기서 다시 덮는 이유는 v1 규칙이
+// 접미를 허용하지 않아서다(/destroyAll을 놓쳤다).
 //
-// Exported as a package const only so the seeded regex is unit-testable without a DB.
+// 패키지 상수로 내보내는 이유는, DB 없이 심긴 정규식을 단위 테스트하기 위해서다.
 const deleteEndpointPathPattern = `(?i)/(?:(?:delete|remove|unlink|erase|destroy)[-\w]*|del)(?:[/?#"'\s]|$)`
 
 func (d *DB) seedDefaultInterceptRulesV3() error {

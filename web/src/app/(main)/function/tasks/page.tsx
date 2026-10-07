@@ -136,20 +136,20 @@ import type {
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-// fmtBytes renders a human file size for the upload manifest.
+// fmtBytes는 업로드 목록의 파일 크기를 사람이 읽기 쉽게 그립니다.
 function fmtBytes(n: number): string {
   if (n >= 1 << 20) return `${(n / (1 << 20)).toFixed(1)} MB`;
   if (n >= 1 << 10) return `${(n / (1 << 10)).toFixed(1)} KB`;
   return `${n} B`;
 }
 
-// UPLOAD_MARKER labels the auto-appended block of uploaded-file paths inside the task
-// description, so re-uploads append under the same block instead of adding a new header.
+// UPLOAD_MARKER는 작업 설명 안에 자동으로 붙는 업로드 파일 경로 블록의 표식입니다.
+// 다시 올리면 새 머리를 만들지 않고 같은 블록 아래에 덧붙입니다.
 const UPLOAD_MARKER = "【파일 업로드(절대 경로)】";
 
-// appendUploads folds newly-uploaded files' ABSOLUTE paths into the description as a
-// Read/Bash-friendly manifest — the worker opens them by path. Keeps one marked block:
-// first upload adds the header, later uploads append bullets under it.
+// appendUploads는 새로 올린 파일의 절대 경로를 설명에
+// Read/Bash가 읽기 쉬운 목록으로 접습니다. 워커는 경로로 파일을 엽니다. 표식 블록은 하나:
+// 첫 업로드가 머리를 넣고, 이후 업로드는 그 아래 항목을 덧붙입니다.
 function appendUploads(desc: string, atts: ChatAttachment[]): string {
   const bullets = atts.map((a) => `- ${a.abs ?? a.path}（${fmtBytes(a.size)}）`).join("\n");
   if (desc.includes(UPLOAD_MARKER)) {
@@ -159,19 +159,19 @@ function appendUploads(desc: string, atts: ChatAttachment[]): string {
   return `${head}${UPLOAD_MARKER} 워커는 Read/Bash로 경로를 열어 볼 수 있습니다:\n${bullets}\n`;
 }
 
-// POLL_MS is the task-list refresh interval. Task state moves on the server (planner /
+// POLL_MS는 작업 목록을 다시 읽는 간격입니다. 작업 상태는 서버에서 움직입니다(플래너 /
 // worker). 그래서 목록을 끌어와야 합니다. 10초면 상태 / 진행 / token 변화에 충분합니다.
 const POLL_MS = 10_000;
 const MAX_SOURCE_TASKS = 8;
 
-// fmtTokens renders a compact token count (1234 → 1.2k, 2_000_000 → 2M).
+// fmtTokens는 토큰 수를 짧게 그립니다(1234 → 1.2k, 2_000_000 → 2M).
 function fmtTokens(n: number): string {
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(n >= 10_000_000 ? 0 : 1) + "M";
   if (n >= 1000) return (n / 1000).toFixed(n >= 10000 ? 0 : 1) + "k";
   return String(n);
 }
 
-// fmtDuration renders a run duration in seconds as a compact human string.
+// fmtDuration은 실행 초를 짧은 말로 그립니다.
 function fmtDuration(sec: number): string {
   if (sec <= 0) return "—";
   const d = Math.floor(sec / 86400);
@@ -184,9 +184,9 @@ function fmtDuration(sec: number): string {
   return `${s}s`;
 }
 
-// taskDuration is the task's run duration in seconds: created → now while running,
-// created → completion for a finished task, else created → last activity. 0 when it
-// never ran (no activity yet).
+// taskDuration은 작업 실행 초입니다. 실행 중이면 만듦→지금,
+// 끝났으면 만듦→완료, 아니면 만듦→마지막 활동. 한 번도
+// 안 돌았으면(활동 없음) 0입니다.
 function taskDuration(task: Task, nowSec: number): number {
   const start = task.created_unix ?? 0;
   if (!start) return 0;
@@ -199,8 +199,8 @@ function taskDuration(task: Task, nowSec: number): number {
   return end > start ? end - start : 0;
 }
 
-// deleteDetails takes only the countable part of the result so callers can pass an
-// aggregate accumulated over a bulk delete.
+// deleteDetails는 결과에서 셀 수 있는 부분만 받아, 호출하는 쪽이
+// 여러 삭제를 모은 합계를 넘길 수 있게 합니다.
 type DeleteCounts = Omit<DeleteTaskResult, "deleted" | "cleanup_warning">;
 
 function deleteDetails(result: DeleteCounts): string[] {
@@ -219,8 +219,8 @@ function deleteSummary(result: DeleteTaskResult): string {
   return details.length > 0 ? `작업이 삭제됨(${details.join("，")}）` : "작업을 삭제했습니다";
 }
 
-// fmtDateTime renders a unix-seconds timestamp as a compact local date-time
-// (MM-DD HH:mm), or "—" when unset.
+// fmtDateTime은 유닉스 초를 짧은 로컬 날짜-시간으로 그립니다
+// (MM-DD HH:mm). 없으면 "—"입니다.
 function fmtDateTime(unix?: number): string {
   if (!unix || unix <= 0) return "—";
   const d = new Date(unix * 1000);
@@ -339,7 +339,7 @@ export default function TasksPage() {
           setCategoryFilter(parsed.category);
         }
       } catch {
-        // Ignore malformed or legacy preferences and retain the defaults.
+        // 깨졌거나 예전 형식의 설정은 무시하고 기본값을 유지합니다.
       }
     }
     setFiltersHydrated(true);
@@ -390,8 +390,8 @@ export default function TasksPage() {
     [setSortPreference],
   );
 
-  // reset to page 1 whenever filters or ordering change
-  // biome-ignore lint/correctness/useExhaustiveDependencies: both filters intentionally reset pagination.
+  // 필터나 정렬이 바뀌면 1페이지로 되돌립니다
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 두 필터가 바뀌면 페이지를 일부러 처음으로 되돌립니다.
   React.useEffect(() => {
     setPage(1);
   }, [query, statusFilter, categoryFilter, sortField, sortDirection]);
@@ -448,9 +448,9 @@ export default function TasksPage() {
     [pageIds],
   );
 
-  // lastRef holds the previous poll's serialized payload: the list is re-fetched every
-  // POLL_MS but usually comes back unchanged, and setTasks on an identical payload would
-  // re-render the whole page for nothing. Bail out when it matches.
+  // lastRef는 이전 주기 조회의 직렬화 값입니다. 목록은 POLL_MS마다
+  // 다시 읽지만 대개 그대로이고, 같은 값으로 setTasks를 하면
+  // 페이지 전체가 괜히 다시 그려집니다. 같으면 건너뜁니다.
   const lastRef = React.useRef<string>("");
 
   const load = React.useCallback(() => {
@@ -464,7 +464,7 @@ export default function TasksPage() {
         setTasks(next);
       })
       .catch(() => {
-        // Polling is best-effort; the next interval retries automatically.
+        // 주기 조회는 최선을 다할 뿐이고, 다음 주기에 다시 시도합니다.
       });
   }, []);
 
@@ -476,7 +476,7 @@ export default function TasksPage() {
         setCategoriesLoaded(true);
       })
       .catch(() => {
-        // Category management remains retryable without blocking the task list.
+        // 분류 관리는 작업 목록을 막지 않고 다시 시도할 수 있습니다.
       });
   }, []);
 
@@ -1083,7 +1083,7 @@ function ConcurrencySettingsDialog() {
         setLimit(String(settings.task_concurrency_limit ?? 5));
       })
       .catch(() => {
-        // Keep the dialog usable with defaults; reopening retries the request.
+        // 대화창은 기본값으로 쓸 수 있게 두고, 다시 열면 요청을 재시도합니다.
       })
       .finally(() => setLoading(false));
   }, [open]);
@@ -1153,9 +1153,9 @@ function ConcurrencySettingsDialog() {
 }
 
 // TaskRow는 작업 표의 한 행을 그립니다. 초마다 도는 실행 시간 tick과
-// the POLL_MS list refresh only re-render the rows whose data actually moved — a table page
-// is 20 rows × (StatusBadge + Link + a Radix AlertDialog tree), far too heavy to rebuild
-// wholesale on every parent render.
+// POLL_MS 목록 갱신은 데이터가 실제로 변한 줄만 다시 그리게 합니다. 표 한 페이지는
+// 20줄 × (StatusBadge + 링크 + Radix AlertDialog 나무)라, 부모 렌더마다
+// 통째로 다시 만들기엔 너무 무겁습니다.
 const TaskRow = React.memo(function TaskRow({
   task,
   nowSec,
@@ -2028,8 +2028,8 @@ const deleteOptionKeys: (keyof DeleteTaskOptions)[] = [
 ];
 
 // DeleteOptionFields는 「연결된 데이터도 정리」 체크 상자 블록을 그립니다. 이것을 함께 쓰는 쪽은
-// single-task and bulk delete dialogs. idPrefix keeps the label/input ids unique when
-// several dialogs live in the same table.
+// 작업 하나 삭제와 여러 삭제 대화. idPrefix로 같은 표에
+// 대화가 여러 개여도 라벨/입력 id가 겹치지 않게 합니다.
 function DeleteOptionFields({
   idPrefix,
   options,
@@ -2210,12 +2210,12 @@ function DeleteTaskDialog({
   );
 }
 
-// BulkDeleteTasksDialog deletes every checked task with one shared set of cleanup options.
-// The backend has no batch endpoint, so deletion runs one task at a time (see deleteTasks)
-// and the button shows live progress.
-// MoveTasksCategoryDialog confirms a target before applying, so a mis-click on a
-// large selection cannot silently re-file every task. UNCATEGORIZED_VALUE stands
-// in for "no category" because Select rejects an empty string value.
+// BulkDeleteTasksDialog는 체크한 작업을 같은 정리 옵션으로 모두 지웁니다.
+// 백엔드에 일괄 주소가 없어, 작업을 하나씩 지웁니다(deleteTasks).
+// 버튼은 진행을 실시간으로 보여 줍니다.
+// MoveTasksCategoryDialog는 적용 전에 대상을 확인해서, 많은 선택에서
+// 잘못 눌러도 모든 작업의 분류가 조용히 바뀌지 않게 합니다. UNCATEGORIZED_VALUE는
+// "분류 없음"을 대신합니다. Select는 빈 문자열 값을 거절합니다.
 function MoveTasksCategoryDialog({
   categories,
   count,
@@ -2364,8 +2364,8 @@ function BulkDeleteTasksDialog({
 
 // CreateTaskSheet는 작업 만들기 서랍입니다. 폼 상태는 TasksPage가 아니라 여기에 있습니다. 함께
 // 페이지 컴포넌트가 가진 설명/목표를 키를 누를 때마다 작업 표 전체가 다시 그려졌습니다
-// behind the drawer (plus its sticky column and 20 AlertDialog trees), which showed up as
-// input lag. Now typing only re-renders the drawer.
+// 서랍 뒤의 표(고정 열과 AlertDialog 20개)까지 다시 그려져
+// 입력이 버벅였습니다. 이제는 칠 때 서랍만 다시 그립니다.
 function SourceTaskPicker({
   tasks,
   value,
@@ -3095,7 +3095,7 @@ function CreateTaskSheet({
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const sheetContentRef = React.useRef<HTMLDivElement>(null);
 
-  // load LLM profiles once for the create-task profile picker.
+  // 작업 만들기의 프로필 고르기를 위해 LLM 프로필을 한 번 불러옵니다.
   React.useEffect(() => {
     api
       .llmProfiles()
@@ -3107,8 +3107,8 @@ function CreateTaskSheet({
       .catch(() => setCompanies([]));
   }, []);
 
-  // pickFiles uploads the chosen files into this draft's staging dir and appends their
-  // absolute paths to the description; the task's agents open them by path via Read/Bash.
+  // pickFiles는 고른 파일을 이 초안의 임시 폴더에 올리고, 그
+  // 절대 경로를 설명에 붙입니다. 작업의 에이전트는 Read/Bash로 경로를 엽니다.
   async function pickFiles(files: FileList | null) {
     if (!files || files.length === 0) return;
     // crypto.randomUUID는 보안 맥락에서만 쓸 수 있습니다(https/localhost). IP+http로 접속하면 한 단계 내립니다.
@@ -3125,7 +3125,7 @@ function CreateTaskSheet({
       toast.error("업로드 실패:" + (e as Error).message);
     } finally {
       setUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = ""; // allow re-picking the same file
+      if (fileInputRef.current) fileInputRef.current.value = ""; // 같은 파일을 다시 고를 수 있게 비웁니다
     }
   }
 

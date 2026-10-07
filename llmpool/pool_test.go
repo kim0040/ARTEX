@@ -12,18 +12,17 @@ import (
 	"github.com/Autumn-27/norma/llm"
 )
 
-// fakeProv is a scripted provider: script[i] is what the i-th call yields —
-// some events, then optionally an error.
+// fakeProv 는 대본이 있는 provider 입니다. script[i] 가 i 번째 호출의 결과입니다.
+// 이벤트 몇 개, 그다음 선택적으로 오류입니다.
 type fakeProv struct {
 	name   string
 	calls  int
-	events [][]llm.StreamEvent // events emitted before the error, per call
-	errs   []error             // error to end each call with (nil = clean finish)
+	events [][]llm.StreamEvent // 오류 전에 내는 이벤트. 호출마다
+	errs   []error             // 호출을 끝내는 오류. nil 이면 정상 종료
 }
 
-// at returns script entry n, repeating the last one once the script runs out, so
-// a provider defined as "always succeeds" / "always 402" keeps behaving that way
-// across repeated calls.
+// at 은 대본의 n 번째를 돌려줍니다. 대본이 끝나면 마지막 항목을 반복해서,
+// "항상 성공" / "항상 402" 로 정의한 provider 가 반복 호출에서도 그대로입니다.
 func at[T any](s []T, n int) (T, bool) {
 	var zero T
 	if len(s) == 0 {
@@ -66,12 +65,12 @@ func (f *fakeProv) Complete(ctx context.Context, req llm.CompletionRequest) (llm
 	return acc.Message(), acc.StopReason, acc.Usage, nil
 }
 
-// ok builds a provider that always succeeds with one text delta.
+// okProv 는 텍스트 델타 하나로 항상 성공하는 provider 를 만듭니다.
 func okProv(name, text string) *fakeProv {
 	return &fakeProv{name: name, events: [][]llm.StreamEvent{{{Type: llm.SETextDelta, Text: text}}}}
 }
 
-// failProv builds a provider that fails immediately (before any event) with status.
+// failProv 는 이벤트를 내기 전에 바로 실패하는 provider 를 만듭니다. status 는 HTTP 상태입니다.
 func failProv(name string, status int) *fakeProv {
 	return &fakeProv{name: name, errs: []error{fmt.Errorf("anthropic: status %d: nope", status)}}
 }
@@ -80,7 +79,7 @@ func member(id int64, name string, rank int, p llm.Provider) *Member {
 	return &Member{ID: id, Name: name, Model: "m" + name, Rank: rank, Prov: p}
 }
 
-// drain consumes a stream, returning the concatenated text and terminal error.
+// drain 은 스트림을 끝까지 읽고, 이어 붙인 글과 끝 오류를 돌려줍니다.
 func drain(seq iter.Seq2[llm.StreamEvent, error]) (string, error) {
 	var sb strings.Builder
 	for ev, err := range seq {
@@ -110,8 +109,8 @@ func TestFailoverOnNoCredit(t *testing.T) {
 	}
 }
 
-// A 402 is deterministic: one failure must open the breaker, so the NEXT request
-// skips that profile entirely instead of paying for another round-trip.
+// 402 는 결정적입니다. 실패 한 번이면 차단기가 열려, 다음 요청은 그 설정을
+// 통째로 건너뜁니다. 왕복을 한 번 더 내지 않습니다.
 func TestHardFailureTripsBreakerImmediately(t *testing.T) {
 	a, b := failProv("a", 402), okProv("b", "x")
 	reg := NewRegistry(nil, nil)
@@ -130,8 +129,8 @@ func TestHardFailureTripsBreakerImmediately(t *testing.T) {
 	}
 }
 
-// 429 is transient: the SDK already retried, but we shouldn't write a profile off
-// until it fails repeatedly.
+// 429 는 일시적입니다. SDK 가 이미 재시도했지만, 여러 번 실패하기 전에는
+// 설정을 버리듯 기록하지 않습니다.
 func TestSoftFailureNeedsRepeats(t *testing.T) {
 	reg := NewRegistry(nil, nil)
 	for i := 1; i < softTripAfter; i++ {
@@ -147,8 +146,8 @@ func TestSoftFailureNeedsRepeats(t *testing.T) {
 	}
 }
 
-// A success must fully clear the counters, so an intermittent profile never
-// accumulates its way to a trip.
+// 성공은 카운터를 완전히 지워야 합니다. 가끔 실패하는 설정이 쌓여 트립까지
+// 가지 않게 합니다.
 func TestPassResetsCounters(t *testing.T) {
 	reg := NewRegistry(nil, nil)
 	reg.Trip(1, "429", false)
@@ -171,8 +170,8 @@ func TestBackoffLadderGrows(t *testing.T) {
 		reg.Restore(1, st)
 		reg.Trip(1, "402", true)
 		d := time.Until(reg.Get(1).OpenUntil)
-		// Non-decreasing, with a second of slack: the ladder plateaus at its last
-		// rung, and each Trip stamps its own time.Now().
+		// 줄어들지 않아야 합니다. 1초 여유: 사다리는 마지막 칸에서 멈추고,
+		// Trip 마다 자기 time.Now() 를 찍습니다.
 		if i > 0 && d < prev-time.Second {
 			t.Fatalf("trip #%d cools for %v, shorter than the previous %v", i+1, d, prev)
 		}
@@ -183,8 +182,8 @@ func TestBackoffLadderGrows(t *testing.T) {
 	}
 }
 
-// The safety rule: once output has reached the caller, a mid-stream failure must
-// NOT be retried on another model — that would duplicate the assistant turn.
+// 안전 규칙: 출력이 호출자에게 도달한 뒤의 스트림 중간 실패는 다른 모델로
+// 다시 시도하면 안 됩니다. 어시스턴트 턴이 두 번 쌓입니다.
 func TestNoFailoverAfterEmit(t *testing.T) {
 	a := &fakeProv{
 		name:   "a",
@@ -206,8 +205,7 @@ func TestNoFailoverAfterEmit(t *testing.T) {
 	}
 }
 
-// Cancelling a task must not burn a backup key, and must not be diagnosed as an
-// LLM fault.
+// 작업을 취소해도 예비 키를 태우면 안 되고, LLM 고장으로 진단하면 안 됩니다.
 func TestNoFailoverOnCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -233,7 +231,7 @@ func TestShouldFailoverByStatus(t *testing.T) {
 		status int
 		want   bool
 	}{
-		{400, false}, // bad/over-long request fails identically everywhere
+		{400, false}, // 나쁘거나 너무 긴 요청은 어디서나 같음
 		{401, true}, {402, true}, {403, true}, {404, true},
 		{408, true}, {429, true}, {500, true}, {503, true},
 		{200, false},
@@ -244,7 +242,7 @@ func TestShouldFailoverByStatus(t *testing.T) {
 			t.Errorf("status %d: shouldFailover=%v, want %v", c.status, got, c.want)
 		}
 	}
-	// A transport error carries no status and must fail over.
+	// 전송 오류는 상태가 없고, 다음 설정으로 넘어가야 합니다.
 	if !shouldFailover(context.Background(), errors.New("dial tcp: connection reset by peer")) {
 		t.Error("network error should fail over")
 	}
@@ -263,8 +261,8 @@ func TestHardVsSoftClassification(t *testing.T) {
 	}
 }
 
-// A member whose context window can't hold the request is a guaranteed 400 —
-// skip it rather than spend a round-trip proving it.
+// 컨텍스트 창이 요청을 못 담는 멤버는 400 이 확실합니다. 왕복으로
+// 확인하느라 쓰지 말고 건너뜁니다.
 func TestSkipsMembersTooSmallForRequest(t *testing.T) {
 	small, big := okProv("small", "s"), okProv("big", "b")
 	ms := member(1, "small", 10, small)
@@ -286,7 +284,7 @@ func TestSkipsMembersTooSmallForRequest(t *testing.T) {
 	}
 }
 
-// Everything tripped: probing the head beats stalling the engine outright.
+// 전부 트립된 상태: 엔진을 그냥 멈추는 것보다 머리를 한 번 두드리는 편이 낫습니다.
 func TestAllTrippedStillProbesHead(t *testing.T) {
 	a, b := okProv("a", "a"), okProv("b", "b")
 	reg := NewRegistry(nil, nil)
@@ -313,7 +311,7 @@ func TestExhaustedChainReportsClearly(t *testing.T) {
 	}
 }
 
-// Equal-rank members take turns leading, so duplicate keys share the load.
+// 같은 Rank 멤버는 돌아가며 앞장을 섭니다. 그래서 중복 키가 부하를 나눕니다.
 func TestEqualRankRotates(t *testing.T) {
 	a, b := okProv("a", "a"), okProv("b", "b")
 	head := member(1, "head", RankActive, failProv("head", 402))
@@ -329,7 +327,7 @@ func TestEqualRankRotates(t *testing.T) {
 	}
 }
 
-// The head keeps its own rank and never joins a rotation group.
+// 머리는 자기 Rank 를 유지하고 회전 묶음에 들어가지 않습니다.
 func TestHeadAlwaysFirst(t *testing.T) {
 	head := okProv("head", "H")
 	p := New([]*Member{
@@ -344,7 +342,7 @@ func TestHeadAlwaysFirst(t *testing.T) {
 	}
 }
 
-// A single-member chain must behave exactly like the bare provider.
+// 멤버가 하나인 사슬은 맨 provider 와 정확히 같아야 합니다.
 func TestSingleMemberPassthrough(t *testing.T) {
 	a := okProv("a", "solo")
 	p := New([]*Member{member(1, "a", RankActive, a)}, NewRegistry(nil, nil))
@@ -360,7 +358,7 @@ func TestNewEmptyChainIsNil(t *testing.T) {
 	}
 }
 
-// An expired cooling-off window must not keep a profile out of the chain.
+// 쉬는 시간이 지난 창은 설정을 사슬 밖에 두면 안 됩니다.
 func TestExpiredWindowIsClosed(t *testing.T) {
 	reg := NewRegistry(nil, nil)
 	reg.Restore(1, State{Trips: 1, OpenUntil: time.Now().Add(-time.Second)})

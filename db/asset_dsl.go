@@ -7,26 +7,26 @@ import (
 	"unicode"
 )
 
-// Expr is one leaf DSL clause.
+// Expr는 DSL 잎 절 하나다. 자산 그래프를 글 조건으로 거를 때 쓴다.
 type Expr struct {
-	Field string // empty = bare-text full-text search
+	Field string // 비어 있으면 맨 글 전문 검색
 	Op    string // "=", "==", "!=", ">", ">=", "<", "<="
 	Value string
 }
 
-// astNode is a node in the parsed DSL expression tree.
+// astNode는 파싱된 DSL 식 트리의 노드다.
 type astNode struct {
-	kind     string // "and", "or", "leaf"
+	kind     string // "and", "or", "leaf" (그리고, 또는, 잎)
 	children []*astNode
-	expr     *Expr // only for "leaf"
+	expr     *Expr // "leaf"일 때만
 }
 
 func andNode(cs []*astNode) *astNode { return &astNode{kind: "and", children: cs} }
 func orNode(cs []*astNode) *astNode  { return &astNode{kind: "or", children: cs} }
 func leafNode(e Expr) *astNode       { return &astNode{kind: "leaf", expr: &e} }
 
-// knownStringFields maps DSL field name → SQL column name.
-// NOTE: "type" is intentionally excluded — it is a separate parameter, not a DSL field.
+// knownStringFields는 DSL 필드 이름 → SQL 열 이름이다.
+// 참고: "type"은 일부러 빼 둔다. DSL 필드가 아니라 따로 받는 매개변수다.
 var knownStringFields = map[string]string{
 	"domain":       "domain",
 	"root_domain":  "root_domain",
@@ -45,14 +45,14 @@ var knownStringFields = map[string]string{
 	"record_type":  "record_type",
 }
 
-// knownArrayFields maps DSL field name → SQL column name (array).
+// knownArrayFields는 DSL 필드 이름 → SQL 열 이름(배열)이다.
 var knownArrayFields = map[string]string{
 	"technology":   "technologies",
 	"technologies": "technologies",
 	"tech":         "technologies",
 }
 
-// knownNumericFields maps DSL field name → SQL column name (integer).
+// knownNumericFields는 DSL 필드 이름 → SQL 열 이름(정수)이다.
 var knownNumericFields = map[string]string{
 	"port":        "port",
 	"status_code": "status_code",
@@ -67,7 +67,7 @@ func isKnownField(f string) bool {
 	return s || a || n || f == "company_id" || f == "task_id"
 }
 
-// ── tokeniser ────────────────────────────────────────────────────────────────
+// ── 토크나이저 ───────────────────────────────────────────────────────────────
 
 const (
 	tkField = "FIELD"
@@ -81,7 +81,7 @@ const (
 
 type tok struct {
 	kind string
-	expr *Expr // set for tkField and tkBare
+	expr *Expr // tkField와 tkBare일 때 채운다
 }
 
 func tokenize(s string) ([]tok, error) {
@@ -128,13 +128,13 @@ func tokenize(s string) ([]tok, error) {
 	return tokens, nil
 }
 
-// ── parser ───────────────────────────────────────────────────────────────────
+// ── 파서 ───────────────────────────────────────────────────────────────────
 //
-// Grammar (AND binds tighter than OR):
-//   expr     = or_expr
-//   or_expr  = and_expr (OR and_expr)*
-//   and_expr = atom    (AND atom)*
-//   atom     = FIELD | BARE | '(' expr ')'
+// 문법 (AND가 OR보다 더 세게 묶인다):
+// expr     = or_expr                 식
+// or_expr  = and_expr (OR and_expr)*  또는
+// and_expr = atom    (AND atom)*      그리고
+// atom     = FIELD | BARE | '(' expr ')'  원자
 
 type dslParser struct {
 	tokens []tok
@@ -218,18 +218,18 @@ func (p *dslParser) parseAtom() (*astNode, error) {
 	}
 }
 
-// ParseDSL parses a DSL query string into an expression tree.
+// ParseDSL은 DSL 조회 문자열을 식 트리로 파싱한다.
 //
-// Syntax:
+// 문법:
 //
-//	field=value      fuzzy match (ILIKE '%value%')
-//	field==value     exact match
-//	field!=value     exclude fuzzy
-//	port>8080        numeric comparison
-//	bare word        full-text fuzzy across all main text fields
+//	field=value      비슷한 맞춤 (ILIKE '%value%')
+//	field==value     정확한 맞춤
+//	field!=value     비슷한 맞춤 제외
+//	port>8080        숫자 비교
+//	bare word        주요 글 필드 전체의 전문 비슷한 맞춤
 //
-// Operators: AND OR (case-insensitive), parentheses for grouping.
-// AND binds tighter than OR.
+// 연산자: AND OR (대소문자 무시), 묶음은 괄호.
+// AND가 OR보다 더 세게 묶인다.
 func ParseDSL(s string) (*astNode, error) {
 	if strings.TrimSpace(s) == "" {
 		return nil, nil
@@ -249,9 +249,9 @@ func ParseDSL(s string) (*astNode, error) {
 	return node, nil
 }
 
-// ── SQL builder ──────────────────────────────────────────────────────────────
+// ── SQL 만들기 ──────────────────────────────────────────────────────────────
 
-// fullTextCols are searched for bare-text tokens.
+// fullTextCols는 맨 글 토큰을 찾을 열이다.
 var fullTextCols = []string{
 	"domain", "root_domain", "ip", "url", "page_title",
 	"icp", "service_name", "app_name", "app_description",
@@ -259,7 +259,7 @@ var fullTextCols = []string{
 
 type whereBuilder struct {
 	args []any
-	base int // placeholders are numbered base+1, base+2, …; 0 = the usual $1, $2, …
+	base int // 자리표시자는 base+1, base+2, … 번호. 0이면 보통의 $1, $2, …
 }
 
 func (b *whereBuilder) next(v any) string {
@@ -298,7 +298,7 @@ func (b *whereBuilder) build(node *astNode) (string, error) {
 func (b *whereBuilder) buildLeaf(e Expr) (string, error) {
 	f := strings.ToLower(e.Field)
 
-	// bare-text: OR across all text fields + arrays
+	// 맨 글: 모든 글 필드와 배열을 OR로 잇는다
 	if f == "" {
 		p := b.next("%" + e.Value + "%")
 		var parts []string
@@ -312,7 +312,7 @@ func (b *whereBuilder) buildLeaf(e Expr) (string, error) {
 		return "(" + strings.Join(parts, " OR ") + ")", nil
 	}
 
-	// task_id: $N = ANY(task_ids)
+	// task_id: $N = ANY(task_ids) 작업 id가 배열에 있는지
 	if f == "task_id" {
 		n, err := strconv.ParseInt(e.Value, 10, 64)
 		if err != nil {
@@ -321,7 +321,7 @@ func (b *whereBuilder) buildLeaf(e Expr) (string, error) {
 		return b.next(n) + " = ANY(task_ids)", nil
 	}
 
-	// company_id: exact integer
+	// company_id: 정수 정확히 맞춤
 	if f == "company_id" {
 		n, err := strconv.ParseInt(e.Value, 10, 64)
 		if err != nil {
@@ -330,7 +330,7 @@ func (b *whereBuilder) buildLeaf(e Expr) (string, error) {
 		return "company_id = " + b.next(n), nil
 	}
 
-	// numeric fields
+	// 숫자 필드
 	if col, ok := knownNumericFields[f]; ok {
 		n, err := strconv.Atoi(e.Value)
 		if err != nil {
@@ -346,7 +346,7 @@ func (b *whereBuilder) buildLeaf(e Expr) (string, error) {
 		return fmt.Sprintf("%s %s %s", col, op, b.next(n)), nil
 	}
 
-	// array fields
+	// 배열 필드
 	if col, ok := knownArrayFields[f]; ok {
 		switch e.Op {
 		case "==":
@@ -361,7 +361,7 @@ func (b *whereBuilder) buildLeaf(e Expr) (string, error) {
 		}
 	}
 
-	// string fields
+	// 문자열 필드
 	if col, ok := knownStringFields[f]; ok {
 		switch e.Op {
 		case "=":
@@ -382,9 +382,9 @@ func buildDSLWhere(node *astNode) (string, []any, error) {
 	return buildDSLWhereBase(node, 0)
 }
 
-// buildDSLWhereBase is buildDSLWhere with a placeholder offset: emitted args are
-// numbered base+1 onward, leaving $1..$base free for the caller (e.g. a scope CTE
-// that reserves $1 for the task id).
+// buildDSLWhereBase는 자리표시자 시작 번호를 받는 buildDSLWhere다. 나오는 인자는
+// base+1부터 번호를 매겨, $1..$base는 호출자에게 남긴다(예: 범위 CTE가
+// $1을 작업 id용으로 잡아 둔다).
 func buildDSLWhereBase(node *astNode, base int) (string, []any, error) {
 	if node == nil {
 		return "1=1", nil, nil
@@ -397,9 +397,9 @@ func buildDSLWhereBase(node *astNode, base int) (string, []any, error) {
 	return clause, b.args, nil
 }
 
-// ── helpers (shared with parser) ─────────────────────────────────────────────
+// ── 도우미 (파서와 같이 씀) ─────────────────────────────────────────────
 
-// tryParseFieldExpr tries to parse "field op value" at pos.
+// tryParseFieldExpr는 pos에서 "필드 연산 값"을 파싱해 본다.
 func tryParseFieldExpr(s string, pos int) (Expr, int, bool) {
 	i := pos
 	if i >= len(s) || !isIdentStart(s[i]) {
@@ -433,7 +433,7 @@ func tryParseFieldExpr(s string, pos int) (Expr, int, bool) {
 	return Expr{Field: field, Op: op, Value: value}, end, true
 }
 
-// readToken reads a quoted or unquoted token starting at pos.
+// readToken은 pos에서 시작하는 따옴표 있는/없는 토큰을 읽는다.
 func readToken(s string, pos int) (string, int) {
 	if pos >= len(s) {
 		return "", pos
@@ -463,11 +463,11 @@ func isIdentChar(c byte) bool {
 	return isIdentStart(c) || (c >= '0' && c <= '9')
 }
 
-// ── QueryDSL ─────────────────────────────────────────────────────────────────
+// ── QueryDSL 조회 ────────────────────────────────────────────────────────────
 
-// ValidateDSL parses and compiles a DSL expression without touching the
-// database. HTTP callers use it to distinguish client syntax errors from query
-// failures, which must remain server errors.
+// ValidateDSL은 데이터베이스를 건드리지 않고 DSL 식을 파싱하고 컴파일한다.
+// HTTP 호출자는 이것으로 클라이언트 문법 오류와 조회
+// 실패를 가른다. 조회 실패는 서버 오류로 남아야 한다.
 func ValidateDSL(dsl string) error {
 	node, err := ParseDSL(dsl)
 	if err != nil {
@@ -477,9 +477,9 @@ func ValidateDSL(dsl string) error {
 	return err
 }
 
-// CountDSL returns the total number of assets matching a DSL expression (and optional
-// type), for server-side pagination — same WHERE as QueryDSL, without LIMIT/OFFSET.
-// taskID > 0 scopes the count to assets attached to that task.
+// CountDSL은 DSL 식(그리고 선택인 유형)에 맞는 자산 총수를 돌려준다.
+// 서버 쪽 페이지용이다. QueryDSL과 같은 WHERE이고 LIMIT/OFFSET은 없다.
+// taskID가 0보다 크면 그 작업에 붙은 자산만 센다.
 func (s *AssetStore) CountDSL(dsl, typ string, taskID int64) (int, error) {
 	node, err := ParseDSL(dsl)
 	if err != nil {
@@ -502,10 +502,10 @@ func (s *AssetStore) CountDSL(dsl, typ string, taskID int64) (int, error) {
 	return n, err
 }
 
-// QueryDSL executes a DSL query string against the asset store.
-// typ is an optional asset type filter applied independently of the DSL expression.
-// taskID > 0 scopes results to assets attached to that task and hydrates each
-// row's per-task source metadata (as QueryByTask does).
+// QueryDSL은 DSL 조회 문자열을 자산 저장소에 실행한다.
+// typ은 DSL 식과 따로 적용하는 선택 자산 유형 필터다.
+// taskID가 0보다 크면 그 작업에 붙은 자산만 보고, 각
+// 행의 작업별 출처 메타데이터를 채운다(QueryByTask와 같다).
 func (s *AssetStore) QueryDSL(dsl, typ string, taskID int64, limit, offset int) ([]*Asset, error) {
 	if limit <= 0 {
 		limit = 50
@@ -569,7 +569,7 @@ func (s *AssetStore) QueryDSLInScope(dsl, typ string, taskID int64, limit, offse
 	if err != nil {
 		return nil, err
 	}
-	// $1 is reserved for taskID (scopeTargetCTE); DSL placeholders start at $2.
+	// $1은 taskID용으로 남겨 둔다(scopeTargetCTE). DSL 자리표시자는 $2부터다.
 	where, dslArgs, err := buildDSLWhereBase(node, 1)
 	if err != nil {
 		return nil, err
@@ -599,10 +599,10 @@ func (s *AssetStore) QueryDSLInScope(dsl, typ string, taskID int64, limit, offse
 	return assets, nil
 }
 
-// GetByIDsInScope is GetByIDs restricted to ids that BELONG to taskID's (and its
-// direct source tasks') declared scope, so an agent cannot reach out-of-scope
-// assets by id. taskID<=0 (non-task contexts) falls back to the global GetByIDs.
-// Out-of-scope ids are silently dropped from the result (not an error).
+// GetByIDsInScope는 GetByIDs를, taskID(와 직접 원본 작업)가 선언한 범위에
+// 속하는 id만 보게 제한한다. 그래서 에이전트가 id로 범위 밖 자산에 닿지 못한다.
+// taskID가 0 이하면(작업이 아닌 맥락) 전역 GetByIDs로 내려간다.
+// 범위 밖 id는 오류가 아니라 결과에서 조용히 빠진다.
 func (s *AssetStore) GetByIDsInScope(taskID int64, ids []int64) ([]*Asset, error) {
 	if taskID <= 0 {
 		return s.GetByIDs(ids)
@@ -611,7 +611,7 @@ func (s *AssetStore) GetByIDsInScope(taskID int64, ids []int64) ([]*Asset, error
 		return nil, nil
 	}
 	args := make([]any, 0, len(ids)+1)
-	args = append(args, taskID) // $1 reserved for scopeTargetCTE
+	args = append(args, taskID) // $1은 scopeTargetCTE용으로 남겨 둔다
 	placeholders := make([]string, len(ids))
 	for i, id := range ids {
 		placeholders[i] = fmt.Sprintf("$%d", i+2)

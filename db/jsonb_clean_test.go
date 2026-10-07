@@ -7,7 +7,7 @@ import (
 )
 
 func TestJsonbClean(t *testing.T) {
-	// A marshaled payload carrying a NUL byte (e.g. captured HTTP/tool output).
+	// NUL 바이트가 든 직렬화 본문(예: 잡은 HTTP/도구 출력).
 	b, err := json.Marshal(map[string]string{"body": "ab\x00cd"})
 	if err != nil {
 		t.Fatal(err)
@@ -21,7 +21,7 @@ func TestJsonbClean(t *testing.T) {
 		t.Fatalf("jsonbClean left a NUL escape jsonb rejects: %s", cleaned)
 	}
 
-	// Result must stay valid JSON with the NUL simply dropped.
+	// 결과는 NUL만 빠진 유효한 JSON이어야 한다.
 	var out map[string]string
 	if err := json.Unmarshal(cleaned, &out); err != nil {
 		t.Fatalf("cleaned bytes are not valid JSON: %v (%s)", err, cleaned)
@@ -30,13 +30,13 @@ func TestJsonbClean(t *testing.T) {
 		t.Fatalf("expected NUL stripped to \"abcd\", got %q", out["body"])
 	}
 
-	// A NUL escape typed literally in source text (doubled backslash) is preserved.
+	// 원문 글에 적은 NUL 이스케이프(역슬래시 두 개)는 유지된다.
 	lit := []byte(`{"body":"\\u0000"}`)
 	if got := jsonbClean(lit); string(got) != string(lit) {
 		t.Fatalf("literal \\\\u0000 must be untouched, got %s", got)
 	}
 
-	// No NUL escape → returned unchanged.
+	// NUL 이스케이프가 없으면 그대로 돌려준다.
 	plain := []byte(`{"body":"hello"}`)
 	if got := jsonbClean(plain); string(got) != string(plain) {
 		t.Fatalf("plain JSON must be untouched, got %s", got)

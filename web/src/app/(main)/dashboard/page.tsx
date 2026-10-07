@@ -41,7 +41,7 @@ import type {
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-// ── chart constants ───────────────────────────────────────────────────────────
+// ── 차트 상수 ───────────────────────────────────────────────────────────
 
 const dailyTrendConfig = {
   input: { label: "입력", color: "hsl(217 91% 60%)" },
@@ -49,7 +49,7 @@ const dailyTrendConfig = {
   cacheRead: { label: "캐시 읽기", color: "hsl(160 60% 45%)" },
 } satisfies ChartConfig;
 
-// ── helpers ──────────────────────────────────────────────────────────────────
+// ── 도우미 ──────────────────────────────────────────────────────────────────
 
 function fmtRel(ts?: string | number): string {
   if (!ts) return "—";
@@ -101,7 +101,7 @@ function statusBg(code: number): string {
   return "bg-red-400";
 }
 
-// ── sub-components ────────────────────────────────────────────────────────────
+// ── 부분 컴포넌트 ────────────────────────────────────────────────────────────
 
 function LiveDot({ className }: { className?: string }) {
   return <span className={cn("inline-block size-1.5 shrink-0 animate-pulse rounded-full bg-blue-400", className)} />;
@@ -127,10 +127,10 @@ function SectionTitle({
   );
 }
 
-// ── page ─────────────────────────────────────────────────────────────────────
+// ── 페이지 ─────────────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
-  // data state
+  // 데이터 상태
   const [tasks, setTasks] = React.useState<Task[]>([]);
   const [findings, setFindings] = React.useState<Finding[]>([]);
   const [stats, setStats] = React.useState<Stats | null>(null);
@@ -148,8 +148,8 @@ export default function DashboardPage() {
   const [tools, setTools] = React.useState<Tool[]>([]);
   const [llmProfiles, setLLMProfiles] = React.useState<LLMProfile[]>([]);
 
-  // The task list is the most expensive dashboard source. Poll it independently
-  // so a large history cannot hold back every other dashboard panel.
+  // 작업 목록은 대시보드에서 가장 무거운 출처입니다. 따로 주기 조회해서
+  // 긴 기록이 다른 패널을 붙잡지 않게 합니다.
   React.useEffect(() => {
     let alive = true;
     let loading = false;
@@ -166,7 +166,7 @@ export default function DashboardPage() {
           setTasks(tr.tasks);
         }
       } catch {
-        /* transient errors — next poll retries */
+        /* 잠깐 오류. 다음 주기 조회가 다시 시도 */
       } finally {
         loading = false;
       }
@@ -179,7 +179,7 @@ export default function DashboardPage() {
     };
   }, []);
 
-  // The remaining fast sources stay batched so one poll causes a single render.
+  // 나머지 빠른 출처는 한 번에 묶어, 주기 조회 한 번이 화면을 한 번만 다시 그리게 합니다.
   React.useEffect(() => {
     let alive = true;
     let loading = false;
@@ -205,7 +205,7 @@ export default function DashboardPage() {
         setTokens(tokens.total ?? null);
         setConvTokens(conversationTokens);
       } catch {
-        // Preserve stale data and retry on the next interval.
+        // 오래된 데이터를 유지하고 다음 주기에 다시 시도합니다.
       } finally {
         loading = false;
       }
@@ -218,7 +218,7 @@ export default function DashboardPage() {
     };
   }, []);
 
-  // slow poll: traffic, assets, system-static (every 15s)
+  // 느린 주기 조회: 트래픽, 자산, 시스템 고정값(15초마다)
   React.useEffect(() => {
     let alive = true;
     const load = async () => {
@@ -243,7 +243,7 @@ export default function DashboardPage() {
         setLLMProfiles(profileList);
         setUsageStats(usage);
       } catch {
-        /* transient errors */
+        /* 잠깐 오류 */
       }
     };
     void load();
@@ -254,7 +254,7 @@ export default function DashboardPage() {
     };
   }, []);
 
-  // ── derived ───────────────────────────────────────────────────────────────
+  // ── 계산된 값 ───────────────────────────────────────────────────────────────
 
   const tasksByStatus = React.useMemo(() => {
     const m: Record<string, number> = {};
@@ -294,7 +294,7 @@ export default function DashboardPage() {
 
   const totalAssets = React.useMemo(() => Object.values(assetCounts).reduce((a, b) => a + b, 0), [assetCounts]);
 
-  // asset type breakdown
+  // 자산 종류별 나눔
   const assetByType = React.useMemo(() => {
     return Object.entries(assetCounts)
       .filter(([, n]) => n > 0)
@@ -304,7 +304,7 @@ export default function DashboardPage() {
 
   const assetMax = assetByType[0]?.[1] ?? 1;
 
-  // traffic status code breakdown
+  // 트래픽 상태 코드별 나눔
   const trafficByCodes = React.useMemo(() => {
     const m: Record<number, number> = {};
     for (const e of traffic) {
@@ -319,20 +319,20 @@ export default function DashboardPage() {
   const trafficMax = Math.max(...trafficByCodes.map((x) => x.n), 1);
   const recentTraffic = [...traffic].sort((a, b) => Date.parse(b.ts) - Date.parse(a.ts)).slice(0, 5);
 
-  // system
+  // 시스템
   const activeProfile = llmProfiles.find((p) => p.is_default);
   const enabledTools = tools.filter((t) => t.enabled);
   const pendingCount = pending.length;
 
-  // ── token stats per LLM profile ──────────────────────────────────────────
-  // tasks whose llm_profile_id is null/undefined used the active default profile
+  // ── LLM 프로필별 토큰 통계 ──────────────────────────────────────────
+  // llm_profile_id가 null/없음인 작업은 그때의 기본 프로필을 썼습니다
   const defaultProfileId = activeProfile ? Number(activeProfile.id) : null;
 
   // 데이터 출처 스위치: 예전 = activity(task.tokens + 세션), 새 버전 = llm_usage 계량 장부.
   const [tokenVersion, setTokenVersion] = React.useState<"old" | "new">("old");
   // 고른 profile tab: "all" = 전체. number = 특정 profile id
   const [tokenTab, setTokenTab] = React.useState<number | null | "all">("all");
-  // day range for the daily bar chart
+  // 일별 막대 차트의 날짜 범위
   const [tokenDays, setTokenDays] = React.useState<7 | 30 | 90 | 180 | 365>(30);
 
   // profile 이름 → id. llm_usage의 profile_name을 기존 profile 칸에 대응시킬 때 씁니다.
@@ -470,7 +470,7 @@ export default function DashboardPage() {
 
   const dailyTokenData = tokenVersion === "new" ? dailyTokenDataNew : dailyTokenDataOld;
 
-  // activity kind label
+  // 활동 종류 이름
   function kindLabel(a: Activity): string {
     if (a.kind === "tool_use") return a.tool ?? "tool_use";
     if (a.kind === "tool_result") return "tool_result";
@@ -489,11 +489,11 @@ export default function DashboardPage() {
     return "bg-blue-500/10 text-blue-400 border-blue-500/20";
   }
 
-  // ── render ────────────────────────────────────────────────────────────────
+  // ── 그리기 ────────────────────────────────────────────────────────────────
 
   return (
     <div className="flex flex-1 flex-col gap-4 pb-6">
-      {/* ── Header ── */}
+      {/* ── 머리 ── */}
       <div>
         <div>
           <h1 className="text-lg font-semibold tracking-tight">전체 보기</h1>
@@ -501,7 +501,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* ── Row 1: 5 stat cards ── */}
+      {/* ── 1행: 통계 카드 5개 ── */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         {/* 진행 중인 작업 */}
         <Card className="gap-1">
@@ -588,7 +588,7 @@ export default function DashboardPage() {
 
       {/* ── Row 2: LLM Token 소모 ── */}
       <Card className="p-4">
-        {/* Header */}
+        {/* 머리 */}
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-1.5 text-xs font-semibold">
             <ZapIcon className="size-3.5 text-muted-foreground" />
@@ -625,7 +625,7 @@ export default function DashboardPage() {
               {tokenVersion === "new" ? "llm_usage" : "activity"}
             </span>
           </div>
-          {/* Profile tabs */}
+          {/* 프로필 탭 */}
           <div className="flex flex-wrap items-center gap-1">
             <button
               type="button"
@@ -675,11 +675,11 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Body: metrics left + bar chart right */}
+        {/* 본문: 왼쪽 지표 + 오른쪽 막대 차트 */}
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[220px_1fr]">
-          {/* Left: key metrics */}
+          {/* 왼쪽: 주요 지표 */}
           <div className="flex flex-col gap-4">
-            {/* Total */}
+            {/* 합계 */}
             <div>
               <div className="text-[10px] text-muted-foreground">합계(입력+출력)</div>
               <div className="mt-0.5 text-3xl font-bold tabular-nums tracking-tight">
@@ -688,7 +688,7 @@ export default function DashboardPage() {
               <div className="mt-0.5 text-[10px] text-muted-foreground">{displayedTokens.taskCount} 개 작업</div>
             </div>
 
-            {/* Per-type bars */}
+            {/* 종류별 막대 */}
             <div className="space-y-3">
               {(() => {
                 // input에 이미 캐시가 포함됨. 겹치지 않는 세 조각: 못 맞춘 입력 + 캐시 적중 + 출력 = 총량.
@@ -732,7 +732,7 @@ export default function DashboardPage() {
               })()}
             </div>
 
-            {/* Cache hit rate */}
+            {/* 캐시 적중률 */}
             {(() => {
               // input에 이미 캐시가 포함됨 → 적중률 = 캐시 적중 / 전체 입력.
               const denominator = displayedTokens.input;
@@ -750,7 +750,7 @@ export default function DashboardPage() {
             })()}
           </div>
 
-          {/* Right: daily bar chart */}
+          {/* 오른쪽: 일별 막대 차트 */}
           <div className="flex min-h-0 flex-col">
             <div className="mb-2 flex items-center justify-between">
               <div className="flex gap-3 text-[9px] text-muted-foreground">
@@ -1079,7 +1079,7 @@ export default function DashboardPage() {
             트래픽 상태 코드
           </SectionTitle>
 
-          {/* bar chart */}
+          {/* 막대 차트 */}
           {trafficByCodes.length === 0 ? (
             <div className="py-6 text-center text-xs text-muted-foreground">트래픽 데이터 없음</div>
           ) : (
@@ -1168,7 +1168,7 @@ export default function DashboardPage() {
             )}
           </div>
 
-          {/* pending approvals */}
+          {/* 대기 중 승인 */}
           {pendingCount > 0 && (
             <div className="mt-3">
               <div className="mb-1.5 text-[10px] font-medium text-amber-400">승인 대기({pendingCount})</div>

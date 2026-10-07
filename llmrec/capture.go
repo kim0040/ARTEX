@@ -10,22 +10,24 @@ import (
 
 type captureContextKey struct{}
 
-// Capture collects the untouched wire bodies of one logical LLM call. The
-// Recorder creates it and puts it on the context; the HTTP transport that norma
-// dials through (agent.quotaAwareTransport) finds it there and fills it in.
+// Capture는 한 논리 LLM 호출의 손을 대지 않은 전송 원문을 모읍니다.
+// Recorder가 만들어 컨텍스트에 넣고, norma가 거치는 HTTP 전송
+// (agent.quotaAwareTransport)이 찾아 그 값을 채웁니다.
 //
-// This exists because everything the Recorder itself sees is already normalized:
-// llm.CompletionRequest is re-serialized rather than the body buildBody() sent,
-// and the response arrives as decoded StreamEvents, not the SSE frames. For
-// debugging a live provider, the bytes on the wire are the only ground truth.
+// 초보: PostgreSQL에 남기는 정규화 JSON과 달리, 프로바이더와 오간 HTTP 바이트입니다.
 //
-// norma's doStream retries the request-establishment phase, so one Stream can
-// issue several HTTP attempts. Each attempt is kept: the discarded ones (see
-// norma/llm/retry.go, which closes non-final bodies unread) are exactly what
-// makes rate-limit and gateway failures diagnosable.
+// Recorder가 직접 보는 값은 이미 정규화되어 있습니다. llm.CompletionRequest는
+// buildBody()가 보낸 본문이 아니라 다시 직렬화한 것이고, 응답은 SSE 프레임이
+// 아니라 풀린 StreamEvents입니다. 살아 있는 프로바이더를 볼 때의 기준은
+// 실제로 오간 바이트뿐입니다.
 //
-// The transport writes from norma's stream-reading goroutine while the Recorder
-// snapshots at stream end, so all state is mutex-guarded.
+// norma의 doStream은 요청이 붙는 단계를 재시도하므로, 스트림 하나가
+// HTTP 시도를 여러 번 낼 수 있습니다. 버려진 시도(norma/llm/retry.go가
+// 최종이 아닌 본문을 읽지 않고 닫음)가 속도 제한과 게이트웨이 실패를
+// 진단할 수 있게 하는 바로 그 재료입니다.
+//
+// 전송 쪽은 norma의 스트림 읽기 고루틴에서 쓰고, Recorder는 스트림이 끝날 때
+// 스냅샷을 뜨므로 상태는 모두 뮤텍스로 지킵니다.
 type Capture struct {
 	mu       sync.Mutex
 	request  string
@@ -37,15 +39,15 @@ type attempt struct {
 	body   strings.Builder
 }
 
-// NewCapture returns a context carrying a fresh Capture, plus the Capture itself.
+// NewCapture는 새 Capture를 담은 컨텍스트와 Capture 자신을 돌려줍니다.
 func NewCapture(ctx context.Context) (context.Context, *Capture) {
 	c := &Capture{}
 	return context.WithValue(ctx, captureContextKey{}, c), c
 }
 
-// CaptureFrom returns the Capture attached to ctx, or nil when raw capture is
-// off. Callers must tolerate nil — recording is a toggle, and non-recorded
-// providers dial through the same transport.
+// CaptureFrom은 ctx에 붙은 Capture를 돌려줍니다. 원문 기록이 꺼져 있으면 nil입니다.
+// 호출자는 nil을 견뎌야 합니다. 기록은 스위치이고, 기록하지 않는 프로바이더도
+// 같은 전송을 탑니다.
 func CaptureFrom(ctx context.Context) *Capture {
 	if ctx == nil {
 		return nil
@@ -54,8 +56,8 @@ func CaptureFrom(ctx context.Context) *Capture {
 	return c
 }
 
-// SetRequest stores the outgoing request body. Retries re-send identical bytes,
-// so only the first attempt's body is kept.
+// SetRequest는 나가는 요청 본문을 저장합니다. 재시도는 같은 바이트를 다시 보내므로
+// 첫 시도의 본문만 남깁니다.
 func (c *Capture) SetRequest(body string) {
 	if c == nil || body == "" {
 		return
@@ -67,9 +69,9 @@ func (c *Capture) SetRequest(body string) {
 	}
 }
 
-// TeeResponse opens a new attempt and wraps rc so everything read from it is
-// mirrored into that attempt. It tees rather than reads because a successful
-// response is an SSE stream that must keep streaming to the caller.
+// TeeResponse는 새 시도를 열고, rc에서 읽은 내용을 그 시도에 비춥니다.
+// 통째로 읽지 않고 비추는 이유는, 성공 응답이 호출자에게 계속 흘러야 하는
+// SSE 스트림이기 때문입니다.
 func (c *Capture) TeeResponse(status int, rc io.ReadCloser) io.ReadCloser {
 	if c == nil || rc == nil {
 		return rc
@@ -81,7 +83,7 @@ func (c *Capture) TeeResponse(status int, rc io.ReadCloser) io.ReadCloser {
 	return &teeBody{rc: rc, c: c, a: a}
 }
 
-// RawRequest returns the request body as sent, or "" if nothing was captured.
+// RawRequest는 보낸 요청 본문입니다. 캡처된 것이 없으면 빈 문자열입니다.
 func (c *Capture) RawRequest() string {
 	if c == nil {
 		return ""
@@ -91,10 +93,9 @@ func (c *Capture) RawRequest() string {
 	return c.request
 }
 
-// RawResponse returns the response bytes as received. A single attempt yields
-// the untouched original (copy-pasteable straight into a replay); multiple
-// attempts are concatenated behind per-attempt header lines so a retry sequence
-// stays readable.
+// RawResponse는 받은 응답 바이트입니다. 시도가 하나면 손을 대지 않은 원문이라
+// 재생에 그대로 붙여 넣을 수 있습니다. 여러 번이면 시도마다 머리글을 붙인 뒤
+// 이어 붙여, 재시도 순서를 읽을 수 있게 합니다.
 func (c *Capture) RawResponse() string {
 	if c == nil {
 		return ""
@@ -119,15 +120,15 @@ func (c *Capture) RawResponse() string {
 	return b.String()
 }
 
-// Attempt is one HTTP round trip's status code and response bytes.
+// Attempt는 HTTP 한 왕복의 상태 코드와 응답 바이트입니다.
 type Attempt struct {
 	Status int
 	Body   string
 }
 
-// Attempts returns every round trip in order. Unlike RawResponse — which drops
-// the header line for a lone attempt so the bytes stay replayable — this always
-// carries the status code, for callers that must report "HTTP 401 + body".
+// Attempts는 모든 왕복을 순서대로 돌려줍니다. RawResponse는 시도가 하나일 때
+// 머리글을 빼 바이트를 재생할 수 있게 하지만, 이 값은 항상 상태 코드를 담습니다.
+// HTTP 401과 본문을 함께 보고해야 하는 호출자용입니다.
 func (c *Capture) Attempts() []Attempt {
 	if c == nil {
 		return nil
@@ -141,8 +142,8 @@ func (c *Capture) Attempts() []Attempt {
 	return out
 }
 
-// teeBody mirrors reads into a Capture attempt, guarded by the Capture's mutex
-// so a snapshot taken mid-stream never races the writer.
+// teeBody는 읽은 내용을 Capture 시도에 비추며, Capture의 뮤텍스로 지킵니다.
+// 스트림 중간에 스냅샷을 떠도 쓰는 쪽과 경합하지 않습니다.
 type teeBody struct {
 	rc io.ReadCloser
 	c  *Capture

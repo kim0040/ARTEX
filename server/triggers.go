@@ -38,8 +38,8 @@ type triggerReq struct {
 	ToolNames          []string `json:"tool_names"`
 }
 
-// validateTrigger enforces the shared trigger rules for create/update:
-// at least one condition, and on_tool_call requires a non-empty tool set.
+// validateTrigger는 만들기와 수정에 공통인 트리거 규칙을 적용합니다.
+// 조건이 하나 이상 있어야 하고, on_tool_call이면 도구를 비워 둘 수 없습니다.
 func validateTrigger(req *triggerReq) string {
 	if req.IntervalSec == 0 && !req.OnFinding && !req.OnGoalMet && !req.OnTaskTimeout && !req.OnToolCall && !req.OnTaskCreate {
 		return "트리거 조건을 하나 이상 고르세요(예약/발견 finding/목표 달성/작업 시간 초과/도구 호출/작업 생성)"

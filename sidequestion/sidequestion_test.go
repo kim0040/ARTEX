@@ -63,7 +63,7 @@ func TestCheckpointDeepCopyAndBoundaries(t *testing.T) {
 	if string(before) != string(after) {
 		t.Fatal("published checkpoint aliases structured input")
 	}
-	// Auxiliary/compaction calls lack the model-attempt marker.
+	// 보조·압축 호출에는 모델 시도 표식이 없습니다.
 	_, _, _, _ = p.Complete(ctx, llm.CompletionRequest{Messages: []llm.Message{llm.UserText("summary request")}})
 	if len(snapshots) != 2 {
 		t.Fatal("auxiliary completion replaced snapshot")

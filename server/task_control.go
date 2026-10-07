@@ -27,16 +27,16 @@ type intentControlResult struct {
 	Deleted *db.IntentCleanup `json:"deleted,omitempty"`
 }
 
-// parsedTaskID carries one requested batch id together with whether it parsed.
-// Invalid ids are kept rather than dropped so the response can name them.
+// parsedTaskID는 요청한 일괄 id 하나와, 숫자로 읽혔는지를 담습니다.
+// 잘못된 id도 버리지 않습니다. 응답이 그 이름을 말하게 하려고요.
 type parsedTaskID struct {
 	id    string
 	valid bool
 }
 
-// normalizeBatchTaskIDs trims, canonicalizes and de-duplicates the ids of one
-// batch request while preserving the caller's order. Shared by every batch
-// endpoint so they agree on what counts as a duplicate.
+// normalizeBatchTaskIDs는 일괄 요청의 id를 다듬고, 정규화하고, 중복을 뺍니다.
+// 호출자 순서는 유지합니다. 모든 일괄
+// 엔드포인트가 같이 써서, 무엇이 중복인지 의견이 같습니다.
 func normalizeBatchTaskIDs(raw []string) []parsedTaskID {
 	seen := map[string]bool{}
 	seenInvalid := map[string]bool{}
@@ -86,9 +86,9 @@ func (s *Server) resumeAdmissionMode(t *Task) string {
 	return "resume"
 }
 
-// applyTaskControl is shared by the single and batch endpoints. Task resume is
-// deliberately limited to paused tasks; reruns and finding follow-ups use
-// admitTask directly when they need to revive a terminal task.
+// applyTaskControl은 단일과 일괄 엔드포인트가 같이 씁니다. 작업 재개는
+// 일부러 일시정지된 작업만 됩니다. 다시 실행과 발견 이어하기는
+// 종료된 작업을 되살려야 할 때 admitTask를 직접 씁니다.
 func (s *Server) applyTaskControl(t *Task, action string) (taskControlResult, error) {
 	return s.applyTaskControlWithCause(t, action, agent.AbortPausedByUser)
 }
@@ -129,9 +129,9 @@ func (s *Server) applyTaskControlWithCause(t *Task, action string, pauseCause er
 			}
 			return out, err
 		}
-		// Main Agent is independently cancellable. Only cancel its current turn
-		// after the persistent pause commits, so a failed control request is fully
-		// compensated and does not lose an otherwise valid conversation turn.
+		// 메인 에이전트는 따로 취소할 수 있습니다. 현재 턴은
+		// 영구 일시정지가 확정된 뒤에만 취소합니다. 실패한 제어 요청은 완전히
+		// 되돌리고, 아직 유효한 대화 턴을 잃지 않습니다.
 		s.cancelTaskChat(t.ID, agent.AbortChatPausedWithTask)
 		out.Paused, out.Status = true, "paused"
 		go s.reconcileConcurrency()

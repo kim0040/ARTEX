@@ -14,8 +14,8 @@ import (
 	"github.com/Autumn-27/norma/llm"
 )
 
-// Opt-in model regression: sends synthetic review inputs only, never executes
-// their commands. Credentials must be supplied outside the checkout.
+// 선택 모델 회귀: 합성 검토 입력만 보내고, 그
+// 명령은 실행하지 않습니다. 자격 증명은 저장소 밖에서 넣어야 합니다.
 func TestLiveContextReview(t *testing.T) {
 	path := os.Getenv("ARTEX_REVIEW_LIVE_CONFIG")
 	if path == "" {
@@ -103,8 +103,8 @@ func TestLiveContextReview(t *testing.T) {
 			if tc.intent != "" && in.Background != nil {
 				t.Fatal("Worker summary was submitted")
 			}
-			// Match runtime configuration: a custom policy replaces the default;
-			// only the shared input boundary and output contract are appended.
+			// 실행 설정과 같습니다. 사용자 정책이 기본을 바꾸고,
+			// 공통 입력 경계와 출력 계약만 뒤에 붙습니다.
 			policy := tc.policy
 			if policy == "" {
 				policy = intercept.DefaultJudgePrompt

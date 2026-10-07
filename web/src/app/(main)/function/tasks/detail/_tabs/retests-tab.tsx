@@ -31,8 +31,8 @@ export function RetestsTab({ taskId }: { taskId: string }) {
   const [refreshVersion, setRefreshVersion] = React.useState(0);
   const refresh = React.useCallback(() => setRefreshVersion((version) => version + 1), []);
 
-  // Only this task's own findings, including those without graph nodes.
-  // Fetch history only for the selection, and wait for each poll to finish.
+  // 이 작업의 발견만, 그래프 노드가 없는 것도 포함합니다.
+  // 고른 항목의 기록만 가져오고, 주기 조회 한 번이 끝날 때까지 기다립니다.
   React.useEffect(() => {
     let disposed = false;
     let timer: ReturnType<typeof setTimeout>;
@@ -56,7 +56,7 @@ export function RetestsTab({ taskId }: { taskId: string }) {
         if (!disposed) timer = setTimeout(() => void load(), 3000);
       }
     }
-    void refreshVersion; // Refresh triage immediately after a retest completes.
+    void refreshVersion; // 다시 점검이 끝나면 분류를 바로 갱신합니다.
     void load();
     return () => {
       disposed = true;

@@ -161,8 +161,8 @@ function NavItem({ item, isItemActive, isSubItemActive, isSubmenuOpen }: NavItem
   );
 }
 
-// InterceptPendingBadge polls /api/intercept/pending every 5 s and shows a red
-// count badge when there are unresolved approval requests.
+// InterceptPendingBadge는 5초마다 대기 중인 가로채기를 확인합니다. 가드는 도구가 실행되기 전에 사람에게 묻습니다.
+// 아직 결정되지 않은 승인 요청이 있으면 빨간 개수 배지를 보여 줍니다.
 function InterceptPendingBadge() {
   const [count, setCount] = React.useState(0);
   React.useEffect(() => {
@@ -171,7 +171,7 @@ function InterceptPendingBadge() {
       try {
         const list = await api.interceptPending();
         if (live) setCount(list.length);
-      } catch { /* ignore */ }
+      } catch { /* 무시 */ }
     }
     poll();
     const t = setInterval(poll, 5000);

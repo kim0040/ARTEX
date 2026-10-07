@@ -23,9 +23,9 @@ func (s *Server) evidenceStore() *evidence.Store {
 	return evidence.New(s.m.pg, s.m.traffic, filepath.Join(s.m.dir, "evidence"))
 }
 
-// Add only new optional properties; preserve edited descriptions, existing
-// properties, agent bindings and disabled flags. The one-time flag also keeps
-// subsequent user unbinding of the evidence reader intact.
+// 새 선택 속성만 더합니다. 고친 설명, 기존
+// 속성, 에이전트 바인딩, 끄기 플래그는 유지합니다. 한 번 켜는 플래그는
+// 나중에 사용자가 증거 읽기 도구를 풀어 둔 것도 유지합니다.
 func (s *Server) seedFindingTrafficTools() {
 	const flag = "finding_traffic_tools_v1"
 	if v, _, _ := s.m.pg.GetSetting(flag); v == "true" {
@@ -52,7 +52,7 @@ func (s *Server) seedFindingTrafficTools() {
 		if err = json.Unmarshal(raw, &obj); err != nil {
 			return
 		}
-		// BuiltinToolSeeds stores Schema as RawMessage; both forms marshal as JSON.
+		// BuiltinToolSeeds는 Schema를 RawMessage로 저장합니다. 두 형태 모두 JSON으로 나갑니다.
 		var properties map[string]json.RawMessage
 		if err = json.Unmarshal(obj["properties"], &properties); err != nil {
 			return
@@ -260,8 +260,8 @@ func readEvidencePreview(store *evidence.Store, snapshot db.TrafficEvidenceSnaps
 	if err != nil {
 		return out, err
 	}
-	// Leave an incomplete trailing UTF-8 rune for the next page. Explicit byte
-	// offsets are still accepted; complete downloads always retain original bytes.
+	// 끝이 잘린 UTF-8 문자는 다음 페이지에 남깁니다. 바이트
+	// 위치를 직접 줘도 받습니다. 끝까지 받으면 원래 바이트가 유지됩니다.
 	if offset+int64(len(raw)) < total && len(raw) >= utf8.UTFMax {
 		start := len(raw) - 1
 		for start > 0 && raw[start]&0xc0 == 0x80 {
@@ -324,9 +324,9 @@ func (s *Server) getFindingTrafficBody(w http.ResponseWriter, r *http.Request) {
 	}
 	side := r.URL.Query().Get("side")
 	store := s.evidenceStore()
-	// Resolve the binding under the evidence lock, then read the blob without it:
-	// both paths below are O(body size) and would otherwise stall every evidence
-	// write for as long as the client takes to receive the data.
+	// 증거 잠금 아래에서 바인딩을 찾고, 그다음 잠금 없이 본문을 읽습니다.
+	// 아래 두 경로는 본문 크기에 비례해서, 그러지 않으면 클라이언트가 데이터를
+	// 받는 동안 모든 증거 쓰기가 멈춥니다.
 	b, err := store.Binding(r.Context(), id, bid)
 	if err != nil {
 		evidenceError(w, err)

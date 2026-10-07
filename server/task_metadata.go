@@ -15,8 +15,9 @@ const (
 	maxTaskMetadataRequestSize = 16 << 10
 )
 
-// updateTaskMetadata changes list-only task metadata. It intentionally does not
-// touch lifecycle state, scheduling, or the task's immutable description/goal.
+// updateTaskMetadata는 목록에만 쓰는 작업 메타데이터를 바꿉니다. 일부러
+// 생명주기, 일정, 바꾸면 안 되는 설명과 목표는 건드리지 않습니다.
+// 초보용: 화면 목록의 표시만 바꿉니다. 엔진의 실행 상태와 목표 문장은 그대로입니다.
 func (s *Server) updateTaskMetadata(w http.ResponseWriter, r *http.Request) {
 	taskID := r.PathValue("id")
 	if _, ok := s.m.Task(taskID); !ok {

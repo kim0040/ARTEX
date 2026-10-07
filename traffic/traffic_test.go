@@ -26,9 +26,8 @@ func TestRequestHeaderLinesIncludesHost(t *testing.T) {
 	}
 }
 
-// TestDeleteHost verifies the delete contract: rows for hosts containing the
-// substring are removed together with their file trees, non-matching hosts are
-// untouched, and the count is right.
+// TestDeleteHost 는 삭제 계약을 확인합니다. 부분 문자열이 들어간 호스트의
+// 행과 파일 트리를 함께 지우고, 안 맞는 호스트는 그대로 두며, 개수가 맞습니다.
 func TestDeleteHost(t *testing.T) {
 	dir := t.TempDir()
 	tr, err := Open(dir, "127.0.0.1:0")
@@ -37,7 +36,7 @@ func TestDeleteHost(t *testing.T) {
 	}
 	defer tr.Close()
 
-	// Seed two hosts' index rows + trees directly (record() needs a live Flow).
+	// 호스트 둘의 색인 행과 트리를 직접 심습니다(record() 는 살아 있는 Flow 가 필요).
 	for i, h := range []string{"a.example.com", "b.example.com"} {
 		id := fmt.Sprintf("1-%04d", i+1)
 		exDir := filepath.Join(dir, h, "GET", id)
@@ -54,7 +53,7 @@ VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
 		}
 	}
 
-	// Substring: "a.example" matches a.example.com only, leaves b.example.com.
+	// 부분 문자열: "a.example" 은 a.example.com 만 맞고, b.example.com 은 남깁니다.
 	n, err := tr.DeleteHost("a.example")
 	if err != nil {
 		t.Fatal(err)
@@ -62,14 +61,14 @@ VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
 	if n != 1 {
 		t.Fatalf("deleted=%d, want 1", n)
 	}
-	// Tree removed for the target, intact for the other host.
+	// 대상의 트리는 지우고, 다른 호스트의 트리는 그대로입니다.
 	if _, err := os.Stat(filepath.Join(dir, "a.example.com")); !os.IsNotExist(err) {
 		t.Fatalf("a.example.com tree still exists (stat err=%v)", err)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "b.example.com")); err != nil {
 		t.Fatalf("b.example.com tree removed: %v", err)
 	}
-	// Index reduced to the other host's single row.
+	// 색인은 다른 호스트의 행 하나만 남습니다.
 	var c int
 	if err := tr.DB().QueryRow(`SELECT COUNT(*) FROM exchanges`).Scan(&c); err != nil {
 		t.Fatal(err)
@@ -77,12 +76,12 @@ VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
 	if c != 1 {
 		t.Fatalf("rows=%d, want 1", c)
 	}
-	// A substring matching nothing is a no-op, not an error.
+	// 아무것도 안 맞는 부분 문자열은 오류가 아니라 아무 일도 없습니다.
 	n, err = tr.DeleteHost("nope.example")
 	if err != nil || n != 0 {
 		t.Fatalf("DeleteHost(missing)=%d, err=%v; want 0, nil", n, err)
 	}
-	// A broader substring sweeps the remaining host too.
+	// 더 넓은 부분 문자열은 남은 호스트도 쓸어 갑니다.
 	if n, err = tr.DeleteHost("example.com"); err != nil || n != 1 {
 		t.Fatalf("DeleteHost(example.com)=%d, err=%v; want 1, nil", n, err)
 	}
@@ -92,8 +91,8 @@ VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
 	}
 }
 
-// TestHosts verifies the target picker contract: distinct hosts with counts,
-// most recent activity first.
+// TestHosts 는 대상 고르기의 계약입니다. 서로 다른 호스트와 개수이고,
+// 최근 활동이 앞입니다.
 func TestHosts(t *testing.T) {
 	dir := t.TempDir()
 	tr, err := Open(dir, "127.0.0.1:0")
@@ -119,7 +118,7 @@ VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
 	if len(hosts) != 2 {
 		t.Fatalf("hosts=%d, want 2", len(hosts))
 	}
-	// newest activity (ts=3) first
+	// 가장 최근 활동(ts=3)이 앞입니다
 	if hosts[0].Host != "new.example.com" || hosts[0].Count != 1 {
 		t.Fatalf("hosts[0]=%+v, want new.example.com/1", hosts[0])
 	}
@@ -128,9 +127,9 @@ VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
 	}
 }
 
-// TestDeleteHostsExact verifies the batch delete: exact host match only — a
-// host whose name contains another as a substring is untouched — duplicates in
-// the batch are harmless, and the per-host trees are removed.
+// TestDeleteHostsExact 는 묶음 삭제입니다. 호스트가 정확히 같을 때만 지웁니다.
+// 이름에 다른 호스트가 부분 문자열로 들어 있어도 그 호스트는 그대로입니다.
+// 묶음의 중복은 해가 없고, 호스트별 트리는 지웁니다.
 func TestDeleteHostsExact(t *testing.T) {
 	dir := t.TempDir()
 	tr, err := Open(dir, "127.0.0.1:0")
@@ -149,12 +148,12 @@ VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
 			t.Fatal(err)
 		}
 	}
-	// "api.example.com" is a substring of "api.example.com.cn".
+	// "api.example.com" 은 "api.example.com.cn" 의 부분 문자열입니다.
 	seed("1-0001", "api.example.com")
 	seed("1-0002", "api.example.com.cn")
 	seed("1-0003", "shop.example.com")
 
-	// Duplicate entry in the batch must not double-delete or error.
+	// 묶음에 같은 항목이 두 번 있어도 두 번 지우거나 오류가 나면 안 됩니다.
 	n, err := tr.DeleteHostsExact([]string{"api.example.com", "api.example.com", "shop.example.com"})
 	if err != nil {
 		t.Fatal(err)
@@ -313,8 +312,8 @@ func TestStageDeleteHostsExactRollbackReportsRestoreFailure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Simulate an out-of-band conflicting destination. Rollback must surface the
-	// failed rename instead of claiming the external data was restored.
+	// 밖에서 목적지가 겹친 상황을 흉내 냅니다. Rollback 은 바깥 데이터가
+	// 복구됐다고 하지 않고, 실패한 rename 을 드러내야 합니다.
 	if err := os.WriteFile(hostDir, []byte("conflict"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -326,9 +325,9 @@ func TestStageDeleteHostsExactRollbackReportsRestoreFailure(t *testing.T) {
 	}
 }
 
-// TestDeleteHostGCBlobs verifies blob garbage collection: after a host's trees
-// are removed, blobs referenced by no remaining exchange are deleted, while
-// blobs still referenced (including shared ones) survive.
+// TestDeleteHostGCBlobs 는 blob 수거입니다. 호스트 트리를 지운 뒤,
+// 남은 교환이 가리키지 않는 blob 은 지우고, 아직 가리키는 blob
+// (공유된 것 포함)은 남습니다.
 func TestDeleteHostGCBlobs(t *testing.T) {
 	dir := t.TempDir()
 	tr, err := Open(dir, "127.0.0.1:0")
@@ -337,7 +336,7 @@ func TestDeleteHostGCBlobs(t *testing.T) {
 	}
 	defer tr.Close()
 
-	// Two distinct blobs + one shared blob (referenced by two hosts).
+	// 서로 다른 blob 둘과, 호스트 둘이 가리키는 공유 blob 하나입니다.
 	blobA := filepath.Join(dir, "_blobs", "sha256", "aa", "aa", strings.Repeat("a", 64)+".bin")
 	blobB := filepath.Join(dir, "_blobs", "sha256", "bb", "bb", strings.Repeat("b", 64)+".bin")
 	blobC := filepath.Join(dir, "_blobs", "sha256", "cc", "cc", strings.Repeat("c", 64)+".bin")
@@ -373,12 +372,12 @@ VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
 	ha := strings.Repeat("a", 64)
 	hb := strings.Repeat("b", 64)
 	hc := strings.Repeat("c", 64)
-	seed("1-0001", "a.example.com", ha) // sole reference to blobA
-	seed("1-0002", "b.example.com", hb) // sole reference to blobB
-	seed("1-0003", "c.example.com", hc) // shares blobC with d
+	seed("1-0001", "a.example.com", ha) // blobA 를 혼자 가리킴
+	seed("1-0002", "b.example.com", hb) // blobB 를 혼자 가리킴
+	seed("1-0003", "c.example.com", hc) // blobC 를 d 와 공유
 	seed("1-0004", "d.example.com", hc)
 
-	// Delete a: blobA orphaned → removed; blobB/blobC still referenced → kept.
+	// a 를 지우면 blobA 는 고아가 되어 지워집니다. blobB/blobC 는 아직 참조되어 남습니다.
 	if n, err := tr.DeleteHost("a.example"); err != nil || n != 1 {
 		t.Fatalf("DeleteHost(a.example)=%d, err=%v; want 1, nil", n, err)
 	}
@@ -392,7 +391,7 @@ VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
 		t.Fatalf("shared blobC removed while d still references it: %v", err)
 	}
 
-	// Delete c (shares blobC with d): blobC must survive.
+	// c 를 지웁니다(blobC 를 d 와 공유). blobC 는 남아야 합니다.
 	if n, err := tr.DeleteHost("c.example"); err != nil || n != 1 {
 		t.Fatalf("DeleteHost(c.example)=%d, err=%v; want 1, nil", n, err)
 	}
@@ -400,7 +399,7 @@ VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
 		t.Fatalf("shared blobC removed after deleting one sharer: %v", err)
 	}
 
-	// Delete d: last reference gone → blobC collected.
+	// d 를 지우면 마지막 참조가 사라져 blobC 를 수거합니다.
 	if n, err := tr.DeleteHost("d.example"); err != nil || n != 1 {
 		t.Fatalf("DeleteHost(d.example)=%d, err=%v; want 1, nil", n, err)
 	}

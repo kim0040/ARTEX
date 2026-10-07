@@ -61,21 +61,21 @@ import { isBtwCommand } from "@/lib/side-questions";
 import type { Activity, Agent, ChatAttachment, Conversation, LLMProfile } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-// fmtBytes renders a human file size for attachment chips (mirrors transcript.tsx).
+// fmtBytes는 첨부 칩에 사람이 읽기 쉬운 파일 크기를 그립니다(transcript.tsx와 같음).
 function fmtBytes(n: number): string {
   if (n >= 1 << 20) return `${(n / (1 << 20)).toFixed(1)} MB`;
   if (n >= 1 << 10) return `${(n / (1 << 10)).toFixed(1)} KB`;
   return `${n} B`;
 }
 
-// fmtTokens renders a compact token count (1234 → 1.2k, 2_000_000 → 2M).
+// fmtTokens는 토큰 수를 짧게 그립니다(1234 → 1.2k, 2_000_000 → 2M).
 function fmtTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(n >= 10_000_000 ? 0 : 1)}M`;
   if (n >= 1000) return `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k`;
   return String(n);
 }
 
-// fmtDuration renders an elapsed milliseconds span compactly (90s → 1m30s).
+// fmtDuration은 지난 밀리초를 짧게 그립니다(90초 → 1분 30초).
 function fmtDuration(ms: number): string {
   const s = Math.floor(ms / 1000);
   if (s < 60) return `${s}s`;
@@ -85,23 +85,23 @@ function fmtDuration(ms: number): string {
   return `${h}h${String(m % 60).padStart(2, "0")}m`;
 }
 
-// HISTORY_PAGE is how many steps one history page loads: the latest page on open,
-// then one more page each time the user scrolls to the top. Kept modest so a long
-// thread stays snappy (only ~a page of rows is in the DOM until you scroll up).
+// HISTORY_PAGE는 기록 한 페이지에 담는 단계 수입니다. 열면 최신 페이지,
+// 맨 위로 스크롤할 때마다 한 페이지를 더 불러옵니다. 길게 잡아 긴
+// 대화도 가볍게 둡니다(위로 올리기 전에는 한 페이지 정도만 화면에 있습니다).
 const HISTORY_PAGE = 200;
 const CONVERSATION_LIST_PAGE = 100;
 
-// Which agent groups the user has collapsed in the left rail. Persisted so the
-// rail looks the same after a reload; unknown keys are harmless (a deleted agent
-// simply never renders a group again).
+// 왼쪽 목록에서 사용자가 접어 둔 에이전트 묶음입니다. 저장해서
+// 새로고침 뒤에도 목록이 같게 보입니다. 모르는 키는 해롭지 않습니다(지운 에이전트는
+// 다시 묶음을 그리지 않을 뿐입니다).
 const COLLAPSED_AGENTS_KEY = "artex.chat.collapsed-agents";
 
 function conversationIsPinned(conversation: Conversation): boolean {
   return conversation.pinned ?? Boolean(conversation.pinned_at);
 }
 
-// AgentGroup is one collapsible section of the left rail: all unpinned
-// conversations of a single agent, newest activity first.
+// AgentGroup은 왼쪽 목록의 접히는 구역 하나입니다. 고정되지 않은
+// 한 에이전트의 대화를, 최근 활동이 먼저 오게 모읍니다.
 interface AgentGroup {
   key: string;
   name: string;
@@ -109,9 +109,9 @@ interface AgentGroup {
   runningCount: number;
 }
 
-// groupByAgent buckets conversations by agent, preserving the incoming order
-// both inside a group and across groups. The server already sorts by updated_at
-// DESC, so first-appearance order == most-recently-active group first.
+// groupByAgent는 대화를 에이전트별로 나눕니다. 들어온 순서는
+// 묶음 안과 묶음 사이 모두 유지합니다. 서버가 이미 updated_at
+// 내림차순이라, 처음 나타난 순서 = 가장 최근에 움직인 묶음이 먼저입니다.
 function groupByAgent(conversations: Conversation[], agentByKey: Map<string, Agent>): AgentGroup[] {
   const groups = new Map<string, AgentGroup>();
   for (const conversation of conversations) {
@@ -132,7 +132,7 @@ function groupByAgent(conversations: Conversation[], agentByKey: Map<string, Age
 }
 
 // LiveBadge는 작업의 메인 에이전트에서 재사용한, 작게 맥박 치는 "실시간" 칩입니다
-// console — shown while a turn is streaming.
+// 콘솔. 차례가 흐르는 동안 보입니다.
 function LiveBadge() {
   return (
     <span className="inline-flex items-center gap-1 rounded bg-blue-500/15 px-1.5 py-0.5 text-[10px] font-medium text-blue-600 dark:text-blue-400">
@@ -142,8 +142,8 @@ function LiveBadge() {
   );
 }
 
-// Composer is the shared bottom input (textarea grows to a cap, Enter sends,
-// Shift+Enter newlines) — the same affordance across DraftChat and ChatView.
+// Composer는 아래쪽 공통 입력칸입니다(입력칸은 상한까지 자라고, Enter는 보내기,
+// Shift+Enter는 줄바꿈). DraftChat과 ChatView가 같은 방식입니다.
 function Composer({
   value,
   onChange,
@@ -225,7 +225,7 @@ function Composer({
                 // FileList는 input 요소와 살아 있는 연결입니다. 먼저 배열로 스냅샷한 다음 value를 비워야 하고,
                 // 그렇지 않으면 비동기 onPickFiles(예: 초안 상태에서 먼저 세션을 만듦)가 다시 실행될 때 빈 목록을 받습니다.
                 const picked = Array.from(e.target.files ?? []);
-                e.target.value = ""; // allow re-picking the same file
+                e.target.value = ""; // 같은 파일을 다시 고를 수 있게 비웁니다
                 if (picked.length > 0) onPickFiles(picked);
               }}
             />
@@ -255,8 +255,8 @@ function Composer({
           </Button>
         )}
         {running ? (
-          // while a run is in flight the send button becomes a stop button —
-          // aborts just this session (the trigger queue keeps going).
+          // 실행 중에는 보내기 버튼이 멈추기 버튼이 됩니다.
+          // 이 세션만 중단합니다(트리거 대기열은 계속 갑니다).
           <Button size="icon" variant="destructive" onClick={onStop} disabled={stopDisabled} title="이번 실행 중지">
             <Square className="size-3.5 fill-current" />
           </Button>
@@ -276,8 +276,8 @@ function Composer({
   );
 }
 
-// LLMProfileRow shows the active LLM config below the composer and lets the user
-// switch it via a Popover. `selected` is the profile id or null for default.
+// LLMProfileRow는 입력칸 아래에 활성 LLM 설정을 보여주고
+// 팝오버로 바꿉니다. `selected`는 프로필 id이고, null이면 기본값입니다.
 function LLMProfileRow({
   profiles,
   selected,
@@ -315,7 +315,7 @@ function LLMProfileRow({
         </PopoverTrigger>
         <PopoverContent align="start" className="w-64 p-1">
           <p className="text-muted-foreground px-2 py-1 text-[11px] font-medium">LLM 설정 선택</p>
-          {/* default option */}
+          {/* 기본 선택 */}
           <button
             type="button"
             onClick={() => {
@@ -360,10 +360,10 @@ function LLMProfileRow({
   );
 }
 
-// DraftChat is the default right-pane view: a fresh chat (agent picker in the
-// header, centered empty state, composer) with NO conversation created yet. The
-// conversation is created lazily on the first send (ChatGPT-style), then the
-// parent switches to the real ChatView.
+// DraftChat은 오른쪽의 기본 화면입니다. 새 채팅(머리에 에이전트 선택,
+// 가운데 빈 상태, 입력칸)이고 대화는 아직 없습니다.
+// 대화는 처음 보낼 때 만들어집니다(ChatGPT처럼). 그다음
+// 부모가 진짜 ChatView로 바꿉니다.
 function DraftChat({
   agents,
   profiles,
@@ -379,7 +379,7 @@ function DraftChat({
   const [sending, setSending] = React.useState(false);
   const [uploading, setUploading] = React.useState(false);
 
-  // default the agent to Auto once agents load.
+  // 에이전트가 로드되면 기본값을 Auto로 둡니다.
   React.useEffect(() => {
     if (!agentKey && agents.some((a) => a.key === "auto")) setAgentKey("auto");
   }, [agentKey, agents]);
@@ -400,11 +400,11 @@ function DraftChat({
     }
   }
 
-  // Attachments need a conversation to own the uploads dir (sessions/conv-<id>/),
-  // and a draft has none yet — so picking a file CREATES the conversation, uploads
-  // into it, then hands off to ChatView carrying the typed text + attachments (the
-  // user sends from there). Mirrors the task main-agent console's upload, adapted to
-  // the ChatGPT-style lazy-create flow.
+  // 첨부는 대화를 소유자로 하는 업로드 폴더(sessions/conv-<id>/)가 필요합니다.
+  // 초안에는 아직 없어서, 파일을 고르면 대화를 만들고 그 안에
+  // 올린 뒤, 친 글과 첨부를 ChatView로 넘깁니다.
+  // 사용자는 거기서 보냅니다). 작업 메인 에이전트 콘솔의 업로드를
+  // 처음 보낼 때 대화를 만드는 흐름에 맞춘 것입니다.
   async function pickFiles(files: File[]) {
     if (files.length === 0 || !agentKey || uploading || sending) return;
     setUploading(true);
@@ -445,7 +445,7 @@ function DraftChat({
 
   return (
     <>
-      {/* empty / landing state fills the panel */}
+      {/* 빈 시작 상태가 패널을 채웁니다 */}
       <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 px-4 text-center">
         <div className="bg-primary/10 flex size-12 items-center justify-center rounded-full">
           <Bot className="text-primary size-6" />
@@ -474,9 +474,9 @@ function DraftChat({
   );
 }
 
-// ChatView is the right pane for one conversation — mirrors the task detail's
-// main-agent console: header with agent + live badge + token/duration meta, a
-// scroll-stick transcript (chat mode), and the composer.
+// ChatView는 대화 하나의 오른쪽 화면입니다. 작업 상세의
+// 메인 에이전트 콘솔과 같습니다. 에이전트와 실시간 배지, 토큰/시간,
+// 맨 아래에 붙는 대화 기록(채팅 모드), 입력칸이 있습니다.
 function ChatView({
   conv,
   agents,
@@ -488,8 +488,8 @@ function ChatView({
   conv: Conversation;
   agents: Agent[];
   profiles: LLMProfile[];
-  // pending text + already-uploaded attachments handed off from a draft that
-  // created this conversation via the paperclip (consumed once, on mount).
+  // 초안이 클립으로 이 대화를 만들며 넘긴, 아직 보내지 않은 글과
+  // 이미 올린 첨부입니다(마운트 때 한 번만 씁니다).
   initial?: { input?: string; attachments?: ChatAttachment[] };
   onTitleMaybeChanged: () => void;
   onConvUpdated: () => void;
@@ -503,12 +503,12 @@ function ChatView({
   // 방법 1 파일 업로드: 올린 첨부(sessions/conv-<id>/uploads/에 놓임). 다음 메시지와 함께 보냅니다.
   const [attachments, setAttachments] = React.useState<ChatAttachment[]>(initial?.attachments ?? []);
   const [uploading, setUploading] = React.useState(false);
-  const cursorRef = React.useRef(0); // newest loaded id — incremental-tail anchor
-  const earliestRef = React.useRef(0); // earliest loaded id — reverse-pagination anchor
-  const hasMoreRef = React.useRef(false); // older history remains above the loaded window
-  const loadingMoreRef = React.useRef(false); // guard: one scroll-up load at a time
+  const cursorRef = React.useRef(0); // 불러온 최신 id. 뒤를 이어 붙일 기준 번호
+  const earliestRef = React.useRef(0); // 불러온 가장 오래된 id. 위로 넘어갈 기준 번호
+  const hasMoreRef = React.useRef(false); // 불러온 창 위에 더 오래된 기록이 있습니다
+  const loadingMoreRef = React.useRef(false); // 가드: 위로 스크롤 불러오기는 한 번에 하나만
   const [historyLoaded, setHistoryLoaded] = React.useState(false);
-  const [hasMore, setHasMore] = React.useState(false); // drives the "load earlier" hint
+  const [hasMore, setHasMore] = React.useState(false); // "이전 기록 불러오기" 안내를 켜는 값
   const agent = agents.find((a) => a.key === conv.agent_key);
   const currentProfileId = conv.llm_profile_id ?? null;
   const side = useSideQuestions(`/api/conversations/${conv.id}`);
@@ -522,10 +522,10 @@ function ChatView({
     }
   }
 
-  // conversation-scoped detail fetcher for the reused Transcript renderer.
+  // 재사용하는 Transcript가 이 대화의 상세를 가져오는 함수입니다.
   const fetchDetail = React.useCallback((seq: number) => api.conversationMsgDetail(conv.id, seq), [conv.id]);
 
-  // seq of the most-recent TodoWrite tool call (for the Todo popover); null if none.
+  // 가장 최근 TodoWrite 도구 호출의 seq(할 일 팝오버용). 없으면 null.
   const latestTodoSeq = React.useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i--) {
       const a = messages[i];
@@ -534,11 +534,11 @@ function ChatView({
     return null;
   }, [messages]);
 
-  // reset + load whenever the selected conversation changes. Load only the LATEST
-  // page on open — a long thread's final answer sits at the very end, so the newest
-  // page shows it immediately (issue #3: opening/refresh used to load the oldest
-  // page, so the completed result was missing until another message advanced the
-  // cursor). Older history streams in on scroll-up (loadEarlier below).
+  // 고른 대화가 바뀌면 초기화하고 다시 불러옵니다. 열 때는 최신
+  // 페이지만 불러옵니다. 긴 대화의 최종 답은 맨 끝에 있으므로 최신
+  // 페이지에 바로 보입니다(이슈 3: 열기/새로고침이 가장 오래된
+  // 페이지만 읽어, 다른 메시지가 기준 번호를 밀기 전에는 완료 결과가 없었습니다).
+  // 더 오래된 기록은 위로 스크롤할 때 들어옵니다(아래 loadEarlier).
   React.useEffect(() => {
     cursorRef.current = 0;
     earliestRef.current = 0;
@@ -561,8 +561,8 @@ function ChatView({
         setHistoryLoaded(true);
       })
       .catch(() => {
-        // A source link can retry history through its locator; ordinary chats
-        // retain the existing usable empty state on a transient failure.
+        // 출처 링크는 위치 정보로 기록을 다시 시도할 수 있습니다. 일반 채팅은
+        // 잠깐 실패해도 지금 쓸 수 있는 빈 상태를 유지합니다.
         if (live) setHistoryLoaded(true);
       });
     return () => {
@@ -570,13 +570,13 @@ function ChatView({
     };
   }, [conv.id]);
 
-  // A trigger or another tab may start a turn while this conversation is open.
-  // A false list snapshot must not stop the tail before its final messages load.
+  // 이 대화가 열려 있는 동안 트리거나 다른 탭이 차례를 시작할 수 있습니다.
+  // 잘못된 목록 스냅샷이, 마지막 메시지가 오기 전에 꼬리 읽기를 멈추면 안 됩니다.
   React.useEffect(() => {
     if (conv.running) setRunning(true);
   }, [conv.running]);
 
-  // poll while a turn is running: pull new steps after the cursor.
+  // 차례가 도는 동안 주기 조회합니다. 기준 번호 뒤의 새 단계를 가져옵니다.
   React.useEffect(() => {
     if (!running) return;
     let live = true;
@@ -592,11 +592,11 @@ function ChatView({
         cursorRef.current = Math.max(cursorRef.current, r.cursor);
         keepPolling = r.running;
         setRunning(r.running);
-        if (!r.running) onTitleMaybeChanged(); // first-turn auto-title landed
+        if (!r.running) onTitleMaybeChanged(); // 첫 차례의 자동 제목이 반영됨
       } catch {
-        /* transient — keep polling */
+        /* 잠깐 오류. 주기 조회는 계속 */
       } finally {
-        // Slow responses must not overlap another poll with the same cursor.
+        // 느린 응답이 같은 기준 번호로 다른 주기 조회와 겹치면 안 됩니다.
         if (live && keepPolling) timer = setTimeout(() => void tick(), 1000);
       }
     };
@@ -616,15 +616,15 @@ function ChatView({
   }, []);
   const focusHistory = useApprovalHistory(approvalFocus.state?.source, historyLoaded, messages, loadFocusPage, mergeFocusPage);
 
-  // ---- transcript auto-scroll (open → bottom; stick to bottom unless scrolled up) ----
+  // ---- 대화 기록 자동 스크롤(열면 맨 아래, 올려 보면 맨 아래에 붙이지 않음) ----
   const contentRef = React.useRef<HTMLDivElement | null>(null);
   const atBottomRef = React.useRef(true);
   const viewport = React.useCallback(
     () => (contentRef.current?.closest('[data-slot="scroll-area-viewport"]') as HTMLElement | null) ?? null,
     [],
   );
-  // Scroll-up loads one older page and prepends it, preserving the visual position
-  // so the view doesn't jump (record height/offset before, restore the delta after).
+  // 위로 스크롤하면 더 오래된 페이지를 앞에 붙이고, 보이는 위치는
+  // 유지합니다(붙이기 전 높이와 오프셋을 재고, 차이만큼 되돌림).
   const loadEarlier = React.useCallback(async () => {
     if (loadingMoreRef.current || !hasMoreRef.current) return;
     const vp = viewport();
@@ -645,7 +645,7 @@ function ChatView({
         if (v) v.scrollTop = prevTop + (v.scrollHeight - prevH);
       });
     } catch {
-      /* transient — a later scroll retries */
+      /* 잠깐 오류. 다음 스크롤이 다시 시도 */
     } finally {
       loadingMoreRef.current = false;
     }
@@ -656,13 +656,13 @@ function ChatView({
     const onScroll = () => {
       if (approvalFocus.state && !focusHistory.ready) return;
       atBottomRef.current = vp.scrollTop + vp.clientHeight >= vp.scrollHeight - 60;
-      if (vp.scrollTop <= 80) void loadEarlier(); // near top → pull an older page
+      if (vp.scrollTop <= 80) void loadEarlier(); // 맨 위 근처 → 더 오래된 페이지
     };
     vp.addEventListener("scroll", onScroll, { passive: true });
     return () => vp.removeEventListener("scroll", onScroll);
   }, [viewport, loadEarlier, approvalFocus.state, focusHistory.ready]);
-  // open/switch a conversation → jump to the latest (bottom)
-  // biome-ignore lint/correctness/useExhaustiveDependencies: changing conversations intentionally retriggers the scroll reset.
+  // 대화를 열거나 바꾸면 최신(맨 아래)으로 점프
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 대화가 바뀌면 스크롤 초기화를 일부러 다시 실행합니다.
   React.useLayoutEffect(() => {
     const vp = viewport();
     if (vp) {
@@ -670,16 +670,16 @@ function ChatView({
       atBottomRef.current = true;
     }
   }, [conv.id, viewport]);
-  // new activity → stick to bottom only if the user is already pinned there
-  // biome-ignore lint/correctness/useExhaustiveDependencies: message and running changes intentionally retrigger bottom anchoring.
+  // 새 활동은 사용자가 이미 맨 아래에 붙어 있을 때만 맨 아래에 붙입니다
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 메시지와 실행 상태가 바뀌면 맨 아래 고정을 일부러 다시 실행합니다.
   React.useLayoutEffect(() => {
     if (approvalFocus.state || !atBottomRef.current) return;
     const vp = viewport();
     if (vp) vp.scrollTop = vp.scrollHeight;
   }, [messages, running, viewport, approvalFocus.state]);
 
-  // Per-conversation token total, live — same accounting as the main-agent
-  // console: completed runs' `result` sum + the in-progress run's latest `usage`.
+  // 대화별 토큰 합계(실시간). 메인 에이전트
+  // 콘솔과 같은 계산입니다. 끝난 실행의 `result` 합 + 진행 중 실행의 최신 `usage`.
   const tokenTotal = React.useMemo(() => {
     let i = 0,
       o = 0,
@@ -707,8 +707,8 @@ function ChatView({
     return { i: I, o: O, cr: CR, turns, any: I + O + CR > 0 };
   }, [messages]);
 
-  // pickFiles uploads into this conversation's session dir (sessions/conv-<id>/
-  // uploads/) and queues the returned metadata to send with the next message.
+  // pickFiles는 이 대화의 세션 폴더(sessions/conv-<id>/
+  // uploads/)에 올리고, 다음 메시지와 함께 보낼 정보를 대기열에 넣습니다.
   async function pickFiles(files: File[]) {
     if (files.length === 0) return;
     setUploading(true);
@@ -732,21 +732,21 @@ function ChatView({
     setAttachments([]);
     try {
       await api.sendConversationMessage(conv.id, msg, atts.length ? atts : undefined);
-      // The live loop pulls the persisted human turn immediately. Sharing that
-      // fetch avoids racing a separate post-send request against the poller.
+      // 실시간 루프가 저장된 사람 차례를 바로 가져옵니다. 그
+      // 조회를 같이 써서, 보낸 뒤 별도 요청이 주기 조회와 경주하지 않게 합니다.
       setRunning(true);
     } catch (e) {
       toast.error("보내기 실패:" + (e as Error).message);
-      setInput(msg); // restore so the user doesn't lose their text
-      setAttachments(atts); // and their attachments
+      setInput(msg); // 사용자가 글을 잃지 않게 되돌립니다
+      setAttachments(atts); // 첨부도 되돌립니다
     } finally {
       setSending(false);
     }
   }
 
-  // stop aborts the in-flight run for this conversation. running flips to false on
-  // the next 1s poll once the backend unwinds the agent; the trigger queue is not
-  // affected — the agent's next queued fire still starts.
+  // stop은 이 대화의 진행 중 실행을 중단합니다. 백엔드가 에이전트를 풀면
+  // 다음 1초 주기 조회에서 running이 거짓이 됩니다. 트리거 대기열은
+  // 영향받지 않습니다. 대기 중인 다음 실행은 그대로 시작됩니다.
   async function stop() {
     if (stopping) return;
     setStopping(true);
@@ -761,7 +761,7 @@ function ChatView({
 
   return (
     <SideQuestionWorkspace side={side} label={agent?.name ?? conv.agent_key} composerLayout="inline">
-      {/* header: which agent + live + token meta */}
+      {/* 머리: 어떤 에이전트인지, 실시간, 토큰 */}
       <div className="flex min-w-0 flex-wrap items-center gap-2 border-b px-4 py-2.5">
         <Bot className="text-muted-foreground size-4 shrink-0" />
         <span className="min-w-0 max-w-48 truncate text-sm font-medium">{agent?.name ?? conv.agent_key}</span>
@@ -792,7 +792,7 @@ function ChatView({
 
       <ApprovalExecutionFocus focus={approvalFocus} history={focusHistory} />
 
-      {/* messages */}
+      {/* 메시지 */}
       <ScrollArea type="auto" className="min-h-0 min-w-0 flex-1 [&_[data-slot=scroll-area-viewport]>div]:block!">
         <div className="min-w-0 max-w-full px-4 py-3" ref={contentRef}>
           {messages.length === 0 && !running ? (
@@ -836,9 +836,9 @@ function ChatView({
   );
 }
 
-// ConversationItem is one row in the left rail: title, agent subtitle, inline
-// rename, pin marker, and a compact action menu. Rows nested under an agent
-// group drop the agent subtitle (showAgent=false) — the header already says it.
+// ConversationItem은 왼쪽 목록의 한 줄입니다. 제목, 에이전트 부제, 그 자리
+// 이름 바꾸기, 고정 표시, 작은 동작 메뉴가 있습니다. 에이전트 묶음 아래 줄은
+// 에이전트 부제를 뺍니다(showAgent=false). 머리가 이미 말합니다.
 const ConversationItem = React.memo(function ConversationItem({
   conv,
   agent,
@@ -1004,8 +1004,8 @@ const ConversationItem = React.memo(function ConversationItem({
   );
 });
 
-// AgentGroupHeader is the sticky, clickable divider above one agent's rows:
-// collapse chevron, agent name, a running marker, and the row count.
+// AgentGroupHeader는 한 에이전트 줄 위에 붙는, 누를 수 있는 구분선입니다.
+// 접기 화살표, 에이전트 이름, 실행 중 표시, 줄 개수가 있습니다.
 function AgentGroupHeader({
   group,
   collapsed,
@@ -1063,19 +1063,19 @@ export default function ChatPage() {
   const [renamingId, setRenamingId] = React.useState<number | null>(null);
   const [renameText, setRenameText] = React.useState("");
   const [selectedConversationIds, setSelectedConversationIds] = React.useState<Set<number>>(() => new Set());
-  // selectionMode gates the multi-select UI: off by default (clean list, no
+  // selectionMode는 여러 선택 화면을 여닫습니다. 기본은 꺼짐(깨끗한 목록,
   // 체크 상자). 머리의 "여러 선택" 버튼이 켜고, "완료"가 끄며
-  // clears the selection.
+  // 선택을 비웁니다.
   const [selectionMode, setSelectionMode] = React.useState(false);
   const [bulkDeleteOpen, setBulkDeleteOpen] = React.useState(false);
   const [bulkDeleting, setBulkDeleting] = React.useState(false);
   const [visibleConversationCount, setVisibleConversationCount] = React.useState(CONVERSATION_LIST_PAGE);
-  // Collapsed agent groups. Hydrated from localStorage after mount (not a lazy
-  // useState init) so the server and client render the same first pass.
+  // 접힌 에이전트 묶음. 마운트 뒤에 localStorage에서 채웁니다(지연
+  // useState 초기화가 아님). 서버와 브라우저의 첫 화면이 같게 합니다.
   const [collapsedAgents, setCollapsedAgents] = React.useState<Set<string>>(() => new Set());
-  // Pending text + uploaded attachments handed off from a draft that created a
-  // conversation via the paperclip, keyed by the new conversation id (consumed once
-  // by ChatView on mount; ids never repeat, so leftover entries are harmless).
+  // 초안이 클립으로 대화를 만들며 넘긴, 아직 보내지 않은 글과 올린 첨부입니다.
+  // 새 대화 id가 키입니다(ChatView가 마운트 때 한 번 씁니다. id는 반복되지 않아
+  // 남은 항목은 해롭지 않습니다).
   const [pendingByConv, setPendingByConv] = React.useState<
     Record<number, { input?: string; attachments?: ChatAttachment[] }>
   >({});
@@ -1087,7 +1087,7 @@ export default function ChatPage() {
       const items = await api.conversations();
       if (seq === conversationListSeq.current) { setConvs(items); setConvsLoaded(true); }
     } catch {
-      // Preserve the selected transcript and list on a transient poll failure.
+      // 주기 조회가 잠깐 실패해도 고른 대화 기록과 목록을 유지합니다.
     }
   }, []);
   React.useEffect(() => {
@@ -1095,18 +1095,18 @@ export default function ChatPage() {
       .agents()
       .then(setAgents)
       .catch(() => {
-        /* Agent metadata is optional for rendering an existing conversation. */
+        /* 이미 있는 대화를 그리는 데 에이전트 정보는 없어도 됩니다. */
       });
     api
       .llmProfiles()
       .then(setProfiles)
       .catch(() => {
-        /* The conversation remains usable without profile labels. */
+        /* 프로필 이름이 없어도 대화는 쓸 수 있습니다. */
       });
   }, []);
 
-  // One list poll supplies runtime state for all sidebar rows, including the
-  // unselected ones. Await completion so slow requests do not overlap.
+  // 목록 주기 조회 한 번이 모든 사이드바 줄의 실행 상태를 줍니다. 선택하지 않은
+  // 줄도 포함합니다. 끝날 때까지 기다려 느린 요청이 겹치지 않게 합니다.
   React.useEffect(() => {
     let disposed = false;
     let timer: ReturnType<typeof setTimeout>;
@@ -1139,7 +1139,7 @@ export default function ChatPage() {
       if (Array.isArray(keys))
         setCollapsedAgents(new Set(keys.filter((key): key is string => typeof key === "string")));
     } catch {
-      // Corrupted entry → start with everything expanded.
+      // 깨진 저장값이면 모두 펼친 채로 시작합니다.
     }
   }, []);
 
@@ -1152,9 +1152,9 @@ export default function ChatPage() {
     });
   }, []);
 
-  // Restore the open conversation from the URL (?c=<id>) on mount, so a refresh
-  // returns to the same thread instead of the empty draft view. Runs after
-  // hydration (not a lazy useState init) to avoid a server/client mismatch.
+  // 마운트 때 주소의 열린 대화(?c=<id>)를 복원해서, 새로고침해도
+  // 빈 초안이 아니라 같은 대화로 돌아옵니다. 수화 뒤에 실행합니다(지연
+  // useState 초기화가 아님). 서버와 브라우저가 어긋나지 않게 합니다.
   React.useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     setSourceRequested(params.has("approval"));
@@ -1162,10 +1162,10 @@ export default function ChatPage() {
     const id = c ? Number(c) : NaN;
     if (Number.isFinite(id)) setSelectedId(id);
   }, []);
-  // Mirror the current selection into the URL (replaceState → no history spam). A
-  // selectedId with no matching conversation (e.g. a stale ?c=, or a just-created
-  // one before reloadConvs lands) simply renders the draft view — harmless — so we
-  // deliberately do NOT auto-clear it here (that raced new-conversation creation).
+  // 지금 선택을 주소에 반영합니다(replaceState라 방문 기록이 늘지 않음).
+  // 대화가 없는 selectedId(오래된 ?c= 또는 방금 만든
+  // 대화가 reloadConvs 전에 있는 경우)는 초안 화면이 될 뿐이라 해롭지 않습니다. 그래서
+  // 여기서 자동으로 지우지 않습니다(새 대화 만들기와 경주했습니다).
   React.useEffect(() => {
     const url = new URL(window.location.href);
     if (selectedId != null) url.searchParams.set("c", String(selectedId));
@@ -1183,8 +1183,8 @@ export default function ChatPage() {
     () => filteredConversations.slice(0, visibleConversationCount),
     [filteredConversations, visibleConversationCount],
   );
-  // Pinned rows stay a flat block above the groups (server order = pinned_at DESC);
-  // everything else is bucketed per agent, most-recently-active agent first.
+  // 고정된 줄은 묶음 위에 평평하게 둡니다(서버 순서 = pinned_at 내림차순).
+  // 나머지는 에이전트별로 나누고, 가장 최근에 움직인 에이전트가 먼저입니다.
   const pinnedConversations = React.useMemo(
     () => visibleConversations.filter(conversationIsPinned),
     [visibleConversations],
@@ -1197,16 +1197,16 @@ export default function ChatPage() {
       ),
     [visibleConversations, agentByKey],
   );
-  // conversation agents: custom agents + conversational built-ins (role=assistant,
+  // 대화에 쓰는 에이전트: 사용자 에이전트와 대화형 내장(role=assistant,
   // 예: Auto / 침투 테스트). 오케스트레이션 내장(goals/planner/mainagent/worker)
-  // are task-specific and stay hidden from the chat page.
+  // 작업 전용이라 채팅 화면에는 숨깁니다.
   const chatAgents = React.useMemo(() => agents.filter((a) => !a.builtin || a.role === "assistant"), [agents]);
   const agentFilterOptions = React.useMemo(() => {
     const counts = new Map<string, number>();
     for (const conversation of convs) {
       counts.set(conversation.agent_key, (counts.get(conversation.agent_key) ?? 0) + 1);
     }
-    // Include historical sources even if their Agent has since been disabled or deleted.
+    // 그 에이전트가 나중에 꺼지거나 지워져도, 과거 출처는 포함합니다.
     const keys = new Set([...chatAgents.map((agent) => agent.key), ...counts.keys()]);
     if (agentFilter !== null) keys.add(agentFilter);
     return [...keys]
@@ -1300,8 +1300,8 @@ export default function ChatPage() {
         toast.error(`${failed.length} 개 대화 삭제 실패:${details}${failed.length > 3 ? " 등" : ""}`);
       }
       setBulkDeleteOpen(false);
-      // Fully successful → return to the clean list; keep selection mode on if
-      // some failed so the user can retry the remaining ones.
+      // 전부 성공하면 깨끗한 목록으로 돌아갑니다. 일부가 실패하면 선택 모드를 유지해
+      // 남은 것을 다시 시도할 수 있게 합니다.
       if (failed.length === 0) setSelectionMode(false);
       void reloadConvs();
     } catch (error) {
@@ -1351,7 +1351,7 @@ export default function ChatPage() {
       className="flex h-[calc(100svh-3rem)] min-w-0 flex-col overflow-hidden p-3 sm:p-4 md:h-[calc(100svh-4rem)] md:p-6"
     >
       <div className="grid min-h-0 min-w-0 flex-1 grid-cols-1 grid-rows-[minmax(10rem,15rem)_minmax(0,1fr)] gap-3 md:grid-cols-[18rem_minmax(0,1fr)] md:grid-rows-[minmax(0,1fr)] md:gap-4">
-        {/* left: conversation list */}
+        {/* 왼쪽: 대화 목록 */}
         <div className="bg-card flex flex-col overflow-hidden rounded-lg border">
           <div className="flex flex-col gap-2 border-b p-2">
             <Button size="sm" className="w-full" onClick={() => selectConversation(null)}>
@@ -1503,7 +1503,7 @@ export default function ChatPage() {
           </ScrollArea>
         </div>
 
-        {/* right: chat view */}
+        {/* 오른쪽: 채팅 */}
         <div className="bg-card flex min-w-0 flex-col overflow-hidden rounded-lg border">
           {selected ? (
             <ChatView
@@ -1525,9 +1525,9 @@ export default function ChatPage() {
               profiles={profiles}
               onStarted={(c, pending) => {
                 if (agentFilter !== null && agentFilter !== c.agent_key) changeAgentFilter(null);
-                // Insert the new conversation immediately so `selected` resolves to
-                // it on this render (switching to ChatView right away, before the
-                // async reloadConvs lands); reloadConvs then reconciles titles etc.
+                // 새 대화를 바로 넣어, 이 렌더에서 `selected`가 그것을
+                // 가리키게 합니다(reloadConvs가 끝나기 전에 ChatView로 전환).
+                // 그다음 reloadConvs가 제목 등을 맞춥니다.
                 if (pending) setPendingByConv((p) => ({ ...p, [c.id]: pending }));
                 setConvs((prev) => {
                   if (prev.some((item) => item.id === c.id)) return prev;

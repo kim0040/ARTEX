@@ -61,8 +61,8 @@ func TestInheritedActivityReadsRequireTerminalIntent(t *testing.T) {
 		t.Fatalf("terminal detail boundary: details=%+v err=%v", details, err)
 	}
 
-	// Reopening a source intent must close every inherited activity read even if
-	// callers still hold a stale terminal-state snapshot.
+	// 원본 의도를 다시 열면, 호출자가 낡은 종료 상태 스냅샷을 쥐고 있어도
+	// 물려받은 활동 읽기는 모두 닫혀야 한다.
 	if err := store.SetIntentState(intentID, "running"); err != nil {
 		t.Fatal(err)
 	}
@@ -205,8 +205,8 @@ func TestExplorationDirectSourceReadView(t *testing.T) {
 		t.Fatalf("indirect source must be invisible: node=%+v err=%v", gotGrand, err)
 	}
 
-	// Existing write methods remain bound to currentStore.expID. Passing an
-	// inherited id is a no-op and cannot mutate the source blackboard.
+	// 기존 쓰기 메서드는 currentStore.expID에 묶여 있다. 물려받은
+	// id를 넘기면 아무 일도 하지 않고, 원본 보드를 바꾸지 못한다.
 	if err := currentStore.SetNodeState(sourceFact, "dismissed"); err != nil {
 		t.Fatal(err)
 	}

@@ -58,8 +58,8 @@ export function TaskLLMProfileChain({
   const profilesUnavailable = profiles.length === 0;
   const currentProfileID = activeProfileId && value.includes(activeProfileId) ? activeProfileId : value[0];
   const currentIndex = value.indexOf(currentProfileID);
-  // api_key_hint is display-only and is empty for valid keys shorter than four
-  // characters. The task API remains authoritative for profile validation.
+  // api_key_hint는 보여 주기만 하며, 네 글자보다 짧은 올바른 키는 비어 있습니다.
+  // 프로필이 맞는지의 기준은 여전히 작업 API입니다.
 
   const profileLabel = React.useCallback(
     (id: string) => {

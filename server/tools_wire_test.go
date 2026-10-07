@@ -18,9 +18,9 @@ func names(tools []actool.CoreTool) map[string]actool.CoreTool {
 	return m
 }
 
-// TestWireTools verifies end-to-end against the live dev PG: wireTools seeds the
-// catalog, ToolResolve keeps record_fact for worker but drops it for planner (not
-// bound), and an edited description + injected default flow through.
+// TestWireTools는 살아있는 개발 PG로 끝까지 확인합니다. wireTools가 카탈로그를 심고,
+// ToolResolve는 워커에게 record_fact를 남기고 플래너에게는 뺍니다(안
+// 묶임). 고친 설명과 주입된 기본값이 통과하는지도 봅니다.
 func TestWireTools(t *testing.T) {
 	dsn, _, err := db.DSN()
 	if err != nil {
@@ -32,22 +32,22 @@ func TestWireTools(t *testing.T) {
 	}
 	defer pg.Close()
 
-	wireTools(pg, nil) // nil domainReg: test only covers filter/decoration, not injection
+	wireTools(pg, nil) // domainReg가 nil: 이 테스트는 거르기/장식만 보고, 주입은 안 봅니다.
 	t.Cleanup(func() { agent.ToolResolve = nil })
-	// Prevent interactive-shell Bash decoration: if the worker agent has
-	// interactive_shell=true in the DB, ToolResolve would append a note to
-	// Bash's description. Disable that for this test so the undecorated
-	// pass-through assertion holds regardless of DB state.
+	// 대화형 셸이 Bash 설명을 장식하지 못하게 합니다. DB에서 워커의
+	// interactive_shell이 true면 ToolResolve가 Bash 설명에 문장을 붙입니다.
+	// 이 테스트에서는 그 장식을 꺼, 장식 없는
+	// 통과 확인이 DB 상태와 상관없이 성립하게 합니다.
 	t.Setenv("AGENT_CORE_DISABLE_INTERACTIVE_SHELL", "1")
 
-	// Seeding populated the catalog.
+	// 심기 때문에 카탈로그가 채워졌습니다.
 	rf, err := pg.GetTool("record_fact")
 	if err != nil || rf == nil {
 		t.Fatalf("record_fact not seeded: %v", err)
 	}
 
-	// Build a base as the worker does: its domain tools + defaults, resolved for
-	// "worker" then for "planner".
+	// 워커처럼 기본 목록을 만듭니다. 도메인 도구와 기본값. "worker"로 푼 뒤
+	// "planner"로도 풉니다.
 	ts := agent.NewToolSet(nil, "")
 	base := append(ts.WorkerTools(), actool.DefaultTools()...)
 	ctx := context.Background()
@@ -56,22 +56,22 @@ func TestWireTools(t *testing.T) {
 	if _, ok := worker["record_fact"]; !ok {
 		t.Error("worker lost record_fact")
 	}
-	// SDK generic tools aren't seeded → ToolResolve passes them through unchanged
-	// (same object, original description — not decorated). No startup prune touches
-	// non-catalog rows, so future user-defined custom tools survive too.
+	// SDK 일반 도구는 심지 않으므로 ToolResolve가 그대로 통과시킵니다
+	// (같은 객체, 원래 설명, 장식 없음). 시작 때 카탈로그 밖 행은
+	// 안 지우므로, 나중에 사용자가 만든 도구도 남습니다.
 	if bash, ok := worker["Bash"]; !ok {
 		t.Error("worker lost Bash (should pass through)")
 	} else if bash.Description() != actool.NewBash().Description() {
 		t.Error("Bash should pass through undecorated, but description changed")
 	}
-	// planner is not bound to record_fact → resolving a base that contains it drops it.
+	// 플래너는 record_fact에 안 묶입니다. 그것을 포함한 기본을 풀면 빠집니다.
 	planner := names(agent.ToolResolve(ctx, "planner", base))
 	if _, ok := planner["record_fact"]; ok {
 		t.Error("planner should not get record_fact (not bound)")
 	}
 
-	// Edit description + add a default to a scalar param, then confirm the resolved
-	// worker tool reflects both. Restore from code default on cleanup.
+	// 설명을 고치고 스칼라 매개변수에 기본값을 더한 뒤, 풀린
+	// 워커 도구에 둘 다 반영되는지 확인합니다. 끝날 때 코드 기본값으로 되돌립니다.
 	t.Cleanup(func() { _ = pg.UpsertToolForce(rf.Key, rf.Description, rf.Schema, mustJSON(rf.Agents)) })
 	var schema map[string]any
 	_ = json.Unmarshal(rf.Schema, &schema)
@@ -93,8 +93,8 @@ func TestWireTools(t *testing.T) {
 	if got.Description() != "EDITED DESC" {
 		t.Errorf("description = %q, want EDITED DESC", got.Description())
 	}
-	// Default injection: omit confidence → handler input should carry the default.
-	// We can't run the real handler (nil store), but InputSchema must show the default.
+	// 기본값 주입: confidence를 빼면 처리기 입력에 기본값이 있어야 합니다.
+	// 진짜 처리기는 못 돌립니다(저장소가 nil). InputSchema에 기본값이 보여야 합니다.
 	sc := got.InputSchema()
 	props := sc["properties"].(map[string]any)
 	conf := props["confidence"].(map[string]any)

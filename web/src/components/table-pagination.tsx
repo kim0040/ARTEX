@@ -9,15 +9,15 @@ import { Pagination, PaginationContent, PaginationEllipsis, PaginationItem } fro
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface TablePaginationProps {
-  page: number; // 1-based
+  page: number; // 1부터 셈
   pageSize: number;
-  total: number; // total (after filtering)
+  total: number; // 전체 개수(거른 뒤)
   onPageChange: (p: number) => void;
   onPageSizeChange: (s: number) => void;
   pageSizeOptions?: number[];
 }
 
-// pageWindows returns the sequence of page numbers / ellipsis to render.
+// pageWindows는 그릴 페이지 번호와 말줄임 순서를 돌려줍니다.
 function pageWindows(page: number, total: number): (number | "...")[] {
   if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
   const out: (number | "...")[] = [1];

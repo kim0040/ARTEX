@@ -13,9 +13,10 @@ import (
 	"strings"
 )
 
-// EvidenceExchange exposes complete captured bodies only during the callback.
-// Readers are closed before releasing the writer lock, so host deletion cannot
-// remove a blob between its index lookup and its evidence copy.
+// EvidenceExchange 는 콜백이 도는 동안에만 캡처된 본문 전체를 보여 줍니다.
+// 쓰기 잠금을 풀기 전에 Reader 를 닫으므로, 호스트가 지워도
+// 색인을 찾은 뒤 증거를 복사하기 전에 blob 이 사라지지 않습니다.
+// 초보: 발견이 기록 프록시(127.0.0.1:8788)에 남은 HTTP 본문을 증거로 고정할 때 이 구조를 읽습니다.
 type EvidenceExchange struct {
 	ID, URL, Method, ContentType string
 	TS                           int64

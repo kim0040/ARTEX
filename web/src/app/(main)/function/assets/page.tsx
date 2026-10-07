@@ -1,5 +1,7 @@
 "use client";
 
+// 자산 그래프에 모인 자산을 종류별로 봅니다.
+
 import * as React from "react";
 
 import {
@@ -123,34 +125,34 @@ export default function AssetsPage() {
   const assetsRequestRef = React.useRef(0);
   const [rowsTab, setRowsTab] = React.useState("");
 
-  // asset selection & delete
+  // 자산 선택과 삭제
   const [selected, setSelected] = React.useState<Set<number>>(new Set());
   const [deleteIds, setDeleteIds] = React.useState<number[]>([]);
   const [deleteOpen, setDeleteOpen] = React.useState(false);
   const [deleting, setDeleting] = React.useState(false);
 
-  // company delete
+  // 기업 삭제
   const [companyDeleteTarget, setCompanyDeleteTarget] = React.useState<Company | null>(null);
   const [companyDeleteAssets, setCompanyDeleteAssets] = React.useState(false);
   const [companyDeleting, setCompanyDeleting] = React.useState(false);
 
-  // Companies + per-type counts (tab badges) — loaded on demand, no background polling.
+  // 기업 목록과 종류별 개수(탭 배지). 필요할 때만 불러오고, 뒤에서 계속 다시 읽지는 않습니다.
   const loadMeta = React.useCallback(() => {
     api
       .companies()
       .then(setCompanies)
       .catch(() => {
-        /* Keep the last successful company snapshot on a transient failure. */
+        /* 잠깐 실패해도 마지막으로 잘 불러온 기업 목록을 유지합니다. */
       });
     api
       .assetCounts()
       .then(setCounts)
       .catch(() => {
-        /* Keep the last successful counters on a transient failure. */
+        /* 잠깐 실패해도 마지막으로 잘 불러온 개수를 유지합니다. */
       });
   }, []);
 
-  // Manual refresh: reload counts/companies and re-fetch the current page.
+  // 수동 새로고침: 개수와 기업을 다시 읽고, 지금 페이지도 다시 가져옵니다.
   const refresh = React.useCallback(() => {
     loadMeta();
     setRefreshKey((k) => k + 1);
@@ -227,8 +229,8 @@ export default function AssetsPage() {
     loadMeta();
   }, [loadMeta]);
 
-  // Reset query + page + selection when switching tabs
-  // biome-ignore lint/correctness/useExhaustiveDependencies: tab changes intentionally reset tab-local controls.
+  // 탭을 바꾸면 검색어, 페이지, 선택을 처음으로 되돌립니다
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 탭이 바뀌면 그 탭의 검색 조건을 일부러 초기화합니다.
   React.useEffect(() => {
     setQuery("");
     setDslError("");
@@ -239,13 +241,13 @@ export default function AssetsPage() {
     setLoaded(false);
   }, [tab]);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: these controls intentionally reset server pagination.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 이 조건이 바뀌면 서버 페이지를 일부러 처음으로 되돌립니다.
   React.useEffect(() => setPage(0), [tab, size, query]);
 
   const dslMode = query.trim() !== "";
 
-  // Server-side paginated page loader for the active data tab (company tab excluded).
-  // biome-ignore lint/correctness/useExhaustiveDependencies: refreshKey is an explicit manual-reload trigger.
+  // 지금 보고 있는 데이터 탭의 페이지를 서버에서 나눠 불러옵니다(기업 탭은 제외).
+  // biome-ignore lint/correctness/useExhaustiveDependencies: refreshKey는 사람이 누른 다시 불러오기 신호입니다.
   React.useEffect(() => {
     if (tab === "company") return;
     const request = ++assetsRequestRef.current;
@@ -297,7 +299,7 @@ export default function AssetsPage() {
   const tabCounts: Record<string, number> = { ...counts, company: companies.length };
   const totalAssets = Object.values(counts).reduce((a, b) => a + b, 0);
 
-  // rows are already the current server-side page.
+  // 이 줄들은 이미 서버가 나눠 준 현재 페이지입니다.
   const tabData = (type: string): Asset[] => (rowsTab === type ? rows : []);
   const currentRows = tabData(tab);
   const slice = <T,>(list: T[]) => list;

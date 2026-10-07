@@ -8,7 +8,7 @@ import (
 )
 
 func TestCaptureFromNilAndMissing(t *testing.T) {
-	var nilCtx context.Context // the transport reaches here on any unrecorded call
+	var nilCtx context.Context // 기록하지 않는 호출이면 전송이 여기까지 옵니다
 	if CaptureFrom(nilCtx) != nil {
 		t.Fatal("nil context should yield no capture")
 	}
@@ -17,8 +17,8 @@ func TestCaptureFromNilAndMissing(t *testing.T) {
 	}
 }
 
-// A nil *Capture is the "recording off" path: the transport calls these on every
-// request, so they must all be no-ops rather than panics.
+// nil인 *Capture는 기록 꺼짐 경로입니다. 전송이 매 요청마다 이 메서드를 부르므로,
+// 패닉이 아니라 모두 아무것도 하지 않아야 합니다.
 func TestNilCaptureIsInert(t *testing.T) {
 	var c *Capture
 	c.SetRequest("body")
@@ -40,7 +40,7 @@ func TestCaptureSingleAttemptKeepsBytesVerbatim(t *testing.T) {
 		t.Fatal("capture not retrievable from its own context")
 	}
 	c.SetRequest(`{"model":"x"}`)
-	// Retries re-send identical bytes; only the first is kept.
+	// 재시도는 같은 바이트를 다시 보냅니다. 첫 번째만 남깁니다.
 	c.SetRequest(`{"model":"ignored"}`)
 
 	const sse = "event: message_start\ndata: {\"type\":\"message_start\"}\n\nevent: message_stop\ndata: {}\n\n"
@@ -59,15 +59,15 @@ func TestCaptureSingleAttemptKeepsBytesVerbatim(t *testing.T) {
 	if c.RawRequest() != `{"model":"x"}` {
 		t.Fatalf("RawRequest()=%q", c.RawRequest())
 	}
-	// A lone attempt must stay byte-identical — no headers, no framing added, so
-	// it can be replayed as-is.
+	// 시도가 하나면 바이트가 같아야 합니다. 머리글이나 프레임을 더하지 않아
+	// 그대로 재생할 수 있습니다.
 	if c.RawResponse() != sse {
 		t.Fatalf("RawResponse()=%q want verbatim SSE", c.RawResponse())
 	}
 }
 
-// norma's doStream discards the bodies of retried attempts (retry.go closes them
-// unread), so the capture is the only place a 429 body survives.
+// norma의 doStream은 재시도한 시도의 본문을 버립니다(retry.go가 읽지 않고 닫음).
+// 그래서 429 본문이 남는 곳은 이 캡처뿐입니다.
 func TestCaptureRetriedAttemptsAreAllKept(t *testing.T) {
 	_, c := NewCapture(context.Background())
 

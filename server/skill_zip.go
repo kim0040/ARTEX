@@ -56,8 +56,8 @@ func zipMethodName(m uint16) string {
 	return "알 수 없음"
 }
 
-// newSkillZipReader parses an uploaded archive and registers the extra decompressors
-// we can support beyond the stdlib's Store/Deflate.
+// newSkillZipReader는 올린 압축을 풀 준비를 하고, 표준 라이브러리의 Store/Deflate 외에
+// 우리가 받을 수 있는 압축 해제기를 등록합니다.
 func newSkillZipReader(buf []byte) (*zip.Reader, error) {
 	zr, err := zip.NewReader(bytes.NewReader(buf), int64(len(buf)))
 	if err != nil {
@@ -72,15 +72,15 @@ func newSkillZipReader(buf []byte) (*zip.Reader, error) {
 	return zr, nil
 }
 
-// skillZipEntry pairs a zip entry with its decoded (UTF-8) name — f.Name may hold
-// raw GBK bytes, see zipEntryName.
+// skillZipEntry는 zip 항목과 그 이름(UTF-8로 푼 것)을 짝짓습니다. f.Name은
+// GBK 바이트 그대로일 수 있습니다. zipEntryName을 보세요.
 type skillZipEntry struct {
 	f    *zip.File
 	name string
 }
 
-// skillZipEntries lists the archive's real files (no directory entries, no archiver
-// junk) with their names decoded to UTF-8.
+// skillZipEntries는 압축 안의 실제 파일을 나열합니다(디렉터리 항목과 압축 도구
+// 찌꺼기는 빼고). 이름은 UTF-8로 풀어 둡니다.
 func skillZipEntries(zr *zip.Reader) []skillZipEntry {
 	out := make([]skillZipEntry, 0, len(zr.File))
 	for _, f := range zr.File {
@@ -110,8 +110,8 @@ func zipEntryName(f *zip.File) string {
 	return f.Name
 }
 
-// checkSkillZipMethods rejects archives we cannot extract, naming the offending
-// entry and method instead of letting f.Open() fail with an opaque English error.
+// checkSkillZipMethods는 우리가 풀 수 없는 압축을 거절합니다. 문제의
+// 항목과 방식을 이름으로 알리고, f.Open()의 알 수 없는 영어 오류에 맡기지 않습니다.
 func checkSkillZipMethods(entries []skillZipEntry) error {
 	for _, e := range entries {
 		if e.f.Flags&0x1 != 0 || e.f.Method == zipMethodAES {

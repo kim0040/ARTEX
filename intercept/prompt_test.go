@@ -32,8 +32,8 @@ func TestParseVerdictRejectsIncompleteOrAmbiguousReplies(t *testing.T) {
 		strings.Replace(valid, `"decision":"allow"`, `"decision":"deny","decision":"allow"`, 1),
 		strings.Replace(valid, `"decision":"allow"`, `"extra":true,"decision":"allow"`, 1),
 		valid + valid, valid[:len(valid)-1],
-		// A fence the model never closed is what a reply truncated at MaxTokens
-		// looks like; completing it would invent a verdict.
+		// 모델이 닫지 않은 울타리는, MaxTokens 에서 잘린 답이 보이는 모습입니다.
+		// 이어 붙이면 존재하지 않는 판정을 만들어 냅니다.
 		"```json\n" + valid[:len(valid)-1],
 		"```json\n" + valid + "\n```\n此外我建议后续人工复核。", // han-allow 업스트림 프롬프트·픽스처
 		"我的裁决是：\n" + valid,                          // han-allow 업스트림 프롬프트·픽스처
@@ -44,9 +44,9 @@ func TestParseVerdictRejectsIncompleteOrAmbiguousReplies(t *testing.T) {
 	}
 }
 
-// Wrapping JSON in markdown is the one deviation models make routinely. Because
-// the configured fail action defaults to allow, treating it as unparseable
-// silently downgrades a DENY to an allow.
+// 모델이 자주 하는 유일한 벗어남은, JSON 을 마크다운으로 감싸는 것입니다.
+// 설정된 실패 동작의 기본값이 allow 이기 때문입니다.
+// 해석 불가로 처리하면 DENY 가 조용히 allow 로 바뀝니다.
 func TestParseVerdictUnwrapsCodeFence(t *testing.T) {
 	deny := `{"decision":"deny","comment":"实际操作：删除生产文件；成功后的后果：业务数据丢失；命中规则：D4"}` // han-allow 업스트림 프롬프트·픽스처
 	for _, reply := range []string{

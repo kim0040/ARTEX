@@ -35,7 +35,7 @@ export const auth = {
     try {
       const parts = token.split(".");
       if (parts.length !== 3) return null;
-      // base64url → base64
+      // base64url을 base64로
       const payload = JSON.parse(atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")));
       const username: string = payload.sub ?? "ARTEX";
       return { id: "1", name: username, username, email: "", avatar: "", role: "operator" };

@@ -17,29 +17,29 @@ import (
 	"github.com/Autumn-27/norma/hook"
 )
 
-// AuditEntry records one gated tool call.
+// AuditEntry 는 가드를 통과한 도구 호출 한 건의 기록입니다.
 type AuditEntry struct {
 	TS      int64  `json:"ts"`
 	Tool    string `json:"tool"`
-	Action  string `json:"action"` // allow|block
+	Action  string `json:"action"` // allow|block. 통과 또는 차단
 	Reason  string `json:"reason,omitempty"`
 	Command string `json:"command,omitempty"`
 }
 
-// Guard enforces the side-effect policy via agent-core hooks.
+// Guard 는 에이전트 훅으로 부작용 정책을 적용합니다.
+// 초보: 도구가 실제로 돌기 직전 PreToolUse, 직후 PostToolUse 가 호출됩니다.
 type Guard struct {
 	mu          sync.Mutex
 	audit       []AuditEntry
-	attrib      map[string]int // failure attribution counts (Observer / G5)
+	attrib      map[string]int // 실패 분류 횟수(관찰 / G5)
 	reg         *hook.Registry
-	interceptor *intercept.Interceptor // optional; nil disables user-configured rules
+	interceptor *intercept.Interceptor // 없으면 사람이 둔 규칙을 적용하지 않음
 }
 
-// New creates a Guard without user-configured intercept rules (used for pentest
-// tasks where the Interceptor is not yet available).
+// New 는 사람 규칙 없는 Guard 를 만듭니다. 가로채기가 아직 없을 때 씁니다.
 func New() *Guard { return newGuard(nil) }
 
-// NewWithInterceptor creates a Guard with user-configured intercept rules.
+// NewWithInterceptor 는 사람이 둔 가로채기 규칙이 붙은 Guard 를 만듭니다.
 func NewWithInterceptor(ic *intercept.Interceptor) *Guard { return newGuard(ic) }
 
 func newGuard(ic *intercept.Interceptor) *Guard {
@@ -50,14 +50,14 @@ func newGuard(ic *intercept.Interceptor) *Guard {
 	return g
 }
 
-// Hooks returns the hook registry to attach to an agent session.
+// Hooks 는 에이전트 세션에 붙일 훅 등록부를 돌려줍니다.
 func (g *Guard) Hooks() *hook.Registry { return g.reg }
 
 func (g *Guard) preToolUse(ctx context.Context, ev hook.Event) hook.Result {
-	// Extract the shell-command surface for the audit log: Bash + the interactive-shell
-	// tools (shell_open's command, shell_send's text). Destructive/exfil gating is no
-	// longer hard-coded here — it now lives in the DB intercept rules, evaluated by
-	// applyIntercept below. Other tools record an empty command.
+	// 감사 로그에 남길 셸 표면을 뽑습니다. Bash 와 대화형 셸 도구
+	// (shell_open 의 command, shell_send 의 text)입니다. 파괴·유출 차단은
+	// 여기 하드코딩되어 있지 않고, DB 가로채기 규칙에 있으며 아래 applyIntercept 가
+	// 평가합니다. 다른 도구는 빈 명령을 기록합니다.
 	var cmd string
 	switch ev.ToolName {
 	case "Bash", "shell_open":
@@ -77,8 +77,8 @@ func (g *Guard) preToolUse(ctx context.Context, ev hook.Event) hook.Result {
 	return g.applyIntercept(ctx, ev)
 }
 
-// applyIntercept evaluates user-configured intercept rules against the tool call.
-// Both rules and the fallback judge receive the complete tool input.
+// applyIntercept 는 사람이 둔 가로채기 규칙을 이 도구 호출에 적용합니다.
+// 규칙과 폴백 심사 모두 도구 입력 전체를 받습니다.
 func (g *Guard) applyIntercept(ctx context.Context, ev hook.Event) hook.Result {
 	if g.interceptor == nil {
 		return hook.Result{}
@@ -89,8 +89,8 @@ func (g *Guard) applyIntercept(ctx context.Context, ev hook.Event) hook.Result {
 	ctx = intercept.WithCall(ctx, ev.ToolName, ev.Input)
 	dec, matched := g.interceptor.Match(ev.ToolName, ev.Input)
 	if !matched {
-		// No rule matched. Ask the LLM fallback judge (if enabled); when it is off
-		// or unwired, keep current behavior and allow.
+		// 맞는 규칙이 없습니다. LLM 폴백 심사가 켜져 있으면 묻습니다. 꺼져 있거나
+		// 연결되지 않았으면 지금처럼 통과시킵니다.
 		d, judged := g.interceptor.Judge(ctx, ev.ToolName, ev.Input)
 		if !judged {
 			return hook.Result{}
@@ -103,13 +103,13 @@ func (g *Guard) applyIntercept(ctx context.Context, ev hook.Event) hook.Result {
 		g.interceptor.Log(ctx, intercept.ConvIDFromContext(ctx), dec, ev.ToolName, ev.Input, "denied")
 		return g.block(ev.ToolName, systemBlockMessage(dec.Message), "")
 	case "allow":
-		// Record explicit rule and model approvals so review details remain auditable.
+		// 규칙과 모델의 명시적 승인을 남겨, 검토 내역을 나중에 볼 수 있게 합니다.
 		g.interceptor.Log(ctx, intercept.ConvIDFromContext(ctx), dec, ev.ToolName, ev.Input, "allowed")
 		return hook.Result{}
 	case "ask":
-		// If the worker context is already cancelled (task stopped / killed), block
-		// immediately without creating a pending record — avoids orphaned DB entries
-		// and makes execOne complete fast, reducing the race against drainSynthetic.
+		// 워커 context 가 이미 취소됐으면(작업 정지 / 종료) 대기 기록을 만들지
+		// 않고 바로 막습니다. 고아 DB 행을 피하고, execOne 이 빨리 끝나
+		// drainSynthetic 과의 경합이 줄어듭니다.
 		if ctx.Err() != nil {
 			return g.block(ev.ToolName, systemBlockMessage("작업이 취소되어, 플랫폼 안전 통제가 실행을 막았습니다"), "")
 		}
@@ -122,18 +122,16 @@ func (g *Guard) applyIntercept(ctx context.Context, ev hook.Event) hook.Result {
 	return hook.Result{}
 }
 
-// systemBlockMessage frames an intercept block as an ARTEX platform-governance
-// decision so the agent does not mistake it for a target-side defense.
+// systemBlockMessage 는 가로채기 차단을 ARTEX 플랫폼의 통제 결정으로 포장합니다.
+// 에이전트가 대상 쪽 방어로 착각하지 않게 합니다.
 //
-// The bare reasons ("이 도구 실행 금지" / "사용자 거부") read exactly like a WAF/403 on
-// the target, so a pentest agent's instinct is to bypass them — rewrite the
-// command, swap the payload, re-encode, retry. That is both futile (the platform
-// blocks the class of action, not one string) and wrong (it's a policy decision,
-// not an obstacle to defeat). This prefix states plainly that the block comes
-// from the platform, is not the target's protection, and that the operation is
-// forbidden — so the agent pivots to another approach instead of evading it.
-// Audit/history rows keep the raw reason (see Interceptor.Log); only the
-// model-facing tool_result carries this framing.
+// 맨 이유("이 도구 실행 금지" / "사용자 거부")는 대상의 WAF/403 과 똑같이 읽힙니다.
+// 그래서 에이전트는 명령을 바꾸고, 페이로드를 갈아끼우고, 다시 인코딩하고,
+// 재시도하고 싶어 합니다. 소용없습니다. 플랫폼은 문자열 하나가 아니라 그 종류를
+// 막습니다. 정책 결정이지, 뚫어야 할 장애물이 아닙니다. 이 접두사는 차단이
+// 플랫폼에서 왔고, 대상의 보호가 아니며, 그 동작은 금지라고 분명히 말합니다.
+// 에이전트는 우회 대신 다른 접근으로 돌아갑니다. 감사/기록 행은 원래 이유를
+// 유지합니다(Interceptor.Log). 이 포장은 모델에게 가는 tool_result 에만 붙습니다.
 func systemBlockMessage(reason string) string {
 	return "【ARTEX 플랫폼 통제·대상의 방어가 아님】이 호출은 플랫폼이 가로챘습니다. " +
 		"이유: " + reason + ". 이 작업은 금지되어 있습니다."
@@ -141,9 +139,8 @@ func systemBlockMessage(reason string) string {
 
 var reBlocked = regexp.MustCompile(`(?i)\b(403|forbidden|waf|blocked|rate.?limit|429|captcha|denied)\b`)
 
-// postToolUse is the Observer failure-attribution hook (G5): it classifies tool
-// results into blocked / error / ok so the planner can change strategy instead
-// of giving up at a WAF.
+// postToolUse 는 관찰용 실패 분류 훅(G5)입니다. 도구 결과를 blocked / error / ok 로
+// 나눠, 플래너가 WAF 앞에서 포기하지 않고 전략을 바꾸게 합니다.
 func (g *Guard) postToolUse(_ context.Context, ev hook.Event) hook.Result {
 	if ev.ToolName != "Bash" {
 		return hook.Result{}
@@ -161,7 +158,7 @@ func (g *Guard) postToolUse(_ context.Context, ev hook.Event) hook.Result {
 	return hook.Result{}
 }
 
-// Attributions returns failure-attribution counts (Observer / G5).
+// Attributions 는 실패 분류 횟수를 돌려줍니다(관찰 / G5).
 func (g *Guard) Attributions() map[string]int {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -186,7 +183,7 @@ func (g *Guard) record(tool, action, reason, cmd string) {
 	}
 }
 
-// Audit returns a snapshot of recent gated calls (most recent last).
+// Audit 는 최근 가드 통과 기록의 스냅샷을 돌려줍니다. 최근 것이 맨 뒤입니다.
 func (g *Guard) Audit() []AuditEntry {
 	g.mu.Lock()
 	defer g.mu.Unlock()

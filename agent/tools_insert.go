@@ -65,40 +65,40 @@ func assetInputLabel(item assetInputItem) string {
 }
 
 // =====================================================================
-// Unified asset insertion tools
+// 자산을 한 도구로 넣는 묶음입니다
 // =====================================================================
 
-// SetAssetStore wires the asset store and company store onto this ToolSet
-// so the insert_assets, add_company_scope, and list_assets tools are active.
+// SetAssetStore 는 자산 저장소와 회사 저장소를 이 ToolSet 에 잇습니다.
+// 그러면 insert_assets, add_company_scope, list_assets 가 켜집니다.
 func (t *ToolSet) SetAssetStore(as *db.AssetStore, cs *db.CompanyStore) {
 	t.as = as
 	t.cs = cs
 }
 
-// assetInputItem is one element of the insert_assets "assets" array.
+// assetInputItem 은 insert_assets 의 "assets" 배열 원소 하나입니다.
 type assetInputItem struct {
-	Type string `json:"type"` // root_domain|ip|subdomain|app|service|endpoint
+	Type string `json:"type"` // 자산 종류: root_domain|ip|subdomain|app|service|endpoint
 
-	// ---- root_domain / subdomain ----
+	// ---- 루트 도메인 / 서브도메인 ----
 	Domain      string   `json:"domain"`
 	ICP         string   `json:"icp"`
 	RecordType  string   `json:"record_type"`
 	RecordValue []string `json:"record_value"`
 
-	// ---- ip ----
+	// ---- IP 주소 ----
 	IP           string           `json:"ip"`
 	BoundDomains []string         `json:"bound_domains"`
 	OpenPorts    []db.PortService `json:"open_ports"`
 
-	// ---- app ----
+	// ---- 앱 ----
 	AppName     string `json:"app_name"`
 	BundleID    string `json:"bundle_id"`
 	Category    string `json:"category"`
 	Description string `json:"description"`
 	AppICP      string `json:"app_icp"`
-	CompanyID   *int64 `json:"company_id"` // explicit company link (app only; others auto-attribute via scope)
+	CompanyID   *int64 `json:"company_id"` // 명시적 회사 연결(app 만. 나머지는 scope 로 자동 귀속)
 
-	// ---- service (http) ----
+	// ---- 서비스 (http) ----
 	URL           string           `json:"url"`
 	Technologies  []string         `json:"technologies"`
 	StatusCode    *int             `json:"status_code"`
@@ -107,18 +107,19 @@ type assetInputItem struct {
 	FaviconMMH3   string           `json:"favicon_mmh3"`
 	Auth          []map[string]any `json:"auth"`
 	ServiceName   string           `json:"service_name"`
-	ServiceIP     string           `json:"service_ip"` // optional enrichment IP
+	ServiceIP     string           `json:"service_ip"` // 선택. 보강용 IP
 
-	// ---- service (other) ----
+	// ---- 서비스 (그 외) ----
 	Port  int    `json:"port"`
 	Proto string `json:"proto"`
 
-	// ---- endpoint ----
+	// ---- 끝점 ----
 	Method string           `json:"method"`
 	Params []map[string]any `json:"params"`
 }
 
-// insertAssets is the unified insert_assets agent tool.
+// insertAssets 는 자산을 한꺼번에 넣는 insert_assets 도구입니다.
+// 초보: 워커가 찾은 자산을 자산 그래프에 남깁니다. 탐색 그래프의 사실과는 다른 장부입니다.
 func (t *ToolSet) insertAssets() actool.CoreTool {
 	return writeTool(
 		"insert_assets",
@@ -137,7 +138,7 @@ func (t *ToolSet) insertAssets() actool.CoreTool {
 						"enum":        []string{"root_domain", "ip", "subdomain", "app", "service", "endpoint"},
 						"description": "资产类型", // han-allow 업스트림 프롬프트·픽스처
 					},
-					// root_domain / subdomain
+					// 루트 도메인 / 서브도메인
 					"domain":      str("根域名或子域名（root_domain/subdomain 必填）"),        // han-allow 업스트림 프롬프트·픽스처
 					"icp":         str("ICP 备案号（可选）"),                              // han-allow 업스트림 프롬프트·픽스처
 					"record_type": str("DNS 解析类型：A/AAAA/CNAME/MX 等（subdomain 可选）"), // han-allow 업스트림 프롬프트·픽스처
@@ -146,7 +147,7 @@ func (t *ToolSet) insertAssets() actool.CoreTool {
 						"items":       map[string]any{"type": "string"},
 						"description": "DNS 解析值列表（subdomain 可选，如 [\"1.2.3.4\",\"2.3.4.5\"]）", // han-allow 업스트림 프롬프트·픽스처
 					},
-					// ip
+					// IP 주소
 					"ip": str("IP 地址，必须是 IPv4/IPv6 地址，不能填主机名（主机名请用 type=subdomain 的 domain 字段）；ip 类型必填；service/endpoint 类型可填，用于关联 IP"), // han-allow 업스트림 프롬프트·픽스처
 					"bound_domains": map[string]any{
 						"type":        "array",
@@ -161,14 +162,14 @@ func (t *ToolSet) insertAssets() actool.CoreTool {
 							"service": str("服务名称，如 http/ssh/mysql 等（可选）"), // han-allow 업스트림 프롬프트·픽스처
 						}, "port"),
 					},
-					// app
+					// 앱
 					"app_name":    str("应用名称（app 类型必填）"),                                                        // han-allow 업스트림 프롬프트·픽스처
 					"bundle_id":   str("Bundle ID（app 类型可选）"),                                                   // han-allow 업스트림 프롬프트·픽스처
 					"category":    str("应用分类（可选）"),                                                              // han-allow 업스트림 프롬프트·픽스처
 					"description": str("应用描述（可选）"),                                                              // han-allow 업스트림 프롬프트·픽스처
 					"app_icp":     str("应用 ICP 备案（可选）"),                                                         // han-allow 업스트림 프롬프트·픽스처
 					"company_id":  intp("归属企业 id（app 类型可选；app 无法靠 scope 自动归因，需显式指定。id 由 add_company_scope 返回）"), // han-allow 업스트림 프롬프트·픽스처
-					// service (http)
+					// 서비스 (http)
 					"url":         str("完整 URL，含协议和端口（HTTP 服务必填；service_type 自动设为 http）"), // han-allow 업스트림 프롬프트·픽스처
 					"status_code": intp("HTTP 响应状态码，如 200/301/403/404（可选）"),               // han-allow 업스트림 프롬프트·픽스처
 					"content_length": map[string]any{
@@ -190,7 +191,7 @@ func (t *ToolSet) insertAssets() actool.CoreTool {
 					// service (other, HTTP 가 아님)
 					"service_name": str("服务名称，如 ssh/mysql/redis（service 非 HTTP 时必填）"), // han-allow 업스트림 프롬프트·픽스처
 					"port":         intp("端口号（service 非 HTTP 时必填）"),                   // han-allow 업스트림 프롬프트·픽스처
-					// endpoint
+					// 끝점
 					"method": str("HTTP 方法：GET/POST/PUT/PATCH/DELETE 等（endpoint 必填）"), // han-allow 업스트림 프롬프트·픽스처
 					"params": map[string]any{
 						"type":        "array",
@@ -290,9 +291,9 @@ func (t *ToolSet) insertAssets() actool.CoreTool {
 					})
 
 				case "service":
-					// distinguish HTTP vs other by presence of url
+					// url 이 있으면 HTTP, 없으면 그 외 서비스로 나눕니다
 					if item.URL != "" {
-						// agent may send "ip" or "service_ip" for the enrichment IP; accept both
+						// 보강용 IP 는 "ip" 또는 "service_ip" 로 올 수 있습니다. 둘 다 받습니다
 						svcIP := item.ServiceIP
 						if svcIP == "" {
 							svcIP = item.IP
@@ -373,7 +374,8 @@ func (t *ToolSet) insertAssets() actool.CoreTool {
 	)
 }
 
-// addCompanyScope writes to company_scope table and triggers asset attribution.
+// addCompanyScope 는 company_scope 표에 쓰고, 자산 귀속을 돌립니다.
+// 초보: 회사의 범위가 자산 그래프에서 어느 자산을 그 회사 것으로 볼지 정합니다.
 func (t *ToolSet) addCompanyScope() actool.CoreTool {
 	return writeTool(
 		"add_company_scope",
@@ -424,10 +426,10 @@ func (t *ToolSet) addCompanyScope() actool.CoreTool {
 	)
 }
 
-// addTaskScope lets the plan agent add test scope to THE CURRENT TASK — the coverage
-// denominator and the task's authorization edge. Worker discoveries are auto-scoped
-// (precise host) by insertAssets; this tool is for DELIBERATELY WIDENING: pull a whole
-// root domain or whole company into scope, or add a specific subdomain / ip.
+// addTaskScope 는 계획 에이전트가 현재 작업에 테스트 범위를 더하게 합니다.
+// 커버리지 분모이자 이 작업의 허가 경계입니다. 워커가 찾은 것은 insertAssets 가
+// 정확한 호스트로 자동 범위에 넣습니다. 이 도구는 일부러 넓힐 때 씁니다.
+// 루트 도메인 전체나 회사 전체를 넣거나, 특정 서브도메인/IP 를 더합니다.
 func (t *ToolSet) addTaskScope() actool.CoreTool {
 	return writeTool(
 		"add_task_scope",
@@ -482,8 +484,9 @@ func (t *ToolSet) addTaskScope() actool.CoreTool {
 	)
 }
 
-// listUntestedAssets lets the plan agent pull the current + directly inherited
-// scope's not-yet-tested assets on demand (filter by type, paginated).
+// listUntestedAssets 는 계획 에이전트가 현재 범위와 직접 물려받은 범위에서
+// 아직 테스트하지 않은 자산을 필요할 때 꺼내게 합니다(유형 필터, 페이지).
+// 초보: 사실 앵커가 아직 없는 자산을 자산 그래프에서 보여 줍니다.
 func (t *ToolSet) listUntestedAssets() actool.CoreTool {
 	return readTool(
 		"list_untested_assets",
@@ -526,7 +529,7 @@ func (t *ToolSet) listUntestedAssets() actool.CoreTool {
 	)
 }
 
-// listAssets lets an agent query the asset table.
+// listAssets 는 에이전트가 자산 표를 조회하게 합니다.
 func (t *ToolSet) listAssets() actool.CoreTool {
 	return readTool(
 		"list_assets",
@@ -583,7 +586,7 @@ func (t *ToolSet) listAssets() actool.CoreTool {
 	)
 }
 
-// listCompanies lets an agent enumerate companies (기업) with their scope + asset count.
+// listCompanies 는 에이전트가 회사(기업)와 범위, 자산 수를 나열하게 합니다.
 func (t *ToolSet) listCompanies() actool.CoreTool {
 	return readTool(
 		"list_companies",
@@ -628,7 +631,7 @@ func (t *ToolSet) listCompanies() actool.CoreTool {
 	)
 }
 
-// splitLines splits a multi-line string into non-empty trimmed lines.
+// splitLines 는 여러 줄 문자열을, 공백을 자른 비어 있지 않은 줄로 나눕니다.
 func splitLines(s string) []string {
 	var out []string
 	for _, line := range strings.Split(s, "\n") {
@@ -640,13 +643,14 @@ func splitLines(s string) []string {
 	return out
 }
 
-// WorkerTools returns the tool set for a work agent.
+// WorkerTools 는 워커 에이전트의 도구 묶음을 돌려줍니다.
+// 초보: 워커는 의도 하나를 맡고, 사실과 발견을 탐색 그래프에 남깁니다.
 func (t *ToolSet) WorkerTools() []actool.CoreTool {
 	return []actool.CoreTool{
 		// list_findings 는 남겨 둡니다. 발견을 보고하기 전에 이 작업의 확인된 발견을 먼저 봐, 같은 발견을 다시 올리지 않게 합니다.
 		t.listFindings(),
 		t.addFinding(), t.recordFact(),
-		// asset management (handlers guard nil store internally)。
+		// 자산 관리(핸들러가 nil 저장소를 안에서 검사합니다).
 		// add_company_scope 는 워커에게 주지 않습니다. 기업 자산 범위를 정하는 일은 플래너/메인/Auto 의 일이고, 워커는 탐색만 실행합니다.
 		t.insertAssets(), t.listAssets(),
 		// work 사이를 되돌아보기: 워커도 다른 work 의 관찰을 다시 써 같은 일을 반복하지 않습니다.
@@ -660,11 +664,12 @@ func (t *ToolSet) WorkerTools() []actool.CoreTool {
 	}
 }
 
-// MainAgentTools returns the human-interface tool set.
+// MainAgentTools 는 사람 대화용 도구 묶음을 돌려줍니다.
+// 초보: 메인 에이전트는 사람과의 대화입니다. 힌트는 플래너를 깨우고, 자산은 자산 그래프에 남습니다.
 func (t *ToolSet) MainAgentTools() []actool.CoreTool {
 	return []actool.CoreTool{
 		t.graphOverview(), t.listFindings(), t.listFacts(), t.nodeDetail(),
-		t.expandDigest(), // cold-digest §6.1
+		t.expandDigest(), // cold-digest §6.1. 접힌 cold 노드를 되돌립니다
 		t.getWorkerOutput(), t.getWorkerTrace(), t.searchAllWorkerTraces(), t.addHint(), t.addIntent(),
 		// steer_work: 사람이 실행 중인 의도(work)에 실시간으로 교정 지시를 넣을 수 있습니다(끊지 않고 진행을 잃지 않음).
 		t.steerWorkTool(),
@@ -672,7 +677,7 @@ func (t *ToolSet) MainAgentTools() []actool.CoreTool {
 		t.setGoals(),
 		// set_constraints: 사람이 실행 중에 이 작업의 조작 제약(allow/deny)을 더하거나 고칩니다. 플래너/워커의 탐색 경계를 제한합니다.
 		t.setConstraints(),
-		// asset management (handlers guard nil store internally)
+		// 자산 관리(핸들러가 nil 저장소를 안에서 검사합니다)
 		t.insertAssets(), t.addCompanyScope(), t.listAssets(),
 		t.addFinding(), t.recordFact(),
 		t.addTaskScope(),
@@ -681,10 +686,10 @@ func (t *ToolSet) MainAgentTools() []actool.CoreTool {
 	}
 }
 
-// AllDomainTools returns the union of all domain tools across all agent types,
-// deduped by name (mainagent order wins). Used by the server to build a registry
-// for injecting domain tools into agents (Auto, custom) that don't own a per-task
-// ToolSet. The caller provides real stores; tools are callable at taskID=0 scope.
+// AllDomainTools 는 모든 에이전트 종류의 도메인 도구를 이름으로 중복 없이 합칩니다
+// (메인 에이전트 순서가 이깁니다). 서버가 등록부를 만들 때 씁니다. 작업마다
+// ToolSet 이 없는 에이전트(Auto, 사용자 정의)에 도메인 도구를 넣기 위해서입니다.
+// 호출자가 진짜 저장소를 줍니다. 도구는 taskID=0 범위에서도 호출할 수 있습니다.
 func (t *ToolSet) AllDomainTools() []actool.CoreTool {
 	seen := map[string]bool{}
 	var out []actool.CoreTool

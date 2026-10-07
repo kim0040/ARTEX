@@ -10,7 +10,7 @@ import (
 )
 
 func TestDeferredSystem_NoGlobal(t *testing.T) {
-	// No global MCP names → plain single-segment system, no cache boundary.
+	// 전역 MCP 이름이 없으면 구간이 하나인 시스템이고, 캐시 경계가 없습니다.
 	sys, boundary := deferredSystem("SYS", DeferredInfo{})
 	if len(sys) != 1 || sys[0] != "SYS" || boundary != 0 {
 		t.Fatalf("expected [SYS],0 — got %v,%d", sys, boundary)
@@ -36,10 +36,10 @@ func TestDeferredSystem_WithGlobal(t *testing.T) {
 }
 
 func TestDeferredSystem_GatedNotInBlock(t *testing.T) {
-	// A skill-gated server's tools are deferred but NOT in the global block.
+	// 스킬에 묶인 서버의 도구는 미루지만, 전역 블록에는 넣지 않습니다.
 	def := DeferredInfo{
 		Deferred:    []string{"mcp__browser__navigate", "mcp__secret__do"},
-		GlobalNames: []string{"mcp__browser__navigate"}, // secret gated → excluded
+		GlobalNames: []string{"mcp__browser__navigate"}, // secret 은 스킬에 묶임 → 제외
 	}
 	sys, _ := deferredSystem("SYS", def)
 	if strings.Contains(sys[1], "mcp__secret__do") {
@@ -57,7 +57,7 @@ func TestSeedUnlockFromHistory(t *testing.T) {
 	msgs := []llm.Message{
 		{Role: llm.RoleAssistant, Content: []llm.ContentBlock{skillCall("browsing")}},
 		{Role: llm.RoleAssistant, Content: []llm.ContentBlock{
-			{Type: llm.BlockToolUse, Name: "Bash", Input: json.RawMessage(`{}`)}, // ignored
+			{Type: llm.BlockToolUse, Name: "Bash", Input: json.RawMessage(`{}`)}, // 무시합니다
 			skillCall("recon"),
 		}},
 	}
@@ -66,14 +66,14 @@ func TestSeedUnlockFromHistory(t *testing.T) {
 	if strings.Join(got, ",") != "browsing,recon" {
 		t.Fatalf("unlocked=%v want [browsing recon]", got)
 	}
-	seedUnlockFromHistory(msgs, nil) // nil → no-op, no panic
+	seedUnlockFromHistory(msgs, nil) // nil 이면 아무 일도 없고, 패닉도 없습니다
 }
 
-// TestUnlockGatingFlow mirrors what OnInvoke / seedUnlockFromHistory do: a gated
-// tool starts locked and becomes callable only after its skill unlocks it.
+// TestUnlockGatingFlow 는 OnInvoke / seedUnlockFromHistory 가 하는 일을 그대로 봅니다.
+// 스킬에 묶인 도구는 잠긴 채로 시작하고, 그 스킬이 열어야 호출할 수 있습니다.
 func TestUnlockGatingFlow(t *testing.T) {
 	serverTools := map[string][]string{"secret": {"mcp__secret__do"}}
-	unlock := actool.NewUnlockSet("mcp__browser__navigate") // global only
+	unlock := actool.NewUnlockSet("mcp__browser__navigate") // 전역만
 	unlockSkill := func(name string) {
 		if name == "unlock-secret" {
 			unlock.Add(serverTools["secret"]...)

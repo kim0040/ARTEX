@@ -13,41 +13,42 @@ import (
 	"github.com/Autumn-27/norma/transcript"
 )
 
-// MainAgent is the thin human-interface orchestrator (docs §4.2 / §7). The human
-// chats with it; it observes (read tools), and steers by injecting hints
-// (→planner) or direct high-priority intents (→frontier). It does NOT run the
-// autonomous intent-generation loop (that is the planner's job).
+// MainAgent 는 사람이 쓰는 얇은 조율자입니다(문서 §4.2 / §7). 사람이 대화하고,
+// 이것은 읽기 도구로 살피며, 힌트(→플래너)나 우선순위가 높은 의도(→프론티어)를
+// 넣어 방향을 바꿉니다. 의도를 스스로 계속 만드는 고리는 돌리지 않습니다.
+// 그것은 플래너만의 일입니다.
+// 초보: 메인 에이전트는 탐색 그래프를 직접 파지 않습니다. 힌트와 의도로 플래너와 워커를 돌립니다.
 type MainAgent struct {
 	findingRecorder FindingRecorder
 	prov            llm.Provider
 	model           string
-	tx              *transcript.Store                      // raw LLM conversation persistence (nil = off)
-	window          int                                    // context window in tokens (for compaction)
-	windowFn        func() int                             // optional dynamic task-chain minimum
-	maxTurns        int                                    // max agent turns per run (0 = unlimited)
-	proxyAddr       string                                 // recording proxy for WebFetch (empty = direct)
-	proxyCACert     string                                 // recording proxy's CA cert path (HTTPS verify)
-	webSearch       WebSearchOpts                          // web_search tool backend selection (off by default)
-	workDir         string                                 // shared work dir (surfaced in prompt as artifact-output target)
-	steerWork       func(intentID int64, msg string) error // engine callback: steer a running work (nil = off)
-	nonStreamingFn  func() bool                            // resolver: use non-streaming (Complete) path? (nil = streaming)
-	noaEnabledFn    func() bool                            // resolver: use experimental noa compaction? (nil = off)
-	maxTokensFn     func() int                             // resolver: per-reply output cap (nil/0 = send no cap)
+	tx              *transcript.Store                      // LLM 원문 대화를 남김 (nil = 끔)
+	window          int                                    // 맥락 창 크기(token). 압축에 씁니다
+	windowFn        func() int                             // 선택. 작업 사슬의 동적 하한
+	maxTurns        int                                    // 실행 한 번의 최대 턴 (0 = 무제한)
+	proxyAddr       string                                 // WebFetch 용 기록 프록시 (비면 직접 연결)
+	proxyCACert     string                                 // 기록 프록시 CA 인증서 경로 (HTTPS 검증)
+	webSearch       WebSearchOpts                          // web_search 뒷단 선택 (기본은 꺼짐)
+	workDir         string                                 // 공유 작업 디렉터리 (프롬프트에 산출물 위치로 나감)
+	steerWork       func(intentID int64, msg string) error // 엔진 콜백: 돌고 있는 작업을 돌림 (nil = 끔)
+	nonStreamingFn  func() bool                            // 해석기: 비스트리밍(Complete) 경로? (nil = 스트리밍)
+	noaEnabledFn    func() bool                            // 해석기: 실험용 noa 압축? (nil = 끔)
+	maxTokensFn     func() int                             // 해석기: 답 하나의 출력 상한 (nil/0 = 상한을 보내지 않음)
 }
 
-// SetNoaEnabled wires a resolver deciding whether runs use the experimental noa
-// context-compression mechanism. nil/unset = off (built-in compaction). Read per
-// run so the settings toggle takes effect without rebuilding the agent.
+// SetNoaEnabled 는 실행이 실험용 noa 맥락 압축을 쓸지 정하는 해석기를 연결합니다.
+// nil 이거나 없으면 꺼집니다(내장 압축). 실행마다 읽으므로, 에이전트를 다시 만들지 않아도
+// 설정 스위치가 적용됩니다.
 func (m *MainAgent) SetNoaEnabled(fn func() bool) { m.noaEnabledFn = fn }
 
-// SetNonStreaming wires a resolver deciding whether runs use the non-streaming
-// model path (true = non-streaming). nil/unset = streaming (default).
+// SetNonStreaming 은 실행이 비스트리밍 모델 경로를 쓸지 정하는 해석기를 연결합니다
+// (true = 비스트리밍). nil 이거나 없으면 스트리밍입니다(기본).
 func (m *MainAgent) SetNonStreaming(fn func() bool) { m.nonStreamingFn = fn }
 
 func (m *MainAgent) nonStreaming() bool { return m.nonStreamingFn != nil && m.nonStreamingFn() }
 
-// SetMaxTokens wires a resolver for the per-reply output cap. nil/unset or 0 =
-// send no cap and let the endpoint decide. Read per run, like nonStreaming.
+// SetMaxTokens 는 답 하나의 출력 상한 해석기를 연결합니다. nil, 없음, 또는 0 이면
+// 상한을 보내지 않고 끝점이 정하게 둡니다. nonStreaming 처럼 실행마다 읽습니다.
 func (m *MainAgent) SetMaxTokens(fn func() int) { m.maxTokensFn = fn }
 
 func (m *MainAgent) maxTokens() int {
@@ -70,20 +71,20 @@ func (m *MainAgent) compactionWindow() int {
 	return m.window
 }
 
-// SetProxy points the main agent's WebFetch at the recording proxy plus the CA
-// cert it trusts to verify HTTPS through it (empty addr = direct).
+// SetProxy 는 메인 에이전트의 WebFetch 를 기록 프록시와, 그 HTTPS 를 검증할 CA 인증서로 보냅니다
+// (주소가 비면 직접 연결).
 func (m *MainAgent) SetProxy(addr, caCert string) { m.proxyAddr, m.proxyCACert = addr, caCert }
 
-// SetWebSearch selects the web_search backend for the main agent (off by default).
+// SetWebSearch 는 메인 에이전트의 web_search 뒷단을 고릅니다(기본은 꺼짐).
 func (m *MainAgent) SetWebSearch(o WebSearchOpts) { m.webSearch = o }
 
-// SetSteerWork wires the engine callback that lets the main agent's steer_work
-// tool inject a mid-run course-correction into a running work (nil = tool off).
+// SetSteerWork 는 엔진 콜백을 연결합니다. 메인 에이전트의 steer_work 도구가
+// 돌고 있는 작업 한가운데 방향 수정을 넣습니다(nil = 도구 꺼짐).
 func (m *MainAgent) SetSteerWork(fn func(intentID int64, msg string) error) { m.steerWork = fn }
 
-// mainAgentDefaultTmpl is the built-in EDITABLE body (구간 [A]) of the main agent
-// prompt, seeded into agent_prompts. Goal is a {{.Goal}} template var; the 중간
-// 산출물 출력 규약 tail is code-owned (artifactSpec), appended after rendering.
+// mainAgentDefaultTmpl 은 메인 에이전트 프롬프트의 내장 편집 본문(구간 [A])입니다.
+// agent_prompts 에 심습니다. Goal 은 {{.Goal}} 템플릿 변수입니다. 중간
+// 산출물 출력 규약 꼬리는 코드가 소유합니다(artifactSpec). 렌더 뒤에 붙입니다.
 const mainAgentDefaultTmpl = `你是一个授权渗透测试系统的"主 agent"，是人类操作员的接口。你不亲自探索、也不自主连续生成意图（那是规划者的工作）。你的职责：
 
 1. 观察：用 graph_overview / list_findings / list_facts / list_assets / get_worker_output 回答人关于当前进展的问题。
@@ -105,10 +106,9 @@ func mainAgentSystem(goal, dataDir, workDir string) string {
 	return body + artifactSpec(workDir)
 }
 
-// Chat handles one human message and returns the assistant reply. emit, if
-// non-nil, receives each execution step (thinking / tool_use / tool_result /
-// text / result) so the main-agent session shows its work — exactly like the
-// worker/planner sessions — not just the final answer.
+// Chat 은 사람 메시지 하나를 처리하고 도우미 답을 돌려줍니다. emit 이 nil 이 아니면
+// 실행 단계(thinking / tool_use / tool_result / text / result)를 받습니다.
+// 메인 에이전트 세션이 마지막 답만이 아니라, 워커/플래너 세션처럼 일하는 과정을 보여 줍니다.
 func (m *MainAgent) Chat(ctx context.Context, taskID int64, mainSeg int, as *db.AssetStore, ts *db.ExplorationStore, goal, message string, emit func(db.Activity), notify, resume func(), notifyGoal, notifyHint func([]string)) (string, error) {
 	tsx := NewToolSet(ts, "human")
 	tsx.SetFindingRecorder(m.findingRecorder)
@@ -121,7 +121,7 @@ func (m *MainAgent) Chat(ctx context.Context, taskID int64, mainSeg int, as *db.
 	tsx.SetResumeTask(resume)     // set_goals 가 목표를 추가하면 완료/일시정지된 작업을 running 으로 되돌립니다
 	tsx.SetNotifyGoal(notifyGoal) // set_goals 가 목표를 추가하면 플래너에 「사람이 목표를 추가했습니다: …」 트리거를 하나 기록합니다
 	tsx.SetNotifyHint(notifyHint) // add_hint 가 힌트를 추가하면 플래너에 「사람이 전략 힌트 N개를 추가했습니다: …」 트리거를 하나 기록합니다
-	tsx.steerWork = m.steerWork   // enable steer_work tool (nil = unavailable)
+	tsx.steerWork = m.steerWork   // steer_work 도구를 켭니다(nil = 쓸 수 없음)
 	// 도메인 도구 + 기본 도구 묶음(Read/Write/Edit/MultiEdit/LS/Glob/Grep/Bash)
 	// 자산 커버리지를 끄면 add_task_scope/list_untested_assets 를 뺍니다(프롬프트에 넣지 않음).
 	base := append(tsx.DropCoverageTools(tsx.MainAgentTools()), actool.DefaultTools()...)
@@ -156,18 +156,18 @@ func (m *MainAgent) Chat(ctx context.Context, taskID int64, mainSeg int, as *db.
 		BashEnv:               proxyEnv(m.proxyAddr, m.proxyCACert), // Bash 자식 프로세스는 기본적으로 프록시를 타고 CA 를 신뢰합니다
 		WorkingDir:            mainDir,                              // 이 작업 작업 디렉터리 <workDir>/tasks/<taskID>
 		ToolOutputDir:         cmdOutDir(mainDir),
-		MaxTurns:              m.maxTurns,                             // 0 = unlimited (configurable in agent management)
-		Compaction:            compactionConfig(m.compactionWindow()), // long chats stay within the window
+		MaxTurns:              m.maxTurns,                             // 0 = 무제한(에이전트 관리에서 고칠 수 있음)
+		Compaction:            compactionConfig(m.compactionWindow()), // 긴 대화도 창 안에 둡니다
 		Todos:                 actool.NewTodoStore(),                  // 세션 단위 임시 할 일(TodoWrite). 계획용이며 끝나면 버립니다
 		// 예산(걸음 수)에 닿으면 SDK 가 마무리를 실행합니다. 사용자에게 진행 요약 한 문장을 냅니다. Prompt 와 마무리 턴 수는 관리 화면에서 고칠 수 있습니다(기본 10턴).
 		Settlement:   wrapupSettlement("mainagent", nil),
 		NonStreaming: m.nonStreaming(), // 이 profile 이 비스트리밍이면 Provider.Complete 를 탑니다
 		MaxTokens:    m.maxTokens(),    // 0 = 상한을 보내지 않음. 서버 기본값
 	}
-	if m.tx != nil { // persist raw human↔AI conversation; one accumulating file per segment
+	if m.tx != nil { // 사람↔AI 원문 대화를 남깁니다. 구간마다 파일이 하나씩 쌓입니다
 		opts.Transcript = m.tx
-		// Segment 0 keeps the legacy "exp%d-main" name so existing transcripts still
-		// load; each new session (seg>=1) gets its own file for a clean context.
+		// 구간 0 은 예전 "exp%d-main" 이름을 유지해 기존 기록이 그대로 열립니다.
+		// 새 세션(seg>=1)은 각자 파일을 받아 맥락이 깨끗합니다.
 		opts.SessionID = fmt.Sprintf("exp%d-main", ts.ID())
 		if mainSeg > 0 {
 			opts.SessionID = fmt.Sprintf("exp%d-main-s%d", ts.ID(), mainSeg)
@@ -183,14 +183,14 @@ func (m *MainAgent) Chat(ctx context.Context, taskID int64, mainSeg int, as *db.
 	ctx = attachSideCapture(ctx, &opts)
 	s := agentcore.NewSession(opts)
 	defer s.Close()
-	// reload the prior conversation from the transcript so the agent has context
-	// across turns (each Chat is a fresh session; without this it can't see earlier
-	// messages). First turn: no file yet → Resume loads nothing and proceeds.
+	// transcript 에서 이전 대화를 다시 읽어, 턴을 넘어 맥락이 있게 합니다
+	// (Chat 마다 세션은 새것입니다. 이게 없으면 이전 메시지를 못 봅니다).
+	// 첫 턴에는 파일이 아직 없습니다. Resume 는 아무것도 읽지 않고 진행합니다.
 	if m.tx != nil {
 		_ = s.Resume(opts.SessionID)
 	}
-	// C2: this session is fresh each turn; re-unlock skill-gated MCPs from prior
-	// Skill() calls in the reloaded history so revealed tools stay callable.
+	// C2: 이 세션은 턴마다 새것입니다. 다시 읽은 기록의 Skill() 호출로
+	// 스킬에 묶인 MCP 를 다시 열어, 드러난 도구를 계속 부를 수 있게 합니다.
 	seedUnlockFromHistory(s.Messages(), def.UnlockSkill)
 	text, _, err := captureRunSession(ctx, s, message, func(r db.Activity) {
 		if emit != nil {

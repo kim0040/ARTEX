@@ -102,7 +102,7 @@ func TestSideUsageRecordedOnceOnConsumerCancellation(t *testing.T) {
 			}
 			if early && event.Type == llm.SEMessageDelta {
 				cancel()
-				break // Consumer exits before the provider can return a cancellation event.
+				break // 소비자가 먼저 빠져, 프로바이더가 취소 이벤트를 돌려주기 전입니다.
 			}
 		}
 		cancel()

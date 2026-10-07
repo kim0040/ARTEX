@@ -41,8 +41,8 @@ func (p *scriptedLLMProvider) Complete(ctx context.Context, req llm.CompletionRe
 	return accumulateStreamForTest(ctx, p.Stream, req)
 }
 
-// accumulateStreamForTest drains a mock's Stream to satisfy the non-streaming
-// Complete method.
+// accumulateStreamForTest는 모의 Stream을 비워, 비스트리밍
+// Complete 메서드를 만족시킵니다.
 func accumulateStreamForTest(ctx context.Context, stream func(context.Context, llm.CompletionRequest) iter.Seq2[llm.StreamEvent, error], req llm.CompletionRequest) (llm.Message, string, llm.Usage, error) {
 	acc := llm.NewAccumulator()
 	for ev, err := range stream(ctx, req) {
@@ -54,17 +54,17 @@ func accumulateStreamForTest(ctx context.Context, stream func(context.Context, l
 	return acc.Message(), acc.StopReason, acc.Usage, nil
 }
 
-// withZeroRetryBackoff sets the same-provider retry backoff to zero for the
-// duration of a (serial) test and returns a restore func for defer.
+// withZeroRetryBackoff는 같은 프로바이더 재시도 쉼을 0으로 둡니다.
+// (직렬) 테스트 동안만이고, defer용 복구 함수를 돌려줍니다.
 func withZeroRetryBackoff() func() {
 	prev := sameProviderRetryBackoff
 	sameProviderRetryBackoff = func(int) time.Duration { return 0 }
 	return func() { sameProviderRetryBackoff = prev }
 }
 
-// flakyThenOKProvider fails its first failCount stream attempts pre-commit
-// (emitting only a non-committing SEMessageStart before the error, mirroring a
-// gateway that returns 200 then drops), then serves okEvents.
+// flakyThenOKProvider는 확정 전에 처음 failCount번의 스트림을 실패시킵니다
+// (오류 전에 확정이 아닌 SEMessageStart만 냄. 200을 주고 끊는
+// 게이트웨이와 같음). 그다음 okEvents를 줍니다.
 type flakyThenOKProvider struct {
 	failCount int
 	failErr   error
@@ -339,8 +339,8 @@ func TestTaskLLMStreamRetriesStalePreStreamFailureAgainstReplacementChain(t *tes
 }
 
 func TestTaskLLMStreamDoesNotSwitchForOrdinaryErrors(t *testing.T) {
-	// Not parallel: overrides the package-level backoff so the retryable cases
-	// don't sleep. Serial tests never overlap the parallel batch, so this is safe.
+	// 병렬 아님: 패키지 수준 쉼을 덮어, 재시도 케이스가
+	// 잠들지 않게 합니다. 직렬 테스트는 병렬 묶음과 안 겹치므로 안전합니다.
 	defer withZeroRetryBackoff()()
 	tests := []string{
 		"openai: status 429: rate limit exceeded",
@@ -455,13 +455,13 @@ func TestTaskLLMRuntimeErrorSkipsWorkerReplay(t *testing.T) {
 	}
 }
 
-// A transient pre-commit stream failure (200-then-drop / overloaded / 5xx) is
-// retried on the SAME provider, without switching profiles, and succeeds once the
-// blip clears — instead of surfacing as a model_error.
+// 확정 전의 일시적 스트림 실패(200 뒤 끊김 / 과부하 / 5xx)는
+// 설정을 바꾸지 않고 같은 프로바이더에서 다시 시도합니다. 깜빡임이 지나가면 성공하고
+// model_error로 드러나지 않습니다.
 func TestTaskLLMStreamRetriesTransientPreCommitOnSameProvider(t *testing.T) {
 	defer withZeroRetryBackoff()()
 	provider := &flakyThenOKProvider{
-		failCount: 2, // fail twice, succeed on the 3rd attempt (initial + 2 retries)
+		failCount: 2, // 두 번 실패하고 3번째(처음 + 재시도 2번)에 성공합니다.
 		failErr:   errors.New("anthropic: overloaded_error"),
 		okEvents:  []llm.StreamEvent{{Type: llm.SEMessageStart}, {Type: llm.SETextDelta, Text: "ok"}},
 	}
@@ -490,12 +490,12 @@ func TestTaskLLMStreamRetriesTransientPreCommitOnSameProvider(t *testing.T) {
 	}
 }
 
-// Once retries are exhausted, the transient error is surfaced (becoming a
-// model_error upstream) after exactly sameProviderStreamRetries+1 attempts.
+// 재시도를 다 쓰면 일시적 오류가 드러납니다(상류에서는 model_error).
+// 시도 횟수는 정확히 sameProviderStreamRetries+1입니다.
 func TestTaskLLMStreamSurfacesTransientAfterRetriesExhausted(t *testing.T) {
 	defer withZeroRetryBackoff()()
 	provider := &flakyThenOKProvider{
-		failCount: 99, // never recovers
+		failCount: 99, // 끝내 회복되지 않습니다.
 		failErr:   errors.New("dial tcp: connection reset by peer"),
 	}
 	hooks := taskLLMStreamHooks{
@@ -515,8 +515,8 @@ func TestTaskLLMStreamSurfacesTransientAfterRetriesExhausted(t *testing.T) {
 	}
 }
 
-// A deterministic 4xx rejection is NOT retried on the same provider — replaying
-// the identical request everywhere fails the same way.
+// 결정적인 4xx 거절은 같은 프로바이더에서 다시 시도하지 않습니다. 같은 요청을
+// 다시 보내도 어디서나 같이 실패합니다.
 func TestTaskLLMStreamDoesNotRetryDeterministicRejection(t *testing.T) {
 	defer withZeroRetryBackoff()()
 	provider := &flakyThenOKProvider{
@@ -571,12 +571,12 @@ func TestResolvedTaskStatusKeepsExhaustedStartedTaskRunning(t *testing.T) {
 	}
 }
 
-// A role with no Agent binding falls through to the task chain, then to global —
-// and an exhausted chain stays a hard stop instead of silently borrowing global.
+// 에이전트 바인딩이 없는 역할은 작업 체인으로, 그다음 전역으로 내려갑니다.
+// 소진된 체인은 하드 정지로 남고, 전역을 조용히 빌려 쓰지 않습니다.
 func TestTaskRuntimeAvailableUnboundRoleFollowsChainThenGlobal(t *testing.T) {
 	t.Parallel()
-	// A nil pg means effectiveProfileForAgent finds no binding for any role, so
-	// every role here resolves through the chain/global levels.
+	// pg가 nil이면 effectiveProfileForAgent가 어느 역할에도 바인딩을 못 찾습니다.
+	// 그래서 여기 역할은 모두 체인/전역 층으로 풀립니다.
 	s := &Server{m: &Manager{}}
 	task := &Task{ID: "7"}
 
@@ -685,8 +685,8 @@ func TestProfileDeleteRestoresQuotaBlockedIntentWhenFallbackAvailable(t *testing
 		t.Fatal(err)
 	}
 
-	// Removing the final explicit entry restores the legacy/global fallback. The
-	// post-delete sync must reopen only quota-blocked work without unpausing it.
+	// 마지막 명시 항목을 지우면 예전/전역 폴백이 돌아옵니다.
+	// 삭제 뒤 동기화는 할당량으로 막힌 일만 다시 열고, 일시정지는 풀지 않아야 합니다.
 	if err := m.pg.DeleteProfile(profileID); err != nil {
 		t.Fatal(err)
 	}

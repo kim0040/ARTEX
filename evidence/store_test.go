@@ -253,8 +253,8 @@ func TestEvidenceConcurrentBindAndDelete(t *testing.T) {
 	if len(list.Bindings) != 1 || list.Version != 1 {
 		t.Fatalf("concurrent duplicates: %+v", list)
 	}
-	// Race a new capture copy with source deletion: either the full copy commits
-	// or nothing does. An already-bound snapshot remains readable in both cases.
+	// 새 캡처 복사와 원본 삭제를 경합시킵니다. 전체 복사가 커밋되거나 아무것도
+	// 커밋되지 않습니다. 이미 묶인 스냅샷은 어느 쪽이든 읽을 수 있습니다.
 	wg.Add(2)
 	go func() { defer wg.Done(); s.Bind(ctx, r.FindingID, []db.TrafficRef{{TrafficID: "race"}}) }()
 	go func() { defer wg.Done(); s.Traffic.DeleteHost("fixture.local") }()
@@ -324,7 +324,7 @@ func TestEvidenceGCGraceAndActiveRestore(t *testing.T) {
 	if _, err = os.Stat(path); err != nil {
 		t.Fatal("active restore lost body", err)
 	}
-	// A portable package cannot substitute metadata while retaining its old ID.
+	// 옮길 수 있는 패키지는 옛 번호를 유지한 채 메타데이터를 바꿀 수 없습니다.
 	bad := snap
 	bad.URL = "http://tampered.local/"
 	if err = s.InstallSnapshots(ctx, []db.TrafficEvidenceSnapshot{bad}, archive); err == nil {

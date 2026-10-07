@@ -19,7 +19,7 @@ const (
 	KindFeishu   = "feishu"   // 페이슈(Lark 포함) 커스텀 로봇
 	KindWeCom    = "wecom"    // 기업 위챗 그룹 로봇
 	KindWebhook  = "webhook"  // 범용 Webhook: 메서드/헤더/JSON 템플릿을 직접 지정
-	KindTelegram = "telegram" // Telegram Bot API
+	KindTelegram = "telegram" // 텔레그램 Bot API
 	KindEmail    = "email"    // SMTP 메일
 )
 

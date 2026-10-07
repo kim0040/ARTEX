@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// ---------- LLM profiles ----------
+// ---------- LLM 프로필 ----------
 
 type LLMProfile struct {
 	ID            int64   `json:"id"`
@@ -18,12 +18,12 @@ type LLMProfile struct {
 	BaseURL       string  `json:"base_url,omitempty"`
 	Proxy         string  `json:"proxy,omitempty"` // LLM 아웃바운드 프록시(http/https/socks5);빈 값=환경 변수 사용
 	Model         string  `json:"model"`
-	APIKey        string  `json:"-"` // never serialized to UI
+	APIKey        string  `json:"-"` // UI로 직렬화하지 않는다
 	APIKeyHint    string  `json:"api_key_hint,omitempty"`
 	RatePerSecond float64 `json:"rate_per_second"`
 	RatePerMinute float64 `json:"rate_per_minute"`
-	// ContextWindowK is the model's context window in K tokens, used to size
-	// compaction thresholds. 0 = use a 200K default; capped at 1000 (1M).
+	// ContextWindowK는 모델 컨텍스트 창이다. 단위는 K 토큰이고, 압축 임계값을 정할 때 쓴다.
+	// 0이면 기본 200K를 쓰고, 상한은 1000(1M)이다.
 	ContextWindowK int `json:"context_window_k"`
 	// ThinkingType 이 사고 「스위치」를 따로 제어한다(thinking.type):"" = 보내지 않음(기본);
 	// "disabled" = 명시적으로 끔; "enabled" = 켬. ReasoningEffort 와 분리된다.
@@ -32,38 +32,34 @@ type LLMProfile struct {
 	// "low"/"medium"/"high"/"xhigh"/"max" = 해당 강도. agent.Config.NewProvider 를 본다.
 	ReasoningEffort string `json:"reasoning_effort"`
 	IsDefault       bool   `json:"is_default"`
-	// Priority orders the failover chain: higher goes first. The ACTIVE profile
-	// (IsDefault) always heads the chain regardless of this value.
+	// Priority는 장애 조치 사슬의 순서다. 클수록 앞이다. 활성 프로필
+	// (IsDefault)은 이 값과 상관없이 항상 사슬의 맨 앞에 선다.
 	Priority int `json:"priority"`
-	// PoolExclude=true keeps this profile out of the failover chain — it stays
-	// usable when an agent/task binds it explicitly, it just never gets picked up
-	// as a fallback target.
+	// PoolExclude=true면 이 프로필은 장애 조치 사슬에 넣지 않는다. 에이전트나 작업이
+	// 직접 묶으면 그대로 쓸 수 있고, 대체 대상으로는 뽑히지 않는다.
 	PoolExclude bool `json:"pool_exclude"`
-	// Streaming selects the wire protocol: true (default) = streaming (SSE);
-	// false = real non-streaming (stream:false, single JSON response via
-	// Provider.Complete). Non-streaming sidesteps flaky gateway SSE at the cost of
-	// live in-run progress. Maps to agent.Config.Stream.
+	// Streaming은 전송 방식을 고른다. true(기본)는 스트리밍(SSE)이고,
+	// false는 진짜 비스트리밍이다(stream:false, Provider.Complete의 JSON 응답 하나).
+	// 비스트리밍은 불안정한 게이트웨이 SSE를 피하지만, 실행 중 실시간 진행은 없다.
+	// agent.Config.Stream과 같다.
 	Streaming bool `json:"streaming"`
-	// MaxTokens caps a single reply's output in tokens. 0 = send no cap and let
-	// the endpoint's own default apply (the historical behaviour). Unlike
-	// ContextWindowK — the model's total capacity, used locally to size compaction
-	// — this value travels with every request.
+	// MaxTokens는 답변 하나의 출력 토큰 상한이다. 0이면 상한을 보내지 않고
+	// 엔드포인트 기본값을 쓴다(예전 동작). ContextWindowK는 모델 전체 용량이라
+	// 로컬에서 압축 크기를 정할 때만 쓰고, 이 값은 요청마다 따라간다.
 	MaxTokens int `json:"max_tokens"`
-	// MaxTokensField picks the request key carrying MaxTokens, for format
-	// "openai" only: "" = max_tokens (default); "max_completion_tokens" = the
-	// newer key, which OpenAI's reasoning models require and whose budget covers
-	// reasoning tokens plus visible output. Ignored by anthropic and
-	// openai-responses, which name the field themselves.
+	// MaxTokensField는 MaxTokens를 실어 보내는 요청 키를 고른다. format이
+	// "openai"일 때만 쓴다. ""는 max_tokens(기본)이고, "max_completion_tokens"는
+	// 새 키다. OpenAI 추론 모델이 이 키를 요구하고, 예산은 추론 토큰과 보이는 출력을 같이 덮는다.
+	// anthropic과 openai-responses는 필드 이름을 스스로 정하므로 이 값을 무시한다.
 	MaxTokensField string `json:"max_tokens_field"`
-	// SessionHeaderKey, when non-empty, names a custom HTTP header sent on every
-	// request built from this profile; its value is the current run's session id
-	// (chat conversation / worker intent). For gateways that key prompt caching
-	// or sticky routing off a session-id header. "" = not sent. Maps to
-	// agent.Config.SessionHeaderKey.
+	// SessionHeaderKey가 비어 있지 않으면, 이 프로필로 만드는 요청마다 그 이름의 HTTP 헤더를 보낸다.
+	// 값은 이번 실행의 세션 id다(채팅 대화 / 워커 의도). 세션 id 헤더로 프롬프트 캐시나
+	// 고정 라우팅을 하는 게이트웨이용이다. ""이면 보내지 않는다.
+	// agent.Config.SessionHeaderKey와 같다.
 	SessionHeaderKey string `json:"session_header_key"`
-	// Retry overrides this profile's share of the retry ladder. Zero value =
-	// inherit the global policy (LLMRetryPolicy), so an untouched profile behaves
-	// exactly as before. See RetryOverride.
+	// Retry는 이 프로필이 재시도 사다리에서 맡는 몫을 덮어쓴다. 0이면
+	// 전역 정책(LLMRetryPolicy)을 물려받아, 손대지 않은 프로필은 예전과 같다.
+	// RetryOverride를 본다.
 	Retry RetryOverride `json:"retry"`
 }
 
@@ -77,14 +73,14 @@ type RetryOverride struct {
 	Stream  RetryRule `json:"stream"`
 }
 
-// profileCols is the read column list (hint variant, no api key) shared by the
-// list query; profileColsKey is the same with api_key for the single-row loads.
+// profileCols는 목록 쿼리가 같이 쓰는 읽기 열이다(힌트만, api 키 없음).
+// profileColsKey는 한 행을 읽을 때 api_key를 포함한 같은 목록이다.
 const profileRetryCols = `COALESCE(retry_connect_attempts,0),COALESCE(retry_connect_interval_ms,0),COALESCE(retry_empty_attempts,0),COALESCE(retry_empty_interval_ms,0),COALESCE(retry_stream_attempts,0),COALESCE(retry_stream_interval_ms,0)`
 const profileCols = `id,name,format,COALESCE(base_url,''),COALESCE(proxy,''),model,COALESCE(api_key_hint,''),rate_per_second,rate_per_minute,context_window_k,COALESCE(reasoning_effort,''),is_default,priority,pool_exclude,COALESCE(thinking_type,''),COALESCE(streaming,true),COALESCE(max_tokens,0),COALESCE(max_tokens_field,''),COALESCE(session_header_key,''),` + profileRetryCols
 const profileColsKey = `id,name,format,COALESCE(base_url,''),COALESCE(proxy,''),model,COALESCE(api_key,''),rate_per_second,rate_per_minute,context_window_k,COALESCE(reasoning_effort,''),is_default,priority,pool_exclude,COALESCE(thinking_type,''),COALESCE(streaming,true),COALESCE(max_tokens,0),COALESCE(max_tokens_field,''),COALESCE(session_header_key,''),` + profileRetryCols
 
-// scanProfile reads one row in the profileCols / profileColsKey column order. The
-// 7th column lands in APIKeyHint or APIKey depending on which list the caller used.
+// scanProfile은 profileCols / profileColsKey 열 순서대로 한 행을 읽는다.
+// 7번째 열은 호출자가 어느 목록을 썼는지에 따라 APIKeyHint 또는 APIKey에 들어간다.
 func scanProfile(sc interface{ Scan(...any) error }, into *string, p *LLMProfile) error {
 	return sc.Scan(&p.ID, &p.Name, &p.Format, &p.BaseURL, &p.Proxy, &p.Model, into,
 		&p.RatePerSecond, &p.RatePerMinute, &p.ContextWindowK, &p.ReasoningEffort, &p.IsDefault, &p.Priority, &p.PoolExclude, &p.ThinkingType, &p.Streaming,
@@ -111,7 +107,7 @@ func (d *DB) ListProfiles() ([]*LLMProfile, error) {
 	return out, rows.Err()
 }
 
-// ActiveProfile returns the default (active) profile with its api key, or nil.
+// ActiveProfile은 기본(활성) 프로필을 api 키와 함께 돌려준다. 없으면 nil.
 func (d *DB) ActiveProfile() (*LLMProfile, error) {
 	var p LLMProfile
 	err := scanProfile(d.QueryRow(`SELECT `+profileColsKey+` FROM llm_profiles WHERE is_default LIMIT 1`), &p.APIKey, &p)
@@ -121,8 +117,8 @@ func (d *DB) ActiveProfile() (*LLMProfile, error) {
 	return &p, err
 }
 
-// ProfileByID returns one profile with its api key by id, or nil if not found.
-// Used to run a task on a specific (non-default) LLM profile.
+// ProfileByID는 id로 프로필 하나와 api 키를 돌려준다. 없으면 nil.
+// 기본이 아닌 LLM 프로필로 작업을 돌릴 때 쓴다.
 func (d *DB) ProfileByID(id int64) (*LLMProfile, error) {
 	var p LLMProfile
 	err := scanProfile(d.QueryRow(`SELECT `+profileColsKey+` FROM llm_profiles WHERE id=$1`, id), &p.APIKey, &p)
@@ -132,11 +128,10 @@ func (d *DB) ProfileByID(id int64) (*LLMProfile, error) {
 	return &p, err
 }
 
-// PoolProfiles returns the failover chain in run order, api keys included: the
-// active profile first, then every other keyed profile that isn't excluded, by
-// priority DESC (id ASC to stay stable). Profiles without an api key can't serve
-// a request, so they never enter the chain. The ordering IS the policy — callers
-// walk the slice front to back.
+// PoolProfiles는 실행 순서의 장애 조치 사슬을 api 키와 함께 돌려준다.
+// 활성 프로필이 먼저이고, 그다음 제외되지 않은 키가 있는 프로필을
+// priority 내림차순(같으면 id 오름차순으로 안정)으로 붙인다. api 키가 없으면
+// 요청을 처리할 수 없어 사슬에 넣지 않는다. 이 순서가 곧 정책이다. 호출자는 앞부터 걷는다.
 func (d *DB) PoolProfiles() ([]*LLMProfile, error) {
 	rows, err := d.Query(`SELECT ` + profileColsKey + ` FROM llm_profiles
 WHERE COALESCE(api_key,'') <> '' AND (is_default OR NOT pool_exclude)
@@ -156,7 +151,7 @@ ORDER BY is_default DESC, priority DESC, id ASC`)
 	return out, rows.Err()
 }
 
-// SaveProfile inserts (id==0) or updates a profile. Empty apiKey on update keeps existing.
+// SaveProfile은 프로필을 넣거나(id==0) 고친다. 수정할 때 apiKey가 비어 있으면 기존 키를 유지한다.
 func (d *DB) SaveProfile(p *LLMProfile) (int64, error) {
 	hint := p.APIKeyHint
 	if len(p.APIKey) >= 4 {
@@ -193,11 +188,9 @@ func (d *DB) DeleteProfile(id int64) error {
 	return d.DeleteProfileContext(context.Background(), id)
 }
 
-// DeleteProfileContext removes a non-default profile while preserving the task
-// failover cursor. Reference changes are retried because a task, agent, or
-// conversation may start pointing at the profile between the initial scan and
-// the profile row lock. A bound prevents a continuously changing workload from
-// keeping an HTTP request alive forever.
+// DeleteProfileContext는 기본이 아닌 프로필을 지우면서 작업의 장애 조치 커서는 남긴다.
+// 처음 훑는 사이와 프로필 행을 잠그기 전에 작업, 에이전트, 대화가 그 프로필을 가리키기 시작할 수 있어 참조 변경은 다시 시도한다.
+// 상한을 두어, 계속 바뀌는 작업이 HTTP 요청을 영원히 붙잡지 않게 한다.
 func (d *DB) DeleteProfileContext(ctx context.Context, id int64) error {
 	const (
 		maxAttempts = 8
@@ -224,11 +217,10 @@ func (d *DB) deleteProfile(ctx context.Context, id int64) (bool, error) {
 	}
 	defer tx.Rollback()
 
-	// Reference setters lock their task/agent/conversation row before an
-	// llm_profiles row can be locked by a foreign-key check. Keep deletion in the
-	// same order: the old profile -> child order deadlocked with a setter's child
-	// -> profile order. Sorting also gives concurrent profile deletions a stable
-	// order when their chains overlap multiple tasks.
+	// 참조를 바꾸는 쪽은 외래 키 검사가 llm_profiles 행을 잠그기 전에
+	// 작업/에이전트/대화 행을 먼저 잠근다. 삭제도 같은 순서를 지킨다. 예전처럼
+	// 프로필 → 자식을 잠그면, 설정 쪽의 자식 → 프로필 순서와 교착된다.
+	// 정렬해 두면 사슬이 여러 작업에 겹쳐도 동시에 지우는 순서가 안정된다.
 	lockedTasks, err := lockProfileReferenceRows(ctx, tx, `SELECT t.id
 FROM tasks t
 WHERE t.llm_profile_id=$1
@@ -273,11 +265,10 @@ FOR UPDATE`, id)
 		position  int
 		wasActive bool
 	}
-	// A task may have committed a new reference after the first statement took
-	// its snapshot but before this transaction acquired the profile lock. The
-	// profile lock now prevents further references; retry if that committed task
-	// was not part of the task-first lock set. Never acquire a new task lock while
-	// holding the profile lock, because that would recreate the inversion.
+	// 첫 문장이 스냅샷을 찍은 뒤, 이 트랜잭션이 프로필 잠금을 얻기 전에
+	// 작업이 새 참조를 커밋했을 수 있다. 지금은 프로필 잠금이 추가 참조를 막는다.
+	// 그 커밋된 작업이 작업 우선 잠금 집합에 없었으면 다시 시도한다.
+	// 프로필 잠금을 쥔 채 새 작업 잠금을 잡지 않는다. 그러면 순서가 다시 뒤집힌다.
 	rows, err := tx.QueryContext(ctx, `SELECT ref_kind, ref_id FROM (
 	SELECT 'task'::text AS ref_kind, t.id AS ref_id
 FROM tasks t
@@ -354,9 +345,9 @@ ORDER BY x.task_id`, id)
 	if _, err := tx.ExecContext(ctx, `DELETE FROM llm_profiles WHERE id=$1`, id); err != nil {
 		return false, err
 	}
-	// Only a successor after the deleted cursor is eligible. If there is none,
-	// clear the explicit chain so the task falls back to its Agent/global provider;
-	// profiles before a manually selected cursor must never be revived.
+	// 지운 커서 뒤의 후속만 후보가 된다. 없으면
+	// 명시 사슬을 비워 작업이 에이전트/전역 제공자로 돌아간다.
+	// 사람이 고른 커서보다 앞의 프로필은 되살리지 않는다.
 	for _, task := range affected {
 		if !task.wasActive {
 			if _, err := tx.ExecContext(ctx, `UPDATE tasks SET llm_chain_revision=llm_chain_revision+1 WHERE id=$1`, task.id); err != nil {
@@ -415,7 +406,7 @@ func lockProfileReferenceRows(ctx context.Context, tx *sql.Tx, query string, pro
 	return locked, nil
 }
 
-// SetActiveProfile makes one profile the global default (single-default invariant).
+// SetActiveProfile은 프로필 하나를 전역 기본으로 만든다. 기본은 항상 하나다.
 func (d *DB) SetActiveProfile(id int64) error {
 	tx, err := d.Begin()
 	if err != nil {
@@ -435,7 +426,7 @@ func (d *DB) SetActiveProfile(id int64) error {
 	return tx.Commit()
 }
 
-// ---------- Agents / prompts ----------
+// ---------- 에이전트 / 프롬프트 ----------
 
 type Agent struct {
 	ID               int64  `json:"id"`
@@ -552,9 +543,8 @@ func (d *DB) AgentBindingCounts() (mcp map[int64]int, skill map[int64]int, tools
 	return
 }
 
-// CreateAgent inserts a custom (builtin=false) conversational agent with role
-// 'assistant'. Returns the new row. Callers validate key/name upstream; the DB
-// enforces key charset + uniqueness and the role check constraint.
+// CreateAgent는 역할이 'assistant'인 사용자 정의(builtin=false) 대화 에이전트를 넣는다.
+// 새 행을 돌려준다. key/name 검사는 호출자가 먼저 하고, DB는 키 문자 집합, 유일함, 역할 제약을 지킨다.
 func (d *DB) CreateAgent(key, name, description string) (*Agent, error) {
 	a, err := scanAgent(d.QueryRow(`
 INSERT INTO agents(key, name, description, role, builtin, enabled)
@@ -566,22 +556,21 @@ RETURNING `+agentCols, key, name, description))
 	return a, nil
 }
 
-// UpdateAgentMeta updates a custom agent's display name + description. Built-in
-// agents are left untouched (guarded by the caller / the builtin flag).
+// UpdateAgentMeta는 사용자 정의 에이전트의 표시 이름과 설명을 고친다.
+// 내장 에이전트는 건드리지 않는다(호출자와 builtin 플래그가 막는다).
 func (d *DB) UpdateAgentMeta(key, name, description string) error {
 	_, err := d.Exec(`UPDATE agents SET name=$2, description=NULLIF($3,'') WHERE key=$1 AND builtin=false`, key, name, description)
 	return err
 }
 
-// DeleteAgent removes a custom agent. Built-in agents are protected by the
-// builtin=false guard. agent_prompts / agent_prompt_vars / visibility rows cascade
-// via FK; tools.agents bindings for the key are cleaned by the caller.
+// DeleteAgent는 사용자 정의 에이전트를 지운다. 내장 에이전트는 builtin=false 조건으로 보호된다.
+// agent_prompts / agent_prompt_vars / 가시성 행은 외래 키로 함께 지워지고, tools.agents 바인딩은 호출자가 정리한다.
 func (d *DB) DeleteAgent(key string) error {
 	_, err := d.Exec(`DELETE FROM agents WHERE key=$1 AND builtin=false`, key)
 	return err
 }
 
-// SetAgentMaxTurns updates an agent's max_turns (0 = unlimited).
+// SetAgentMaxTurns는 에이전트의 max_turns를 고친다(0 = 제한 없음).
 func (d *DB) SetAgentMaxTurns(key string, maxTurns int) error {
 	if maxTurns < 0 {
 		maxTurns = 0
@@ -590,9 +579,9 @@ func (d *DB) SetAgentMaxTurns(key string, maxTurns int) error {
 	return err
 }
 
-// SetAgentLLMProfile binds an agent to a specific LLM profile (id != nil), or clears
-// the binding (id == nil) so the agent follows the task/conversation pin, else the
-// global active profile. Precedence at runtime: agent binding → task/conv pin → active.
+// SetAgentLLMProfile은 에이전트를 특정 LLM 프로필에 묶거나(id != nil), 묶음을 풀어(id == nil)
+// 작업/대화 핀을 따르게 한다. 그것도 없으면 전역 활성 프로필을 쓴다.
+// 실행 우선순위: 에이전트 묶음 → 작업/대화 핀 → 활성 프로필.
 func (d *DB) SetAgentLLMProfile(key string, id *int64) error {
 	tx, err := d.Begin()
 	if err != nil {
@@ -600,12 +589,12 @@ func (d *DB) SetAgentLLMProfile(key string, id *int64) error {
 	}
 	defer tx.Rollback()
 
-	// DeleteProfile locks reference rows before the profile row. Keep the same
-	// order here so a concurrent rebind cannot form a child/profile deadlock.
+	// DeleteProfile은 프로필 행보다 참조 행을 먼저 잠근다. 여기도 같은 순서를 지켜
+	// 동시에 다시 묶을 때 자식/프로필 교착이 나지 않게 한다.
 	var agentID int64
 	if err := tx.QueryRow(`SELECT id FROM agents WHERE key=$1 FOR UPDATE`, key).Scan(&agentID); err != nil {
 		if err == sql.ErrNoRows {
-			// Preserve the previous UPDATE semantics: an unknown key is a no-op.
+			// 예전 UPDATE와 같다. 모르는 키는 아무 일도 하지 않는다.
 			return tx.Commit()
 		}
 		return err
@@ -619,8 +608,8 @@ func (d *DB) SetAgentLLMProfile(key string, id *int64) error {
 	return tx.Commit()
 }
 
-// lockLLMProfileForReference makes the profile side of the shared lock-order
-// protocol explicit. Callers must already own the referencing child row.
+// lockLLMProfileForReference는 공유 잠금 순서에서 프로필 쪽을 분명히 한다.
+// 호출자는 이미 참조하는 자식 행을 잠그고 있어야 한다.
 func lockLLMProfileForReference(tx *sql.Tx, profileID *int64) error {
 	if profileID == nil {
 		return nil
@@ -635,8 +624,8 @@ func lockLLMProfileForReference(tx *sql.Tx, profileID *int64) error {
 	return nil
 }
 
-// SetAgentWebSearch toggles whether an agent uses network search (still gated by
-// the global web-search master switch + backend/key config).
+// SetAgentWebSearch는 에이전트가 네트워크 검색을 쓸지 바꾼다.
+// 전역 웹 검색 스위치와 백엔드/키 설정은 그대로 위에 있다.
 func (d *DB) SetAgentWebSearch(key string, on bool) error {
 	_, err := d.Exec(`UPDATE agents SET web_search=$1 WHERE key=$2`, on, key)
 	return err
@@ -649,29 +638,29 @@ func (d *DB) SetAgentInteractiveShell(key string, on bool) error {
 	return err
 }
 
-// SetAgentWrapupPrompt stores an agent's wrap-up (settlement) prompt. Empty string
-// means "use the code built-in default" — resolved at runtime by resolveWrapup.
+// SetAgentWrapupPrompt는 에이전트의 마무리(정산) 프롬프트를 저장한다. 빈 문자열은
+// "코드 내장 기본값을 쓴다"는 뜻이고, 실행 때 resolveWrapup이 정한다.
 func (d *DB) SetAgentWrapupPrompt(key, prompt string) error {
 	_, err := d.Exec(`UPDATE agents SET wrapup_prompt=$1 WHERE key=$2`, prompt, key)
 	return err
 }
 
-// SetAgentWrapupMaxTurns stores the wrap-up phase's own turn budget. 0 means "use
-// the code built-in default" — resolved at runtime by resolveWrapupTurns.
+// SetAgentWrapupMaxTurns는 마무리 단계 자체의 턴 예산을 저장한다. 0은
+// "코드 내장 기본값을 쓴다"는 뜻이고, 실행 때 resolveWrapupTurns가 정한다.
 func (d *DB) SetAgentWrapupMaxTurns(key string, n int) error {
 	_, err := d.Exec(`UPDATE agents SET wrapup_max_turns=$1 WHERE key=$2`, n, key)
 	return err
 }
 
-// SetAgentTaskTimeoutWrapup stores an agent's task-timeout wrap-up prompt (empty =
-// use code built-in default; only worker/planner have one) and its turn budget
-// (0 = default). Resolved at runtime by resolveTaskTimeoutWrapup / …Turns.
+// SetAgentTaskTimeoutWrapup은 작업 시간 초과 마무리 프롬프트(빈 값 =
+// 코드 내장 기본값, 워커/플래너만 있음)와 턴 예산(0 = 기본)을 저장한다.
+// 실행 때 resolveTaskTimeoutWrapup / …Turns가 정한다.
 func (d *DB) SetAgentTaskTimeoutWrapup(key, prompt string, maxTurns int) error {
 	_, err := d.Exec(`UPDATE agents SET task_timeout_wrapup_prompt=$1, task_timeout_wrapup_max_turns=$2 WHERE key=$3`, prompt, maxTurns, key)
 	return err
 }
 
-// SetAgentRunSeconds updates an agent's run_seconds wall-clock budget (0 = unlimited).
+// SetAgentRunSeconds는 에이전트의 run_seconds 벽시계 예산을 고친다(0 = 제한 없음).
 func (d *DB) SetAgentRunSeconds(key string, runSecs int) error {
 	if runSecs < 0 {
 		runSecs = 0
@@ -726,7 +715,7 @@ func (d *DB) PromptVars(agentID int64) ([]PromptVar, error) {
 	return out, rows.Err()
 }
 
-// CurrentPrompt returns the agent's active template text ("" if none set yet).
+// CurrentPrompt는 에이전트의 현재 템플릿 글을 돌려준다. 아직 없으면 "".
 func (d *DB) CurrentPrompt(agentID int64) (string, error) {
 	var tmpl sql.NullString
 	err := d.QueryRow(`SELECT p.template_text FROM agents a JOIN agent_prompts p ON p.id=a.current_prompt_id WHERE a.id=$1`, agentID).Scan(&tmpl)
@@ -736,17 +725,16 @@ func (d *DB) CurrentPrompt(agentID int64) (string, error) {
 	return tmpl.String, err
 }
 
-// SeedPromptIfEmpty writes the code-default template as the agent's first prompt
-// version ONLY when it has none yet (current_prompt_id IS NULL). Mirrors
-// SeedTool's first-insert-only philosophy: a user's edited prompt is never
-// clobbered on restart. Idempotent — a no-op once any version exists.
+// SeedPromptIfEmpty는 아직 프롬프트가 없을 때만(current_prompt_id IS NULL) 코드 기본 템플릿을 첫 버전으로 쓴다.
+// SeedTool처럼 처음 한 번만 넣는다. 재시작해도 사람이 고친 프롬프트는 덮지 않는다.
+// 버전이 하나라도 있으면 아무 일도 하지 않는다.
 func (d *DB) SeedPromptIfEmpty(agentID int64, tmpl string) error {
 	var cur sql.NullInt64
 	if err := d.QueryRow(`SELECT current_prompt_id FROM agents WHERE id=$1`, agentID).Scan(&cur); err != nil {
 		return err
 	}
 	if cur.Valid {
-		return nil // already seeded or user-edited → leave it
+		return nil // 이미 심었거나 사람이 고쳤으면 그대로 둔다
 	}
 	_, err := d.SavePrompt(agentID, tmpl, "내장 기본값", "system")
 	return err
@@ -758,7 +746,7 @@ func (d *DB) ResetPromptToDefault(agentID int64, tmpl string) (int, error) {
 	return d.SavePrompt(agentID, tmpl, "내장 기본값으로 복원", "system")
 }
 
-// SavePrompt appends a new version and points current_prompt_id at it.
+// SavePrompt는 새 버전을 뒤에 붙이고 current_prompt_id가 그 버전을 가리키게 한다.
 func (d *DB) SavePrompt(agentID int64, template, note, by string) (int, error) {
 	tx, err := d.Begin()
 	if err != nil {
@@ -804,7 +792,7 @@ func (d *DB) ListPromptVersions(agentID int64) ([]PromptVersion, error) {
 	return out, rows.Err()
 }
 
-// ---------- MCP servers ----------
+// ---------- MCP 서버 ----------
 
 type MCPServer struct {
 	ID        int64           `json:"id"`
@@ -815,8 +803,8 @@ type MCPServer struct {
 	Env       json.RawMessage `json:"env"`
 	URL       string          `json:"url,omitempty"`
 	Enabled   bool            `json:"enabled"`
-	Insecure  bool            `json:"insecure"`        // http: skip TLS cert verification (self-signed servers, issue #108)
-	Tools     []string        `json:"tools,omitempty"` // cached tool names (mcp_tools_cache)
+	Insecure  bool            `json:"insecure"`        // http: TLS 인증서 검사를 건너뛴다(자체 서명 서버, 이슈 #108)
+	Tools     []string        `json:"tools,omitempty"` // 캐시된 도구 이름(mcp_tools_cache)
 }
 
 func (d *DB) ListMCP() ([]*MCPServer, error) {
@@ -839,15 +827,15 @@ func (d *DB) ListMCP() ([]*MCPServer, error) {
 		rows.Close()
 		return nil, err
 	}
-	rows.Close() // free the connection before the per-server tool-cache queries below
-	// Attach each server's cached tool names (best-effort; empty until discovered).
+	rows.Close() // 아래 서버별 도구 캐시 쿼리 전에 연결을 돌려준다
+	// 서버마다 캐시된 도구 이름을 붙인다. 발견 전에는 비어 있을 수 있다.
 	for _, m := range out {
 		m.Tools, _ = d.MCPToolNames(m.ID)
 	}
 	return out, nil
 }
 
-// MCPToolNames returns the cached tool names for a server (empty until discovered).
+// MCPToolNames는 서버의 캐시된 도구 이름을 돌려준다. 발견 전에는 비어 있다.
 func (d *DB) MCPToolNames(serverID int64) ([]string, error) {
 	rows, err := d.Query(`SELECT tool_name FROM mcp_tools_cache WHERE server_id=$1 ORDER BY tool_name`, serverID)
 	if err != nil {
@@ -865,13 +853,13 @@ func (d *DB) MCPToolNames(serverID int64) ([]string, error) {
 	return out, rows.Err()
 }
 
-// MCPTool is one cached tool of an MCP server (name + description).
+// MCPTool은 MCP 서버에 캐시된 도구 하나다(이름과 설명).
 type MCPTool struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
 }
 
-// MCPToolsDetailed returns the cached tools (name + description) for a server.
+// MCPToolsDetailed는 서버의 캐시된 도구(이름과 설명)를 돌려준다.
 func (d *DB) MCPToolsDetailed(serverID int64) ([]MCPTool, error) {
 	rows, err := d.Query(`SELECT tool_name, COALESCE(description,'') FROM mcp_tools_cache WHERE server_id=$1 ORDER BY tool_name`, serverID)
 	if err != nil {
@@ -889,7 +877,7 @@ func (d *DB) MCPToolsDetailed(serverID int64) ([]MCPTool, error) {
 	return out, rows.Err()
 }
 
-// SaveMCPTools replaces the cached tool list for a server (called after discovery).
+// SaveMCPTools는 서버의 캐시된 도구 목록을 통째로 바꾼다. 발견 뒤에 호출한다.
 func (d *DB) SaveMCPTools(serverID int64, tools []MCPTool) error {
 	tx, err := d.Begin()
 	if err != nil {
@@ -942,9 +930,9 @@ func (d *DB) DeleteMCP(id int64) error {
 	return tx.Commit()
 }
 
-// ---------- Skill visibility (agent × skill_name) ----------
+// ---------- 스킬 가시성 (에이전트 × skill_name) ----------
 
-// AgentSkillNames returns the skill directory names visible to an agent.
+// AgentSkillNames는 에이전트에게 보이는 스킬 디렉터리 이름을 돌려준다.
 func (d *DB) AgentSkillNames(agentID int64) ([]string, error) {
 	rows, err := d.Query(`SELECT skill_name FROM agent_skill_visibility WHERE agent_id=$1 AND enabled ORDER BY skill_name`, agentID)
 	if err != nil {
@@ -962,7 +950,7 @@ func (d *DB) AgentSkillNames(agentID int64) ([]string, error) {
 	return out, rows.Err()
 }
 
-// SkillAgents returns the agent IDs that can see a skill.
+// SkillAgents는 그 스킬을 볼 수 있는 에이전트 id를 돌려준다.
 func (d *DB) SkillAgents(skillName string) ([]int64, error) {
 	rows, err := d.Query(`SELECT agent_id FROM agent_skill_visibility WHERE skill_name=$1 AND enabled`, skillName)
 	if err != nil {
@@ -980,7 +968,7 @@ func (d *DB) SkillAgents(skillName string) ([]int64, error) {
 	return out, rows.Err()
 }
 
-// SetAgentSkillVisibility replaces all skill visibility for an agent.
+// SetAgentSkillVisibility는 에이전트의 스킬 가시성을 통째로 바꾼다.
 func (d *DB) SetAgentSkillVisibility(agentID int64, names []string) error {
 	tx, err := d.Begin()
 	if err != nil {
@@ -999,7 +987,7 @@ ON CONFLICT (agent_id,skill_name) DO UPDATE SET enabled=true`, agentID, name); e
 	return tx.Commit()
 }
 
-// ToggleSkillVisibility sets one (agent, skill_name) visibility on/off.
+// ToggleSkillVisibility는 (에이전트, skill_name) 가시성 하나를 켜거나 끈다.
 func (d *DB) ToggleSkillVisibility(agentID int64, skillName string, on bool) error {
 	if on {
 		_, err := d.Exec(`INSERT INTO agent_skill_visibility(agent_id,skill_name,enabled) VALUES ($1,$2,true)
@@ -1010,15 +998,15 @@ ON CONFLICT (agent_id,skill_name) DO UPDATE SET enabled=true`, agentID, skillNam
 	return err
 }
 
-// DeleteSkillVisibility removes all visibility rows for a skill (called on skill delete).
+// DeleteSkillVisibility는 스킬의 가시성 행을 모두 지운다. 스킬을 지울 때 호출한다.
 func (d *DB) DeleteSkillVisibility(skillName string) error {
 	_, err := d.Exec(`DELETE FROM agent_skill_visibility WHERE skill_name=$1`, skillName)
 	return err
 }
 
-// ---------- Visibility (agent × mcp) ----------
+// ---------- 가시성 (에이전트 × mcp) ----------
 
-// AgentVisible returns the resource ids of a kind visible to an agent.
+// AgentVisible은 에이전트에게 보이는 종류별 리소스 id를 돌려준다.
 func (d *DB) AgentVisible(agentID int64, kind string) ([]int64, error) {
 	rows, err := d.Query(`SELECT resource_id FROM agent_visibility WHERE agent_id=$1 AND resource_kind=$2 AND enabled`, agentID, kind)
 	if err != nil {
@@ -1036,7 +1024,7 @@ func (d *DB) AgentVisible(agentID int64, kind string) ([]int64, error) {
 	return out, rows.Err()
 }
 
-// ResourceAgents returns the agent ids that can see a resource.
+// ResourceAgents는 그 리소스를 볼 수 있는 에이전트 id를 돌려준다.
 func (d *DB) ResourceAgents(kind string, resourceID int64) ([]int64, error) {
 	rows, err := d.Query(`SELECT agent_id FROM agent_visibility WHERE resource_kind=$1 AND resource_id=$2 AND enabled`, kind, resourceID)
 	if err != nil {
@@ -1054,9 +1042,8 @@ func (d *DB) ResourceAgents(kind string, resourceID int64) ([]int64, error) {
 	return out, rows.Err()
 }
 
-// SetAgentVisibilityKind replaces the full set of visible resources of a kind for
-// an agent (agent-side bulk write). Bidirectional with the resource-side view —
-// both read/write the same agent_visibility rows.
+// SetAgentVisibilityKind는 에이전트에게 보이는 한 종류의 리소스 집합을 통째로 바꾼다(에이전트 쪽 일괄 쓰기).
+// 리소스 쪽 화면과 같은 agent_visibility 행을 읽고 쓴다.
 func (d *DB) SetAgentVisibilityKind(agentID int64, kind string, resourceIDs []int64) error {
 	tx, err := d.Begin()
 	if err != nil {
@@ -1075,7 +1062,7 @@ ON CONFLICT (agent_id,resource_kind,resource_id,mcp_tool_name) DO UPDATE SET ena
 	return tx.Commit()
 }
 
-// ToggleVisibility sets one (agent, kind, resource) visibility on/off (idempotent).
+// ToggleVisibility는 (에이전트, 종류, 리소스) 가시성 하나를 켜거나 끈다. 같은 값을 다시 넣어도 결과가 같다.
 func (d *DB) ToggleVisibility(agentID int64, kind string, resourceID int64, on bool) error {
 	if on {
 		_, err := d.Exec(`INSERT INTO agent_visibility(agent_id,resource_kind,resource_id,enabled) VALUES ($1,$2,$3,true)

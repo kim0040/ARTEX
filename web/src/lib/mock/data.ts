@@ -1,8 +1,8 @@
 // 데모 화면을 채우는 목업 데이터입니다. 자산 그래프와 탐색 그래프가 여기서 나옵니다.
-// Rich mock dataset for the Vercel demo (NEXT_PUBLIC_MOCK=1). Shapes track the
-// current backend contract in lib/api.ts + lib/types.ts. All data is static and
-// self-consistent (one company "Acme", a few tasks, findings, exploration graph,
-// sessions/activity, traffic, agents, etc.) so every page looks populated.
+// 버셀 데모용 풍부한 목업(NEXT_PUBLIC_MOCK=1). 모양은
+// lib/api.ts와 lib/types.ts의 현재 백엔드 계약을 따릅니다. 데이터는 모두 정적이고
+// 서로 맞습니다(기업 "Acme" 하나, 작업 몇 개, 발견, 탐색 그래프,
+// 세션/활동, 트래픽, 에이전트 등). 그래서 모든 페이지가 채워져 보입니다.
 
 import type {
   Activity,
@@ -46,9 +46,9 @@ import type {
   TrafficResp,
 } from "@/lib/types";
 
-const T = (iso: string) => iso; // readability helper for timestamps
+const T = (iso: string) => iso; // 타임스탬프를 읽기 쉽게 하는 도우미
 
-// ── Tasks ──────────────────────────────────────────────────────────────────
+// ── 작업 ──────────────────────────────────────────────────────────────────
 export const ACTIVE_TASK = "t-acme-web";
 
 export const tasks: Task[] = [
@@ -206,7 +206,7 @@ const grandTotal: TokenTotal = tasks.reduce(
   { input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0 },
 );
 
-// ── Stats ──────────────────────────────────────────────────────────────────
+// ── 통계 ──────────────────────────────────────────────────────────────────
 export function stats(
   taskId?: string,
   state: { tasks?: readonly Task[]; findings?: readonly Finding[]; activeTask?: string } = {},
@@ -238,7 +238,7 @@ export function stats(
   };
 }
 
-// ── Company + Assets (new unified model) ─────────────────────────────────────
+// ── 기업 + 자산(새 통합 모델) ─────────────────────────────────────
 export const companies: Company[] = [
   {
     id: 1,
@@ -583,7 +583,7 @@ function assetRef(id: number): FindingAsset {
   };
 }
 
-// ── Findings ─────────────────────────────────────────────────────────────────
+// ── 발견 ─────────────────────────────────────────────────────────────────
 export const findings: Finding[] = [
   {
     id: "f-1",
@@ -814,7 +814,7 @@ export const findings: Finding[] = [
   },
 ];
 
-// ── Exploration graph (active task) ──────────────────────────────────────────
+// ── 탐색 그래프(활성 작업) ──────────────────────────────────────────
 // 현재 모델: 뿌리는 fact/state=origin(「시작점」으로 그림). payload는 JSON 문자열이고,
 // goal은 text를, 나머지는 summary를 취합니다. 구조: 뿌리→목표(spawns)→의도(spawns)→사실/발견(yields),
 // 발견→목표(proves), 안내→의도(derived_from).
@@ -1908,7 +1908,7 @@ export const activity: Activity[] = [
     cache_write_tokens: 11000,
   },
 
-  // work#5 · i5 IDOR（running）
+  // work#5 · i5 IDOR（실행 중）
   {
     seq: 50,
     worker: "work#5",
@@ -2524,7 +2524,7 @@ export const activity: Activity[] = [
     cache_write_tokens: 9500,
   },
 
-  // work#12 · i12 Kerberoasting（done）
+  // work#12 · i12 Kerberoasting（완료）
   {
     seq: 380,
     worker: "work#12",
@@ -2757,7 +2757,7 @@ export function activityForTask(): Activity[] {
   return activity;
 }
 
-// ── Token stats ──────────────────────────────────────────────────────────────
+// ── 토큰 통계 ──────────────────────────────────────────────────────────────
 export const tokenWorkers: TokenUsage[] = [
   {
     worker: "planner",
@@ -2798,8 +2798,8 @@ export const tokenWorkers: TokenUsage[] = [
   { worker: "work#13", input_tokens: 144000, output_tokens: 9200, cache_read_tokens: 96000, cache_write_tokens: 14000 },
 ];
 
-// Mirrors TokenStatsBySession: completed usage is keyed by the stable UI session
-// (main | plan | intent:<id>) instead of the reusable work#N executor name.
+// TokenStatsBySession과 같습니다. 끝난 사용량은 재사용되는 work#N 이름이 아니라
+// 안정된 화면 세션(main | plan | intent:<id>)을 키로 합니다.
 export const tokenSessions: SessionTokenUsage[] = (() => {
   const totals = new Map<string, SessionTokenUsage>();
   for (const item of activity) {
@@ -2859,7 +2859,7 @@ export const convTokens: ConvTokenSummary[] = [
   },
 ];
 
-// ── Traffic ──────────────────────────────────────────────────────────────────
+// ── 트래픽 ──────────────────────────────────────────────────────────────────
 const exchanges = [
   ["x-1", "www.acme.com", "GET", "https://www.acme.com/", 200, "text/html", 48213],
   ["x-2", "www.acme.com", "GET", "https://www.acme.com/search?q=test", 200, "text/html", 5120],
@@ -2901,7 +2901,7 @@ export const traffic: TrafficResp = {
   })),
 };
 
-// Distinct hosts with counts, derived from the exchanges above (target picker).
+// 위의 왕래에서 만든, 개수가 있는 서로 다른 호스트(대상 고르기).
 const hostCounts: Record<string, number> = {};
 for (const [, host] of exchanges) hostCounts[host] = (hostCounts[host] ?? 0) + 1;
 export const trafficHosts: TrafficHost[] = Object.entries(hostCounts).map(([host, count]) => ({ host, count }));
@@ -2928,7 +2928,7 @@ Content-Length: 655
 }`,
 };
 
-// ── Security / Audit ─────────────────────────────────────────────────────────
+// ── 보안 / 감사 ─────────────────────────────────────────────────────────
 export const audit: Audit = {
   attributions: { allow: 312, block: 9 },
   entries: [
@@ -3005,7 +3005,7 @@ export const audit: Audit = {
   ],
 };
 
-// ── LLM profiles ─────────────────────────────────────────────────────────────
+// ── LLM 프로필 ─────────────────────────────────────────────────────────────
 export const llmProfiles: LLMProfile[] = [
   {
     id: "1",
@@ -3060,7 +3060,7 @@ export const llmConfig = {
   reasoning_effort: "high",
 };
 
-// ── Agents ───────────────────────────────────────────────────────────────────
+// ── 에이전트 ───────────────────────────────────────────────────────────────────
 export const agents: Agent[] = [
   {
     id: "1001",
@@ -3212,7 +3212,7 @@ export const mcpToolsById: Record<number, MCPTool[]> = {
   ],
 };
 
-// ── Skills ───────────────────────────────────────────────────────────────────
+// ── 스킬 ───────────────────────────────────────────────────────────────────
 export const skills: SkillItem[] = [
   {
     name: "api-recon",
@@ -3255,7 +3255,7 @@ export const missingSkills: MissingSkill[] = [
   { skill: "jwt-forge", calls: 3, agents: ["worker"], last_used: "2026-08-20T07:20:00Z" },
 ];
 
-// ── Tools ────────────────────────────────────────────────────────────────────
+// ── 도구 ────────────────────────────────────────────────────────────────────
 export const tools: Tool[] = [
   {
     key: "bash",
@@ -3323,7 +3323,7 @@ export const tools: Tool[] = [
   },
 ];
 
-// ── Settings ─────────────────────────────────────────────────────────────────
+// ── 설정 ─────────────────────────────────────────────────────────────────
 export const settings: Settings = {
   traffic_capture: true,
   agent_traffic_binding: false,
@@ -3378,7 +3378,7 @@ export const llmPool: LLMPoolStatus = {
   ],
 };
 
-// ── Intercept ────────────────────────────────────────────────────────────────
+// ── 가로채기 ────────────────────────────────────────────────────────────────
 export const interceptRules: InterceptRule[] = [
   {
     id: 1,
@@ -3488,7 +3488,7 @@ export const interceptHistory: InterceptApprovalRow[] = [
   },
 ];
 
-// Approval detail fixtures use harmless report-writing examples.
+// 승인 상세 예시 데이터는 해롭지 않은 보고서 작성 예만 씁니다.
 interceptHistory.unshift({
   id: 94,
   task_id: "t-acme-web",
@@ -3552,7 +3552,7 @@ export const interceptDetails: Record<number, InterceptAudit> = {
   },
 };
 
-// ── Conversations (chat) ─────────────────────────────────────────────────────
+// ── 대화(채팅) ─────────────────────────────────────────────────────
 export const conversations: Conversation[] = [
   {
     id: 1,
@@ -4151,7 +4151,7 @@ export const llmRecords = [
   },
 ];
 
-// Distinct tasks with counts, derived from llmRecords above (task picker).
+// 위의 llmRecords에서 만든, 개수가 있는 서로 다른 작업(작업 고르기).
 const llmTaskCounts: Record<string, number> = {};
 for (const r of llmRecords) if (r.task_id) llmTaskCounts[r.task_id] = (llmTaskCounts[r.task_id] ?? 0) + 1;
 export const llmTasks: LLMTask[] = Object.entries(llmTaskCounts).map(([task_id, count]) => ({ task_id, count }));

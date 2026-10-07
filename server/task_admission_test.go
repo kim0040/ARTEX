@@ -72,8 +72,8 @@ func TestAdmitAlreadyRunningTaskDoesNotQueueAfterLimitDecrease(t *testing.T) {
 	}()
 
 	s := newAdmissionTestServer(m, nil)
-	// Simulate a task whose long-lived loops were admitted before the limit was
-	// lowered. The other live task makes the current count exceed the new limit.
+	// 상한을 낮추기 전에 입장한, 오래 도는 루프가 있는 작업을 흉내 냅니다.
+	// 다른 살아있는 작업 때문에 현재 수가 새 상한을 넘습니다.
 	s.engine.started.Store(running.ID, true)
 	queued, err := s.admitTask(running, "resume")
 	if err != nil {
@@ -101,9 +101,9 @@ func TestAdmissionDoesNotOverwriteConcurrentTerminalStatus(t *testing.T) {
 	}
 	defer func() { _, _ = m.DeleteTask(task.ID, DeleteTaskOptions{}) }()
 
-	// Model an Engine terminal commit after admission captured its in-memory
-	// snapshot but before the scheduler UPDATE. Direct DB use intentionally leaves
-	// the live handle stale at its old status for this deterministic interleaving.
+	// 입장이 메모리 스냅샷을 잡은 뒤, 스케줄러 UPDATE 전에
+	// 엔진이 종료를 확정한 상황을 만듭니다. DB를 직접 써서
+	// 살아있는 손잡이는 옛 상태로 남게 합니다. 이 순서를 고정하려고요.
 	taskID, _ := strconv.ParseInt(task.ID, 10, 64)
 	if err := m.pg.SetStatus(taskID, "done"); err != nil {
 		t.Fatal(err)
@@ -278,8 +278,8 @@ func TestTimedOutTaskRevivalResetsClockAndSettlingAcrossFIFO(t *testing.T) {
 		t.Fatalf("persisted timeout revival clock/config mismatch: %+v", stored)
 	}
 
-	// Release the only slot and promote the revived task. The test server uses a
-	// cancelled root context so no real Agent call races these state assertions.
+	// 유일한 자리를 놓고 되살린 작업을 올립니다. 테스트 서버의 루트
+	// 컨텍스트는 취소돼 있어, 진짜 에이전트 호출이 이 상태 확인과 경주하지 않습니다.
 	s.engine.Pause(holder.ID, agent.AbortPausedByUser)
 	if err := m.ApplyTaskPause(holder.ID); err != nil {
 		t.Fatal(err)
@@ -466,8 +466,8 @@ func TestUnavailableTaskWaitsForActiveLLMCallBeforeParking(t *testing.T) {
 	}
 	s.engine.Pause(waiting.ID, agent.AbortPausedByOrchestrator)
 
-	// Model a manual chain edit that makes the task's next-call resolution
-	// unavailable while its old provider is still serving the current call.
+	// 수동으로 체인을 고쳐, 다음 호출이 고르는 설정을 쓸 수 없게 합니다.
+	// 옛 프로바이더는 아직 이번 호출을 처리 중입니다.
 	s.engine.BeginLLMCall(active.ID)
 	available[active.ID] = false
 	s.reconcileConcurrency()
@@ -571,8 +571,8 @@ func TestTaskLLMResolutionRejectsInvalidExplicitProfile(t *testing.T) {
 	}
 }
 
-// An Agent binding outranks the task's LLM chain; roles left unbound keep using
-// the chain, so binding one role does not move the others off it.
+// 에이전트 바인딩은 작업 LLM 체인보다 우선합니다. 안 묶인 역할은
+// 체인을 계속 씁니다. 역할 하나를 묶어도 다른 역할은 체인에서 안 벗어납니다.
 func TestTaskLLMResolutionPrefersAgentBindingOverTaskChain(t *testing.T) {
 	m, err := NewManager(t.TempDir(), "")
 	if err != nil {

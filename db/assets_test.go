@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// testSetup opens a DB and returns both stores. Skips if no PG.
+// testSetup은 DB를 열고 두 저장소를 돌려준다. PG가 없으면 건너뛴다.
 func testSetup(t *testing.T) (*DB, *AssetStore, *CompanyStore) {
 	t.Helper()
 	d, err := Open(testDSN(t))
@@ -19,13 +19,13 @@ func testSetup(t *testing.T) (*DB, *AssetStore, *CompanyStore) {
 	return d, d.Assets(), d.Companies()
 }
 
-// deleteAsset removes one v2 asset by id.
+// deleteAsset은 v2 자산 하나를 id로 지운다.
 func deleteAsset(d *DB, id int64) {
 	d.Exec(`DELETE FROM assets WHERE id = $1`, id)
 }
 
 // =====================================================================
-// RootDomain
+// 루트 도메인
 // =====================================================================
 
 func TestUpsertRootDomain(t *testing.T) {
@@ -41,7 +41,7 @@ func TestUpsertRootDomain(t *testing.T) {
 		t.Fatal("expected non-zero id")
 	}
 
-	// upsert again — same id (dedup), ICP preserved
+	// 다시 upsert한다. 같은 id(중복 제거)이고 ICP는 유지된다
 	id2, err := av2.UpsertRootDomain(UpsertRootDomainReq{Domain: "roottest.io", TaskID: 2})
 	if err != nil {
 		t.Fatal(err)
@@ -50,11 +50,11 @@ func TestUpsertRootDomain(t *testing.T) {
 		t.Errorf("dedup failed: %d != %d", id2, id1)
 	}
 
-	// task_ids should now contain both 1 and 2
+	// task_ids에는 이제 1과 2가 둘 다 있어야 한다
 	var taskIDs []byte
 	d.QueryRow(`SELECT task_ids FROM assets WHERE id = $1`, id1).Scan(&taskIDs)
 
-	// ICP should still be set (COALESCE keeps existing)
+	// ICP는 아직 있어야 한다(COALESCE가 기존 값을 유지)
 	var icp *string
 	d.QueryRow(`SELECT icp FROM assets WHERE id = $1`, id1).Scan(&icp)
 	if icp == nil || *icp != "A12345" {
@@ -73,7 +73,7 @@ func TestUpsertRootDomainEmpty(t *testing.T) {
 }
 
 // =====================================================================
-// IP
+// IP 자산
 // =====================================================================
 
 func TestUpsertIP(t *testing.T) {
@@ -90,14 +90,14 @@ func TestUpsertIP(t *testing.T) {
 	}
 	defer deleteAsset(d, id1)
 
-	// c_segment should be 192.168.10.0/24
+	// c_segment는 192.168.10.0/24여야 한다
 	var cseg *string
 	d.QueryRow(`SELECT c_segment::text FROM assets WHERE id = $1`, id1).Scan(&cseg)
 	if cseg == nil || *cseg != "192.168.10.0/24" {
 		t.Errorf("c_segment: want 192.168.10.0/24, got %v", cseg)
 	}
 
-	// append another port via UpsertIP (merge)
+	// UpsertIP로 포트를 하나 더 붙인다(합침)
 	id2, err := av2.UpsertIP(UpsertIPReq{
 		IP:        "192.168.10.5",
 		OpenPorts: []PortService{{Port: 443, Service: "https"}},
@@ -110,7 +110,7 @@ func TestUpsertIP(t *testing.T) {
 		t.Errorf("dedup failed: %d != %d", id2, id1)
 	}
 
-	// verify all 3 ports present
+	// 포트 3개가 모두 있는지 확인한다
 	var cnt int
 	d.QueryRow(`SELECT cardinality(open_ports) FROM assets WHERE id = $1`, id1).Scan(&cnt)
 	if cnt != 3 {
@@ -131,7 +131,7 @@ func TestUpsertIPBoundDomains(t *testing.T) {
 	}
 	defer deleteAsset(d, id)
 
-	// append a second domain
+	// 도메인을 하나 더 붙인다
 	id2, err := av2.UpsertIP(UpsertIPReq{
 		IP:           "10.1.2.3",
 		BoundDomains: []string{"b.example.com"},
@@ -175,7 +175,7 @@ func TestAppendIPPort(t *testing.T) {
 }
 
 // =====================================================================
-// Subdomain
+// 서브도메인
 // =====================================================================
 
 func TestUpsertSubdomain(t *testing.T) {
@@ -198,21 +198,21 @@ func TestUpsertSubdomain(t *testing.T) {
 		t.Fatal("expected non-zero id")
 	}
 
-	// verify root_domain auto-populated
+	// root_domain이 자동으로 채워졌는지 확인한다
 	var rootDomain string
 	d.QueryRow(`SELECT COALESCE(root_domain,'') FROM assets WHERE id = $1`, id).Scan(&rootDomain)
 	if rootDomain != "subdtest.com" {
 		t.Errorf("root_domain: want subdtest.com, got %q", rootDomain)
 	}
 
-	// side effect: root domain asset should exist
+	// 부수 효과: 루트 도메인 자산이 있어야 한다
 	var rootCnt int
 	d.QueryRow(`SELECT COUNT(*) FROM assets WHERE type = 'root_domain' AND domain = 'subdtest.com'`).Scan(&rootCnt)
 	if rootCnt != 1 {
 		t.Error("side-effect root domain not created")
 	}
 
-	// side effect: IP asset with bound_domain
+	// 부수 효과: bound_domain이 있는 IP 자산
 	var ipCnt int
 	d.QueryRow(`SELECT COUNT(*) FROM assets WHERE type = 'ip' AND ip = '1.2.3.4'`).Scan(&ipCnt)
 	if ipCnt != 1 {
@@ -240,7 +240,7 @@ func TestUpsertSubdomainDedup(t *testing.T) {
 }
 
 // =====================================================================
-// App
+// 앱
 // =====================================================================
 
 func TestUpsertAppByBundle(t *testing.T) {
@@ -253,7 +253,7 @@ func TestUpsertAppByBundle(t *testing.T) {
 	}
 	defer deleteAsset(d, id1)
 
-	// dedup by bundle
+	// 번들로 중복을 제거한다
 	id2, err := av2.UpsertApp(UpsertAppReq{Name: "MyApp Updated", BundleID: "com.example.myapp"})
 	if err != nil {
 		t.Fatal(err)
@@ -283,7 +283,7 @@ func TestUpsertAppByName(t *testing.T) {
 }
 
 // =====================================================================
-// HTTPService
+// HTTP 서비스
 // =====================================================================
 
 func TestUpsertHTTPService(t *testing.T) {
@@ -309,14 +309,14 @@ func TestUpsertHTTPService(t *testing.T) {
 		t.Fatal("expected non-zero id")
 	}
 
-	// verify technology was stored
+	// 기술이 저장됐는지 확인한다
 	var techCnt int
 	d.QueryRow(`SELECT array_length(technologies, 1) FROM assets WHERE id = $1`, id1).Scan(&techCnt)
 	if techCnt != 2 {
 		t.Errorf("technologies: want 2, got %d", techCnt)
 	}
 
-	// upsert again with additional tech → should merge (append)
+	// 기술을 더해 다시 upsert하면 합쳐져야 한다(뒤에 붙음)
 	id2, err := av2.UpsertHTTPService(UpsertHTTPServiceReq{
 		URL:          "https://www.httptest.example.com/",
 		Technologies: []string{"react", "webpack"},
@@ -363,7 +363,7 @@ func TestUpsertHTTPServiceAuthAppend(t *testing.T) {
 		t.Errorf("dedup failed: %d vs %d", id2, id1)
 	}
 
-	// auth should have 2 items now
+	// auth에는 이제 항목이 2개여야 한다
 	var authCnt int
 	d.QueryRow(`SELECT cardinality(auth) FROM assets WHERE id = $1`, id1).Scan(&authCnt)
 	if authCnt != 2 {
@@ -372,7 +372,7 @@ func TestUpsertHTTPServiceAuthAppend(t *testing.T) {
 }
 
 // =====================================================================
-// OtherService
+// 기타 서비스
 // =====================================================================
 
 func TestUpsertOtherService(t *testing.T) {
@@ -394,7 +394,7 @@ func TestUpsertOtherService(t *testing.T) {
 		t.Fatal("expected non-zero id")
 	}
 
-	// dedup
+	// 중복 제거
 	id2, err := av2.UpsertOtherService(UpsertOtherServiceReq{
 		IP:          "172.16.0.1",
 		Port:        22,
@@ -407,7 +407,7 @@ func TestUpsertOtherService(t *testing.T) {
 		t.Errorf("other service dedup failed: %d vs %d", id2, id1)
 	}
 
-	// side-effect: IP asset should have port 22 in open_ports
+	// 부수 효과: IP 자산의 open_ports에 포트 22가 있어야 한다
 	var cnt int
 	d.QueryRow(`SELECT cardinality(open_ports) FROM assets WHERE type='ip' AND ip='172.16.0.1'`).Scan(&cnt)
 	if cnt == 0 {
@@ -450,7 +450,7 @@ func TestUpsertOtherServiceAuthAppend(t *testing.T) {
 }
 
 // =====================================================================
-// Endpoint
+// 엔드포인트
 // =====================================================================
 
 func TestUpsertEndpoint(t *testing.T) {
@@ -473,7 +473,7 @@ func TestUpsertEndpoint(t *testing.T) {
 		t.Fatal("expected non-zero id")
 	}
 
-	// dedup (same URL + method = same endpoint)
+	// 중복 제거(같은 URL + method = 같은 엔드포인트)
 	id2, err := av2.UpsertEndpoint(UpsertEndpointReq{
 		URL:    "https://api.eptest.com/users?id=1",
 		Method: "GET",
@@ -487,7 +487,7 @@ func TestUpsertEndpoint(t *testing.T) {
 		t.Errorf("endpoint dedup failed: %d vs %d", id2, id1)
 	}
 
-	// params should be merged (2 distinct params)
+	// params는 합쳐져야 한다(서로 다른 파라미터 2개)
 	var paramCnt int
 	d.QueryRow(`SELECT cardinality(params) FROM assets WHERE id = $1`, id1).Scan(&paramCnt)
 	if paramCnt != 2 {
@@ -511,7 +511,7 @@ func TestUpsertEndpointRequiredFields(t *testing.T) {
 }
 
 // =====================================================================
-// Query helpers
+// 조회 도우미
 // =====================================================================
 
 func TestQueryByType(t *testing.T) {
@@ -630,7 +630,7 @@ func TestQueryByTask(t *testing.T) {
 		t.Errorf("CountsByTypeForTask: root_domain = %d, want >= 1", counts["root_domain"])
 	}
 
-	// offset past the end must return nothing, not fall back to page 1
+	// 끝을 넘는 offset은 1페이지로 돌아가지 않고 빈 결과를 돌려줘야 한다
 	rest, err := av2.QueryByTask(taskID, "", 10, n)
 	if err != nil {
 		t.Fatal(err)
@@ -729,7 +729,7 @@ func TestQueryByCompany(t *testing.T) {
 		t.Errorf("CountByCompany: got %d, want >= 1", n)
 	}
 
-	// offset past the end must return nothing, not fall back to page 1
+	// 끝을 넘는 offset은 1페이지로 돌아가지 않고 빈 결과를 돌려줘야 한다
 	rest, err := av2.QueryByCompany(companyID, "root_domain", 10, n)
 	if err != nil {
 		t.Fatal(err)
@@ -813,7 +813,7 @@ func TestCountsByType(t *testing.T) {
 }
 
 // =====================================================================
-// Company attribution at insert time
+// 넣을 때의 회사 귀속
 // =====================================================================
 
 func TestCompanyAttributionAtInsertTime(t *testing.T) {
@@ -828,7 +828,7 @@ func TestCompanyAttributionAtInsertTime(t *testing.T) {
 
 	cs.AddScope(companyID, []string{"insertattr.com"}, "test")
 
-	// Now insert a root domain — should be auto-attributed
+	// 이제 루트 도메인을 넣으면 자동으로 귀속돼야 한다
 	assetID, err := av2.UpsertRootDomain(UpsertRootDomainReq{Domain: "insertattr.com"})
 	if err != nil {
 		t.Fatal(err)
@@ -843,7 +843,7 @@ func TestCompanyAttributionAtInsertTime(t *testing.T) {
 }
 
 // =====================================================================
-// calcCSegment
+// C 세그먼트 계산
 // =====================================================================
 
 func TestCalcCSegment(t *testing.T) {
@@ -865,7 +865,7 @@ func TestCalcCSegment(t *testing.T) {
 }
 
 // =====================================================================
-// marshalStringArray
+// 문자열 배열 직렬화
 // =====================================================================
 
 func TestMarshalStringArray(t *testing.T) {
@@ -880,7 +880,7 @@ func TestMarshalStringArray(t *testing.T) {
 }
 
 // =====================================================================
-// normalizeURL
+// URL 정규화
 // =====================================================================
 
 func TestNormalizeURL(t *testing.T) {
@@ -949,9 +949,9 @@ func TestAssetPaginationUsesStableIDTieBreaker(t *testing.T) {
 	}
 }
 
-// TestAssetIPRejectsHostname pins the write-side guard added after a hostname in
-// assets.ip broke company attribution: every asset type that persists an ip must
-// refuse a non-address, and the message must tell the caller how to fix it.
+// TestAssetIPRejectsHostname은 호스트 이름이
+// assets.ip에 들어가 회사 귀속이 깨진 뒤 넣은 쓰기 가드를 고정한다. ip를 저장하는 자산 종류는
+// 주소가 아닌 값을 거부하고, 메시지는 고치는 법을 알려야 한다.
 func TestAssetIPRejectsHostname(t *testing.T) {
 	d, av2, _ := testSetup(t)
 	defer d.Close()
@@ -980,14 +980,14 @@ func TestAssetIPRejectsHostname(t *testing.T) {
 			deleteAsset(d, id)
 			t.Fatalf("%s: err=%v, want %v", tc.name, err, ErrAssetIPInvalid)
 		}
-		// The caller has to learn the remedy, not just that something was wrong.
+		// 호출자는 무엇이 잘못됐는지만이 아니라 고치는 법을 알아야 한다.
 		if !strings.Contains(err.Error(), hostname) || !strings.Contains(err.Error(), "type=subdomain") {
 			t.Fatalf("%s: message is not actionable: %v", tc.name, err)
 		}
 	}
 
-	// An empty ip stays legal for the types where it is optional, and a real
-	// address is still accepted.
+	// ip가 선택인 종류에서는 빈 ip가 여전히 허용되고, 진짜
+	// 주소도 그대로 받는다.
 	id, err := av2.UpsertHTTPService(UpsertHTTPServiceReq{URL: "https://ip-guard.example.com/"})
 	if err != nil {
 		t.Fatalf("empty ip rejected: %v", err)
@@ -1000,12 +1000,12 @@ func TestAssetIPRejectsHostname(t *testing.T) {
 	deleteAsset(d, id)
 }
 
-// TestQueryDSLInScopeMembership pins the agent-facing list_assets behavior: it
-// returns assets that BELONG to the task's declared scope (membership, not literal
-// value) — a root_domain scope surfaces its subdomains/services/endpoints even when
-// those rows were produced by a different task — and honors ip/cidr scope for
-// IP-literal hosts (the try_inet(domain) arm). Out-of-scope assets, including by id,
-// are excluded. Direct source tasks' scope is included.
+// TestQueryDSLInScopeMembership은 에이전트용 list_assets 동작을 고정한다.
+// 작업이 선언한 범위에 속한 자산을 돌려준다(글자 그대로가 아니라 소속).
+// root_domain 범위는 그 서브도메인/서비스/엔드포인트를 보여 준다. 그 행을
+// 다른 작업이 만들었더라도 그렇다. IP 리터럴 호스트의 ip/cidr 범위도 지킨다
+// (try_inet(domain) 갈래). 범위 밖 자산은 id로 물어도
+// 빠진다. 직접 원본 작업의 범위는 포함한다.
 func TestQueryDSLInScopeMembership(t *testing.T) {
 	d, assets, _ := testSetup(t)
 	defer d.Close()
@@ -1019,19 +1019,19 @@ func TestQueryDSLInScopeMembership(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = d.DeleteTask(task.ID); _ = d.DeleteTask(src.ID) })
-	// task ← src is a direct source relation.
+	// task ← src는 직접 원본 관계다.
 	if _, err := d.Exec(`INSERT INTO task_relations(task_id, source_task_id) VALUES ($1,$2)`, task.ID, src.ID); err != nil {
 		t.Fatal(err)
 	}
 
 	stamp := time.Now().UnixNano()
-	root := fmt.Sprintf("sc%d.invalid", stamp)     // in-scope root domain (task)
-	srcRoot := fmt.Sprintf("src%d.invalid", stamp) // in-scope via source task
-	out := fmt.Sprintf("out%d.invalid", stamp)     // out of every scope
-	marker := fmt.Sprintf("mk%d", stamp)           // bare-text token present in all rows
-	foreignTask := stamp + 777                     // asset produced by an unrelated task
+	root := fmt.Sprintf("sc%d.invalid", stamp)     // 범위 안 루트 도메인(이 작업)
+	srcRoot := fmt.Sprintf("src%d.invalid", stamp) // 원본 작업을 통해 범위 안
+	out := fmt.Sprintf("out%d.invalid", stamp)     // 어느 범위에도 없음
+	marker := fmt.Sprintf("mk%d", stamp)           // 모든 행에 있는 맨 글자 토큰
+	foreignTask := stamp + 777                     // 관계없는 작업이 만든 자산
 
-	// Scope: task owns root; source task owns srcRoot; task owns an IP /24.
+	// 범위: 이 작업이 root를, 원본 작업이 srcRoot를, 이 작업이 IP /24를 가진다.
 	for _, sc := range []struct {
 		tid  int64
 		kind string
@@ -1047,19 +1047,19 @@ func TestQueryDSLInScopeMembership(t *testing.T) {
 		}
 	}
 
-	// Insert rows directly so root_domain/task_ids are controlled exactly. Every
-	// in-scope row carries foreignTask in task_ids (never the current task) to prove
-	// membership is by scope, not by producer.
+	// root_domain/task_ids를 정확히 통제하려 행을 직접 넣는다. 범위 안
+	// 행의 task_ids에는 foreignTask만 있다(이번 작업은 없다). 소속은
+	// 만든 작업이 아니라 범위로 정한다는 것을 보이기 위해서다.
 	type row struct {
 		typ, domain, rootDom, url, method, ip, title string
 	}
 	rows := []row{
-		{"subdomain", "api." + root, root, "", "", "", marker},                        // under task root
-		{"service", "www." + root, root, "https://www." + root + "/", "", "", marker}, // service under task root
+		{"subdomain", "api." + root, root, "", "", "", marker},                        // 이 작업의 루트 아래
+		{"service", "www." + root, root, "https://www." + root + "/", "", "", marker}, // 이 작업의 루트 아래 서비스
 		{"endpoint", "www." + root, root, "https://www." + root + "/a?" + marker + "=1", "GET", "", ""},
-		{"subdomain", "dev." + srcRoot, srcRoot, "", "", "", marker},                                      // under source-task root
-		{"endpoint", "198.51.100.9", "198.51.100.9", "http://198.51.100.9:8080/" + marker, "GET", "", ""}, // IP-literal host, ip col empty
-		{"subdomain", "x." + out, out, "", "", "", marker},                                                // out of scope
+		{"subdomain", "dev." + srcRoot, srcRoot, "", "", "", marker},                                      // 원본 작업의 루트 아래
+		{"endpoint", "198.51.100.9", "198.51.100.9", "http://198.51.100.9:8080/" + marker, "GET", "", ""}, // IP 리터럴 호스트, ip 열은 비어 있음
+		{"subdomain", "x." + out, out, "", "", "", marker},                                                // 범위 밖
 	}
 	var inScopeIDs, outIDs []int64
 	for _, r := range rows {
@@ -1099,7 +1099,7 @@ func TestQueryDSLInScopeMembership(t *testing.T) {
 		}
 	}
 
-	// GetByIDsInScope: in-scope id returns, out-of-scope id is dropped.
+	// GetByIDsInScope: 범위 안 id는 돌아오고, 범위 밖 id는 빠진다.
 	mixed := append(append([]int64{}, inScopeIDs[0]), outIDs[0])
 	byID, err := assets.GetByIDsInScope(task.ID, mixed)
 	if err != nil {
@@ -1109,7 +1109,7 @@ func TestQueryDSLInScopeMembership(t *testing.T) {
 		t.Fatalf("GetByIDsInScope mixed ids → %+v, want only %d", byID, inScopeIDs[0])
 	}
 
-	// taskID<=0 (non-task context) falls back to global: the out-of-scope row is reachable.
+	// taskID<=0(작업 밖 맥락)이면 전역으로 돌아간다. 범위 밖 행도 닿는다.
 	global, err := assets.QueryDSLInScope(marker, "", 0, 50, 0)
 	if err != nil {
 		t.Fatal(err)

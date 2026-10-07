@@ -12,8 +12,8 @@ import (
 	"github.com/Autumn-27/artex/db"
 )
 
-// companyScopeInputs accepts both the new [{kind,value}] contract and the
-// historical ["example.com","203.0.113.10"] contract.
+// companyScopeInputs는 새 계약 [{kind,value}]와
+// 예전 계약 ["example.com","203.0.113.10"] 을 둘 다 받습니다.
 type companyScopeInputs []db.ScopeInput
 
 const maxCompanyMutationBodyBytes = 2 << 20
@@ -54,7 +54,7 @@ func (items *companyScopeInputs) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// assetStore returns the asset store.
+// assetStore는 자산 저장소를 돌려줍니다.
 func (s *Server) assetStore() *db.AssetStore {
 	if s.m.pg == nil {
 		return nil
@@ -62,7 +62,7 @@ func (s *Server) assetStore() *db.AssetStore {
 	return s.m.pg.Assets()
 }
 
-// companyStore returns the company store.
+// companyStore는 기업 저장소를 돌려줍니다.
 func (s *Server) companyStore() *db.CompanyStore {
 	if s.m.pg == nil {
 		return nil
@@ -71,7 +71,7 @@ func (s *Server) companyStore() *db.CompanyStore {
 }
 
 // =====================================================================
-// GET /api/companies
+// GET /api/companies — 기업 목록
 // =====================================================================
 
 func (s *Server) listCompanies(w http.ResponseWriter, r *http.Request) {
@@ -89,7 +89,7 @@ func (s *Server) listCompanies(w http.ResponseWriter, r *http.Request) {
 }
 
 // =====================================================================
-// POST /api/companies
+// POST /api/companies — 기업 만들기
 // =====================================================================
 
 func (s *Server) createCompany(w http.ResponseWriter, r *http.Request) {
@@ -143,7 +143,7 @@ func (s *Server) createCompany(w http.ResponseWriter, r *http.Request) {
 }
 
 // =====================================================================
-// GET /api/companies/{id}
+// GET /api/companies/{id} — 기업 하나
 // =====================================================================
 
 func (s *Server) getCompany(w http.ResponseWriter, r *http.Request) {
@@ -175,7 +175,7 @@ func (s *Server) getCompany(w http.ResponseWriter, r *http.Request) {
 }
 
 // =====================================================================
-// POST /api/companies/{id}/scope
+// POST /api/companies/{id}/scope — 기업 범위 저장
 // =====================================================================
 
 func (s *Server) addCompanyScope(w http.ResponseWriter, r *http.Request) {
@@ -192,7 +192,7 @@ func (s *Server) addCompanyScope(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Scope  companyScopeInputs `json:"scope"`
 		Reason string             `json:"reason"`
-		Reset  bool               `json:"reset"` // if true, replace existing scope
+		Reset  bool               `json:"reset"` // 참이면 기존 범위를 바꿉니다.
 	}
 	if !decodeCompanyMutationRequest(w, r, &req) {
 		return
@@ -230,10 +230,10 @@ func (s *Server) addCompanyScope(w http.ResponseWriter, r *http.Request) {
 	if len(errs) > 0 {
 		out["errors"] = errs
 	}
-	// Reported separately from errors: this is pre-existing bad data, not a fault
-	// in the submitted rules, but the operator still has to see it or those assets
-	// look like the IP/CIDR rules simply never match. A failure to build the
-	// warning must not fail the scope write that already committed.
+	// 오류와 따로 알립니다. 지금 보낸 규칙의 잘못이 아니라, 이미 있던 나쁜 데이터입니다.
+	// 그래도 운영자가 봐야 합니다. 안 보면 그 자산은
+	// IP/CIDR 규칙이 한 번도 안 맞는 것처럼 보입니다. 경고를 만들지 못했다고
+	// 이미 저장된 범위 쓰기가 실패하면 안 됩니다.
 	if warning, err := cs.MalformedIPAssetWarning(); err == nil && warning != "" {
 		out["warnings"] = []string{warning}
 	}
@@ -241,7 +241,7 @@ func (s *Server) addCompanyScope(w http.ResponseWriter, r *http.Request) {
 }
 
 // =====================================================================
-// DELETE /api/companies/{id}
+// DELETE /api/companies/{id} — 기업 삭제
 // =====================================================================
 
 func (s *Server) deleteCompany(w http.ResponseWriter, r *http.Request) {
@@ -258,8 +258,8 @@ func (s *Server) deleteCompany(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		DeleteAssets bool `json:"delete_assets"`
 	}
-	// The body is optional. Only an actual empty body is ignored; malformed or
-	// trailing JSON is a client error.
+	// 본문은 없어도 됩니다. 정말 빈 본문만 무시하고, 형식이 깨졌거나
+	// 뒤에 쓰레기가 남은 JSON은 클라이언트 오류입니다.
 	decoder := json.NewDecoder(r.Body)
 	if err := decoder.Decode(&req); err != nil {
 		if !errors.Is(err, io.EOF) {
@@ -291,7 +291,7 @@ func (s *Server) deleteCompany(w http.ResponseWriter, r *http.Request) {
 }
 
 // =====================================================================
-// POST /api/companies/reattribute
+// POST /api/companies/reattribute — 기업에 자산 다시 붙이기
 // =====================================================================
 
 func (s *Server) reattribute(w http.ResponseWriter, r *http.Request) {
@@ -308,7 +308,7 @@ func (s *Server) reattribute(w http.ResponseWriter, r *http.Request) {
 }
 
 // =====================================================================
-// GET /api/assets
+// GET /api/assets — 자산 목록
 // =====================================================================
 
 const (
@@ -337,8 +337,8 @@ func (s *Server) listAssets(w http.ResponseWriter, r *http.Request) {
 
 	assets := []*db.Asset{}
 	var err error
-	// total is the full match count ignoring limit/offset. Count first so an offset
-	// beyond the last row can return an empty page without an expensive scan.
+	// total은 limit/offset를 뺀 전체 일치 수입니다. 개수를 먼저 세서,
+	// 마지막 행을 넘는 offset도 비싼 조회 없이 빈 페이지를 줄 수 있습니다.
 	total := 0
 
 	if dsl := q.Get("dsl"); dsl != "" {
@@ -346,7 +346,7 @@ func (s *Server) listAssets(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		// task_id scopes the DSL search to a task's assets (the task detail
+		// task_id가 있으면 DSL 검색을 그 작업의 자산으로 좁힙니다(작업 상세의
 		// "테스트 자산" search); 0은 전역 자산 보기를 뜻한다.
 		taskID, _ := strconv.ParseInt(q.Get("task_id"), 10, 64)
 		total, err = as.CountDSL(dsl, typ, taskID)
@@ -390,7 +390,7 @@ func (s *Server) listAssets(w http.ResponseWriter, r *http.Request) {
 }
 
 // =====================================================================
-// GET /api/assets/counts
+// GET /api/assets/counts — 자산 개수
 // =====================================================================
 
 func (s *Server) assetCounts(w http.ResponseWriter, r *http.Request) {
@@ -414,7 +414,7 @@ func (s *Server) assetCounts(w http.ResponseWriter, r *http.Request) {
 }
 
 // =====================================================================
-// DELETE /api/assets
+// DELETE /api/assets — 자산 삭제
 // =====================================================================
 
 func (s *Server) deleteAssets(w http.ResponseWriter, r *http.Request) {
@@ -443,7 +443,7 @@ func (s *Server) deleteAssets(w http.ResponseWriter, r *http.Request) {
 }
 
 // =====================================================================
-// POST /api/assets
+// POST /api/assets — 자산 만들기
 // =====================================================================
 
 func (s *Server) insertAssets(w http.ResponseWriter, r *http.Request) {
@@ -456,7 +456,7 @@ func (s *Server) insertAssets(w http.ResponseWriter, r *http.Request) {
 		TaskID int64 `json:"task_id"`
 		Assets []struct {
 			Type string `json:"type"`
-			// root_domain / subdomain
+			// root_domain=루트 도메인 / subdomain=서브도메인
 			Domain      string   `json:"domain"`
 			ICP         string   `json:"icp"`
 			RecordType  string   `json:"record_type"`
@@ -471,7 +471,7 @@ func (s *Server) insertAssets(w http.ResponseWriter, r *http.Request) {
 			Category    string `json:"category"`
 			Description string `json:"description"`
 			AppICP      string `json:"app_icp"`
-			// service http
+			// service http — HTTP 서비스
 			URL           string           `json:"url"`
 			Technologies  []string         `json:"technologies"`
 			StatusCode    *int             `json:"status_code"`
@@ -480,10 +480,10 @@ func (s *Server) insertAssets(w http.ResponseWriter, r *http.Request) {
 			FaviconMMH3   string           `json:"favicon_mmh3"`
 			Auth          []map[string]any `json:"auth"`
 			ServiceIP     string           `json:"service_ip"`
-			// service other
+			// service other — 그 외 서비스
 			Port        int    `json:"port"`
 			ServiceName string `json:"service_name"`
-			// endpoint
+			// endpoint — 엔드포인트
 			Method string           `json:"method"`
 			Params []map[string]any `json:"params"`
 		} `json:"assets"`

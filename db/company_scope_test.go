@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// TestParseScopeLine covers classification + guardrails without a DB.
+// TestParseScopeLine은 DB 없이 분류와 가드를 덮는다.
 func TestParseScopeLine(t *testing.T) {
 	cases := []struct {
 		in      string
@@ -16,11 +16,11 @@ func TestParseScopeLine(t *testing.T) {
 		{"example.com", "domain", false},
 		{"https://sub.example.com/path", "domain", false},
 		{"1.2.3.4", "ip", false},
-		{"10.0.0.0/8", "", true}, // over-broad IPv4 (< /16)
+		{"10.0.0.0/8", "", true}, // 너무 넓은 IPv4(/16보다 큼)
 		{"198.51.100.0/24", "cidr", false},
-		{"co.uk", "", true}, // bare public suffix
+		{"co.uk", "", true}, // 맨 공개 접미사
 		{"not a host", "", true},
-		{"1.2.3.1-1.2.3.9", "", true}, // ranges must be CIDR
+		{"1.2.3.1-1.2.3.9", "", true}, // 범위는 CIDR이어야 한다
 	}
 	for _, c := range cases {
 		r, err := ParseScopeLine(c.in)
@@ -125,8 +125,8 @@ func TestExplicitCompanyAttributionSurvivesScopeRebuild(t *testing.T) {
 	network := fmt.Sprintf("2001:db8:%x::/64", uint64(stamp)&0xffff)
 	ip := fmt.Sprintf("2001:db8:%x::10", uint64(stamp)&0xffff)
 
-	// A pre-existing row with company_id and no provenance value represents old
-	// installations. The schema default conservatively treats it as explicit.
+	// company_id만 있고 출처 값이 없는 기존 행은 예전
+	// 설치본이다. 스키마 기본값은 조심스럽게 명시 귀속으로 본다.
 	var assetID int64
 	if err := d.QueryRow(`INSERT INTO assets(type,domain,root_domain,company_id)
 		VALUES ('root_domain',$1,$1,$2) RETURNING id`, domain, explicitCompany).Scan(&assetID); err != nil {
@@ -170,7 +170,7 @@ func TestExplicitCompanyAttributionSurvivesScopeRebuild(t *testing.T) {
 	assertCompany(appID, explicitCompany, "explicit")
 	assertCompany(autoAssetID, autoCompany, "scope")
 
-	// Replacing every matching rule detaches only the automatically-owned row.
+	// 맞는 규칙을 모두 바꾸면 자동으로 소유한 행만 떨어진다.
 	if _, invalid, errs := cs.UpdateScopeInputs(autoCompany, []ScopeInput{
 		{Kind: "domain", Value: fmt.Sprintf("replacement-%d.invalid", stamp)},
 	}, "test"); invalid != 0 || len(errs) != 0 {
@@ -193,8 +193,8 @@ func TestExplicitCompanyAttributionSurvivesScopeRebuild(t *testing.T) {
 	assertCompany(assetID, explicitCompany, "explicit")
 	assertCompany(appID, explicitCompany, "explicit")
 
-	// Deleting the explicitly selected company detaches through the FK, then the
-	// transactional rebuild may adopt the assets into a still-valid scope.
+	// 명시로 고른 회사를 지우면 외래 키로 떨어지고, 그다음
+	// 트랜잭션 재구성이 아직 유효한 범위로 자산을 받아들일 수 있다.
 	if _, invalid, errs := cs.UpdateScopeInputs(autoCompany, []ScopeInput{
 		{Kind: "domain", Value: domain},
 		{Kind: "icp", Value: icp},
@@ -263,7 +263,7 @@ func TestCompanyICPAttribution(t *testing.T) {
 		}
 	})
 
-	// A keyword can guide an Agent, but must never claim an asset by its name.
+	// 키워드는 에이전트를 안내할 수 있지만, 이름으로 자산을 차지하면 안 된다.
 	added, _, invalid, errs := cs.AddScopeInputs(companyID, []ScopeInput{
 		{Kind: "icp", Value: "京 ICP备 998877号"}, // han-allow 프로토콜 원문
 		{Kind: "keyword", Value: "ICP Scope"},
@@ -309,10 +309,10 @@ func TestCompanyICPAttribution(t *testing.T) {
 	assertCompany(icpAppID, &companyID)
 }
 
-// TestCompanyScopeAttribution exercises the full loop against dev PG: create
-// company (unique name), add scope, and verify auto-attribution at insert time,
-// backfill of a pre-existing asset, CIDR + domain-suffix matching, and that
-// out-of-scope assets stay unattributed.
+// TestCompanyScopeAttribution은 개발 PG에서 전체 고리를 돈다. 회사를
+// 만들고(유일한 이름), 범위를 넣고, 넣을 때 자동 귀속과
+// 기존 자산의 소급, CIDR과 도메인 접미사 일치를 확인한다. 그리고
+// 범위 밖 자산은 귀속되지 않은 채 남는다.
 func TestCompanyScopeAttribution(t *testing.T) {
 	d, err := Open(testDSN(t))
 	if err != nil {
@@ -343,7 +343,7 @@ func TestCompanyScopeAttribution(t *testing.T) {
 		t.Fatalf("UpsertCompany: %v", err)
 	}
 
-	// a pre-existing asset (inserted BEFORE any scope) — must be back-filled.
+	// 범위보다 먼저 넣은 기존 자산은 소급돼야 한다.
 	preID, err := as.UpsertSubdomain(UpsertSubdomainReq{Domain: sub})
 	if err != nil {
 		t.Fatalf("pre upsert: %v", err)
@@ -374,10 +374,10 @@ func TestCompanyScopeAttribution(t *testing.T) {
 		}
 	}
 
-	// backfill attributed the pre-existing subdomain (domain suffix match).
+	// 소급이 기존 서브도메인을 귀속했다(도메인 접미사 일치).
 	mustCid(preID, cid, "pre-existing subdomain (backfill)")
 
-	// insert-time attribution: ip in CIDR, another subdomain.
+	// 넣을 때 귀속: CIDR 안의 ip, 또 다른 서브도메인.
 	ipInID, err := as.UpsertIP(UpsertIPReq{IP: ipIn})
 	if err != nil {
 		t.Fatalf("UpsertIP in: %v", err)
@@ -390,7 +390,7 @@ func TestCompanyScopeAttribution(t *testing.T) {
 	}
 	mustCid(sub2ID, cid, "new subdomain (insert-time)")
 
-	// out of scope stays unattributed.
+	// 범위 밖은 귀속되지 않은 채 남는다.
 	outID, err := as.UpsertRootDomain(UpsertRootDomainReq{Domain: outDomain})
 	if err != nil {
 		t.Fatalf("UpsertRootDomain out: %v", err)

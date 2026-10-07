@@ -1,5 +1,7 @@
 "use client";
 
+// 이 화면은 엔진이 남긴 메인 에이전트, 플래너, 워커 기록을 세션별로 읽습니다.
+
 import * as React from "react";
 
 import {
@@ -70,35 +72,35 @@ import type {
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-// resolutionLabel names the LLM a session runs on. The badge shows this alone and
-// keeps the model id in its tooltip. Env-backed configs can arrive without a name,
-// so fall back to the model id rather than rendering an empty badge.
+// resolutionLabel은 이 세션이 쓰는 LLM 이름입니다. 배지에는 이것만 보이고
+// 모델 id는 툴팁에 둡니다. 환경 변수 설정은 이름이 없을 수 있어
+// 빈 배지 대신 모델 id를 보여 줍니다.
 function resolutionLabel(r: TaskLLMResolution): string {
   return r.name || r.model || "이름 없는 설정";
 }
 
-// fmtBytes renders a human file size for attachment chips (mirrors transcript.tsx).
+// fmtBytes는 첨부 칩에 사람이 읽기 쉬운 파일 크기를 그립니다(transcript.tsx와 같음).
 function fmtBytes(n: number): string {
   if (n >= 1 << 20) return `${(n / (1 << 20)).toFixed(1)} MB`;
   if (n >= 1 << 10) return `${(n / (1 << 10)).toFixed(1)} KB`;
   return `${n} B`;
 }
 
-// ── Reliability model (see docs/task-session-history-sse-remediation.md) ──────────
-// The task's activity is NO LONGER one unbounded `allActivity` array replayed from
-// SSE since=0. Instead:
-//   • Each UI session (main | plan | intent:<id>) has its own lazily-loaded, reverse-
-//     paginated cache (SessionState below). Opening a session loads only its latest
-//     page; scrolling up pages older history in.
-//   • A single task-level SSE (opened at since=snapshot_cursor from the first history
-//     page) tails ALL agents' new activity; frames are dispatched by session_key.
-//   • History + SSE meet gap-free at snapshot_cursor and are merged by seq (dedup),
-//     so refresh / tab-switch / sleep / reconnect never drop the newest records.
+// ── 기록 신뢰 방식(docs/task-session-history-sse-remediation.md) ──────────
+// 작업 활동을 처음부터 무한정 다시 쌓던 `allActivity` 배열은 더 이상 쓰지 않습니다.
+// SSE since=0 대신 이렇게 합니다:
+//   • 화면 세션(main | plan | intent:<id>)마다 나중에 불러오고, 거꾸로
+//     페이지를 쌓는 캐시(아래 SessionState)가 있습니다. 열면 최신
+//     페이지만 오고, 위로 스크롤하면 더 오래된 기록이 붙습니다.
+//   • 작업 실시간 스트림은 하나이고, 첫 기록 페이지의 snapshot_cursor부터 엽니다.
+//     그 페이지 이후의 모든 에이전트 활동을 session_key로 나눠 넣습니다.
+//   • 기록과 실시간 스트림은 snapshot_cursor에서 빈틈 없이 만나고, seq로 합칩니다(중복 제거).
+//     그래서 새로고침, 탭 전환, 잠자기, 재연결에도 가장 최근 기록이 빠지지 않습니다.
 
-const PAGE = 200; // history page size
-const SYSTEM_SCAN_PAGE = 500; // generic activity pages scanned to recover sparse system audit events
-const MAX_KEEP = 4000; // per-session in-memory cap; older pages re-fetched on scroll-up
-const STREAM_WINDOW_MS = 5000; // "live" = activity seen within this window
+const PAGE = 200; // 기록 한 페이지 크기
+const SYSTEM_SCAN_PAGE = 500; // 드문 시스템 감사 이벤트를 찾기 위해 훑는 일반 활동 페이지 크기
+const MAX_KEEP = 4000; // 세션당 메모리 상한. 더 오래된 페이지는 위로 스크롤할 때 다시 가져옵니다
+const STREAM_WINDOW_MS = 5000; // "실시간"은 이 시간 안에 활동이 보인 것입니다
 const MAX_WORKER_MESSAGE_CHARS = 4000;
 
 function newWorkerMessageRequestID(): string {
@@ -112,18 +114,18 @@ function workerMessageCharCount(value: string): number {
   return Array.from(value).length;
 }
 
-// One session's lazily-loaded, reverse-paginated cache. `lastTs`/`unread` are kept
-// live even for sessions that were never opened, so the list shows liveness + unread
-// without holding their full history.
+// 세션 하나의 느린 로딩·역방향 페이지 캐시입니다. `lastTs`와 `unread`는
+// 한 번도 열지 않은 세션도 갱신해서, 목록이 살아 있음과 안 읽음을
+// 전체 기록 없이 보여 줍니다.
 type SessionState = {
   items: Activity[];
   loaded: boolean;
   loading: boolean;
   loadingMore: boolean;
-  hasMore: boolean; // older history remains above the loaded window
-  earliestSeq: number; // earliest loaded id — reverse-pagination anchor
+  hasMore: boolean; // 불러온 창 위에 더 오래된 기록이 있습니다
+  earliestSeq: number; // 지금까지 불러온 가장 오래된 id. 위로 넘어갈 기준 번호
   unread: number;
-  lastTs: string; // most-recent activity time (drives live badge; updated even when unloaded)
+  lastTs: string; // 가장 최근 활동 시각(실시간 배지용. 아직 안 연 세션도 갱신)
   error?: string;
 };
 type SessionStore = Record<string, SessionState>;
@@ -141,19 +143,19 @@ function emptyState(): SessionState {
   };
 }
 
-// sessionKeyOf routes an activity to its stable session key. worker="planner" covers
-// BOTH the Goal Agent's round-0 decomposition and the Planner (single Plan session).
+// sessionKeyOf는 활동을 안정된 세션 키로 보냅니다. worker="planner"는
+// 목표 에이전트의 0라운드 분해와 플래너(계획 세션 하나)를 모두 담습니다.
 function sessionKeyOf(a: Activity): string {
   if (a.worker === "system" || a.kind === "llm_switch" || a.kind === "llm_failover") return "system";
-  if (a.worker === "mainagent") return `main:${a.main_seg ?? 0}`; // one key per conversation segment
+  if (a.worker === "mainagent") return `main:${a.main_seg ?? 0}`; // 대화 조각마다 키가 하나
   if (a.worker === "planner") return "plan";
   if (a.intent_id) return `intent:${a.intent_id}`;
   return "unknown";
 }
 
-// mergeBySeq unions two activity lists by seq (dedup) in ascending seq order. Every
-// data source — latest page, older page, SSE compensation, live tail — goes through
-// this, so history responses can never clobber live records received meanwhile.
+// mergeBySeq는 두 활동 목록을 seq로 합치고(중복 제거) seq 오름차순으로 둡니다. 모든
+// 출처(최신 페이지, 오래된 페이지, 실시간 보정, 실시간 꼬리)가
+// 여기를 지나므로, 기록 응답이 그 사이 받은 실시간 기록을 덮지 못합니다.
 function mergeBySeq(current: Activity[], incoming: Activity[]): Activity[] {
   if (!incoming.length) return current;
   const bySeq = new Map<number, Activity>();
@@ -162,7 +164,7 @@ function mergeBySeq(current: Activity[], incoming: Activity[]): Activity[] {
   return [...bySeq.values()].sort((p, q) => p.seq - q.seq);
 }
 
-// statusIcon maps a session status to its icon. Worker terminal states are
+// statusIcon은 세션 상태를 아이콘으로 바꿉니다. 워커가 끝난 상태는
 // 서로 구분되고 색이 다름: 완료(녹색 체크 원) / 취소 정지(호박색 슬래시 원) / 오류(빨간 X 원) /
 // 걸음 수를 다 씀(보라). running=파란 회전, pending(받을 대기)=회색 시계.
 function statusIcon(status: SessionStatus) {
@@ -186,7 +188,7 @@ function statusIcon(status: SessionStatus) {
   }
 }
 
-// fmtTokens renders a compact token count (1234 → 1.2k, 2_000_000 → 2M).
+// fmtTokens는 토큰 수를 짧게 그립니다(1234 → 1.2k, 2_000_000 → 2M).
 function fmtTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(n >= 10_000_000 ? 0 : 1)}M`;
   if (n >= 1000) return `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k`;
@@ -223,7 +225,7 @@ const TokenMetrics = React.forwardRef<
 });
 TokenMetrics.displayName = "TokenMetrics";
 
-// fmtDuration renders an elapsed milliseconds span compactly (90s → 1m30s).
+// fmtDuration은 지난 밀리초를 짧게 그립니다(90초 → 1분 30초).
 function fmtDuration(ms: number): string {
   const s = Math.floor(ms / 1000);
   if (s < 60) return `${s}s`;
@@ -240,13 +242,13 @@ const roleMeta = {
   system: { label: "시스템 감사", icon: HistoryIcon },
 } as const;
 
-// The main-agent session is the interactive entry point of this tab and has no
-// dedicated backend "sessions" endpoint — it is a fixed UI affordance whose
-// transcript is the main-agent activity stream (worker="mainagent") for the task.
-// A main-agent session is one resettable conversation segment. Segment 0 is the
+// 메인 에이전트 세션은 이 탭에서 사람이 대화하는 입구이고,
+// 백엔드에 전용 "sessions" 주소는 없습니다. 고정된 화면 장치이고
+// 대화 기록은 이 작업의 메인 에이전트 활동(worker="mainagent")입니다.
+// 메인 에이전트 세션은 새로 시작할 수 있는 대화 조각입니다. 0번은
 // 원래 세션. "세션 만들기"는 이어지는 조각(seq 1, 2, …)을 만들어, agent가
-// starts on a clean transcript while the task's graph/assets/goal stay shared. Each
-// segment is a switchable UI session; only the current (highest) one is writable.
+// 깨끗한 기록으로 시작하지만, 작업의 그래프·자산·목표는 같이 씁니다. 각
+// 조각은 바꿔 볼 수 있는 화면 세션이고, 지금(가장 큰 번호) 것만 쓸 수 있습니다.
 const mainSessionId = (seg: number) => `s-main-${seg}`;
 const mainSessionKey = (seg: number) => `main:${seg}`;
 const mainSessionTitle = (seg: number) => `메인 에이전트 · 세션 #${seg + 1}`;
@@ -261,10 +263,10 @@ const MAIN_SESSION: Session = {
   seg: 0,
 };
 
-// The planner session is, like the main-agent session, a fixed UI affordance with
-// no dedicated backend "sessions" endpoint — its transcript is every activity step
-// the planner emits (worker === "planner", which also carries the Goal Agent's
-// round-0 decomposition; the planner carries no intent_id since it generates intents).
+// 플래너 세션도 메인 에이전트처럼 고정된 화면 장치이고
+// 백엔드에 전용 "sessions" 주소는 없습니다. 대화 기록은 플래너가 낸
+// 모든 활동 단계입니다(worker === "planner". 목표 에이전트의
+// 0라운드 분해도 여기 있습니다. 플래너는 의도를 만들므로 intent_id가 없습니다).
 const PLANNER_ID = "s-planner";
 const PLANNER_SESSION: Session = {
   id: PLANNER_ID,
@@ -275,9 +277,9 @@ const PLANNER_SESSION: Session = {
   last_activity: "",
 };
 
-// LLM provider switches are task-level audit events rather than agent output. The
-// history endpoint has no "system" filter, so this fixed session is populated by
-// scanning the generic incremental activity endpoint and then tailed by task SSE.
+// LLM 제공자 전환은 에이전트 출력이 아니라 작업 단위 감사 사건입니다.
+// 기록 주소에 "system" 필터가 없어서, 이 고정 세션은
+// 일반 증분 활동 주소를 훑어 채운 뒤 작업 실시간 스트림으로 뒤를 잇습니다.
 const SYSTEM_ID = "s-system";
 const SYSTEM_SESSION: Session = {
   id: SYSTEM_ID,
@@ -288,7 +290,7 @@ const SYSTEM_SESSION: Session = {
   last_activity: "",
 };
 
-// keyForSession maps a UI Session → its stable store key (main:<seg> | plan | intent:<id>).
+// keyForSession은 화면 Session을 저장 키로 바꿉니다(main:<seg> | plan | intent:<id>).
 function keyForSession(s: Session): string {
   if (s.role === "mainagent") return `main:${s.seg ?? 0}`;
   if (s.role === "planner") return "plan";
@@ -296,7 +298,7 @@ function keyForSession(s: Session): string {
   return `intent:${s.intent_id}`;
 }
 
-// Map an exploration intent (TaskNode) state → a session status the UI renders.
+// 탐색 의도(TaskNode) 상태를 화면이 그리는 세션 상태로 바꿉니다.
 function intentStatus(state: string): SessionStatus {
   switch (state) {
     case "done":
@@ -313,13 +315,13 @@ function intentStatus(state: string): SessionStatus {
       return "pending";
     case "deleted": // 사용자 표시만 삭제
       return "deleted";
-    default: // running
+    default: // 실행 중
       return "running";
   }
 }
 
-// Derive worker sessions from running/open intents — there is no backend
-// sessions endpoint, so intents (≈ worker units) are the closest real source.
+// 실행 중이거나 열린 의도에서 워커 세션을 만듭니다. 백엔드에
+// sessions 주소가 없어서, 의도(워커 단위와 거의 같음)가 가장 가까운 실제 출처입니다.
 function intentToSession(n: TaskNode): Session {
   const label = (n.payload ?? "").trim();
   const state = intentStatus(n.state);
@@ -503,14 +505,14 @@ export function SessionsTab({ taskId }: { taskId: string }) {
     }
     return undefined;
   }, [approvalFocus.state?.source]);
-  // Keep a located archived/older session selectable after leaving focus mode.
+  // 초점 모드를 빠져나와도, 찾아 둔 보관/이전 세션을 계속 고를 수 있게 둡니다.
   const [locatedSession, setLocatedSession] = React.useState<{ taskId: string; session: Session }>();
   React.useEffect(() => {
     if (focusSession) setLocatedSession({ taskId, session: focusSession });
   }, [taskId, focusSession]);
   const retainedSession = locatedSession?.taskId === taskId ? locatedSession.session : undefined;
   const activeId = focusSession?.id ?? selectedSessionId;
-  // Main-agent conversation segments (newest-first); currentSeg is the writable one.
+  // 메인 에이전트 대화 조각(최신이 먼저). currentSeg만 쓸 수 있습니다.
   const [mainSegs, setMainSegs] = React.useState<{ seq: number; created_at: string }[]>([{ seq: 0, created_at: "" }]);
   const [currentSeg, setCurrentSeg] = React.useState(0);
   const [creatingMain, setCreatingMain] = React.useState(false);
@@ -519,9 +521,9 @@ export function SessionsTab({ taskId }: { taskId: string }) {
   // 아래 세션 기록이 제목과 입력 칸만 남을 정도로 밀립니다. 접으면 기록 영역이 거의 전체 높이를 받고,
   // 제목 줄을 눌러 세션을 고를 수 있고, 고르면 자동으로 접힙니다. 데스크톱은 영향 없음(lg부터 항상 펼침).
   const [listOpen, setListOpen] = React.useState(false);
-  // Per-session lazily-loaded caches, keyed by session_key (main | plan | intent:<id>).
+  // 세션마다 나중에 불러오는 캐시. 키는 session_key(main | plan | intent:<id>)입니다.
   const [store, setStore] = React.useState<SessionStore>({});
-  // Worker sessions derived from exploration intents (paged past the old 300 cap).
+  // 탐색 의도에서 만든 워커 세션(예전 300개 상한을 넘겨 페이지로 가져옴).
   const [intents, setIntents] = React.useState<TaskNode[]>([]);
   const [intentAssets, setIntentAssets] = React.useState<IntentAsset[]>([]);
   const [olderIntents, setOlderIntents] = React.useState<TaskNode[]>([]);
@@ -560,9 +562,9 @@ export function SessionsTab({ taskId }: { taskId: string }) {
     }
   }
 
-  // Start a fresh main-agent session: only the segment counter advances — the task's
-  // graph/assets/goal are untouched, so the agent continues over the same task with a
-  // clean context. The old segment stays as read-only history you can switch back to.
+  // 새 메인 에이전트 세션을 시작합니다. 조각 번호만 올라가고, 작업의
+  // 그래프·자산·목표는 그대로라 같은 작업을 이어서
+  // 깨끗한 맥락으로 대화합니다. 이전 조각은 읽기 전용 기록으로 남아 돌아갈 수 있습니다.
   async function createMainSession() {
     if (creatingMain) return;
     setCreatingMain(true);
@@ -570,7 +572,7 @@ export function SessionsTab({ taskId }: { taskId: string }) {
       const r = await api.newMainSession(taskId);
       setMainSegs((prev) => [{ seq: r.seq, created_at: r.created_at }, ...prev.filter((m) => m.seq !== r.seq)]);
       setCurrentSeg(r.current ?? r.seq);
-      // Seed an empty, loaded state so the new (empty) session renders immediately.
+      // 빈 상태를 미리 넣어, 새(빈) 세션이 바로 그려지게 합니다.
       setStore((prev) => ({ ...prev, [mainSessionKey(r.seq)]: { ...emptyState(), loaded: true } }));
       setActiveId(mainSessionId(r.seq));
       setListOpen(false);
@@ -631,44 +633,44 @@ export function SessionsTab({ taskId }: { taskId: string }) {
     [controllingIntent, patchIntentState, taskId],
   );
 
-  // SSE connection state — surfaced so a dropped realtime link is visible, never
-  // silently shown as "no messages".
+  // 실시간 스트림 연결 상태. 연결이 끊기면 보이게 하고,
+  // "메시지 없음"처럼 조용히 숨기지 않습니다.
   const [sseLive, setSseLive] = React.useState(false);
-  // Whole-task token total (all agents), polled from the backend aggregate.
+  // 작업 전체 토큰 합계(모든 에이전트). 백엔드 합계를 주기적으로 읽습니다.
   const [taskTokens, setTaskTokens] = React.useState<TokenTotal | null>(null);
   const [sessionTokens, setSessionTokens] = React.useState<Record<string, SessionTokenUsage>>({});
   const [llmResolutions, setLLMResolutions] = React.useState<TaskLLMResolutions | null>(null);
-  // Pending intercept requests for this task — used to show warning icons on sessions.
+  // 이 작업의 대기 중 가로채기. 세션에 경고 아이콘을 붙이는 데 씁니다.
   const [pendingIntercepts, setPendingIntercepts] = React.useState<InterceptApprovalRow[]>([]);
 
-  // Refs backing SSE/loading without re-render churn.
-  const snapshotRef = React.useRef(0); // task-level snapshot cursor → SSE since=
+  // 실시간 스트림과 로딩을 다시 그리지 않고 들고 있는 ref입니다.
+  const snapshotRef = React.useRef(0); // 작업 단위 그 시점 기준 번호 → 실시간 스트림 since=
   const esRef = React.useRef<EventSource | null>(null);
-  const activeKeyRef = React.useRef(mainSessionKey(0)); // current session key (for SSE dispatch/unread)
-  const atBottomRef = React.useRef(true); // transcript pinned to bottom?
+  const activeKeyRef = React.useRef(mainSessionKey(0)); // 지금 세션 키(실시간 분배와 안 읽음용)
+  const atBottomRef = React.useRef(true); // 대화 기록이 맨 아래에 붙어 있나?
   const llmToastSeqRef = React.useRef<Set<number>>(new Set());
   const chatStatusRequestRef = React.useRef(0);
   const firstIntentsRef = React.useRef<TaskNode[]>([]);
-  // Per-key request token: a stale response for a key is ignored (guards fast
-  // latest/older interleaving). Writes are ALWAYS keyed, so a late response can only
-  // touch its own session cache — never the currently-viewed one (see §7.5).
+  // 키마다 요청 번호. 그 키의 늦은 응답은 무시합니다(최신/이전 페이지가
+  // 빨리 겹치는 것을 막음). 쓰기는 항상 키로 하므로, 늦은 응답은
+  // 자기 세션 캐시만 건드립니다. 지금 보는 세션은 건드리지 않습니다(§7.5).
   const reqTokenRef = React.useRef<Record<string, number>>({});
-  // Keys with a latest-page load in flight — dedups the double trigger where the
-  // first-load effect and the active-session effect both want "main" on mount (the
-  // former also opens the SSE, so it must not be pre-empted).
+  // 최신 페이지를 불러오는 중인 키. 처음 로드와 활성 세션 효과가
+  // 마운트 때 둘 다 "main"을 원하지 않게 겹침을 막습니다.
+  // 처음 로드가 실시간 스트림도 열므로, 그것이 밀리면 안 됩니다.
   const loadingKeysRef = React.useRef<Set<string>>(new Set());
 
-  // ── store helpers ──────────────────────────────────────────────────────────────
+  // ── 저장 도우미 ──────────────────────────────────────────────────────────────
   const patchStore = React.useCallback((key: string, fn: (s: SessionState) => SessionState) => {
     setStore((prev) => ({ ...prev, [key]: fn(prev[key] ?? emptyState()) }));
   }, []);
 
-  // Load a session's LATEST page (before=0) on first open. Keyed + request-token
-  // guarded so a switch away can't corrupt the view.
+  // 세션을 처음 열 때 최신 페이지(before=0)를 불러옵니다. 키와 요청 번호로
+  // 지켜서, 다른 세션으로 바꿔도 화면이 깨지지 않습니다.
   const loadSession = React.useCallback(
     (key: string) => {
-      if (MOCK) return; // MOCK preloads everything up front
-      if (loadingKeysRef.current.has(key)) return; // already in flight (e.g. main on mount)
+      if (MOCK) return; // 목업은 처음부터 전부를 넣어 둡니다
+      if (loadingKeysRef.current.has(key)) return; // 이미 불러오는 중(예: 마운트 때의 main)
       loadingKeysRef.current.add(key);
       const token = (reqTokenRef.current[key] ?? 0) + 1;
       reqTokenRef.current[key] = token;
@@ -720,10 +722,10 @@ export function SessionsTab({ taskId }: { taskId: string }) {
       api
         .activityHistory(taskId, key, 0, PAGE)
         .then((r) => {
-          if (reqTokenRef.current[key] !== token) return; // superseded
+          if (reqTokenRef.current[key] !== token) return; // 더 새로운 요청으로 교체됨
           if (r.snapshotCursor > snapshotRef.current) snapshotRef.current = r.snapshotCursor;
           patchStore(key, (s) => {
-            const items = mergeBySeq(r.items, s.items); // keep any live frames arrived meanwhile
+            const items = mergeBySeq(r.items, s.items); // 그 사이 도착한 실시간 프레임은 유지
             return {
               ...s,
               items,
@@ -745,7 +747,7 @@ export function SessionsTab({ taskId }: { taskId: string }) {
     [taskId, patchStore],
   );
 
-  // Load one older page (scroll-up) for a session, preserving scroll position.
+  // 세션의 더 오래된 페이지 하나를 불러오고(위로 스크롤), 스크롤 위치는 유지합니다.
   const loadEarlier = React.useCallback(
     (key: string, viewport: () => HTMLElement | null) => {
       const st = store[key];
@@ -779,7 +781,7 @@ export function SessionsTab({ taskId }: { taskId: string }) {
     [taskId, store, patchStore],
   );
 
-  // ── task token total (whole task, all agents) ───────────────────────────────────
+  // ── 작업 토큰 합계(작업 전체, 모든 에이전트) ───────────────────────────────────
   React.useEffect(() => {
     let alive = true;
     const load = () =>
@@ -791,7 +793,7 @@ export function SessionsTab({ taskId }: { taskId: string }) {
           setSessionTokens(Object.fromEntries(r.sessions.map((item) => [item.session, item])));
         })
         .catch(() => {
-          // Polling is best-effort; the next interval retries automatically.
+          // 주기 조회는 최선을 다할 뿐이고, 다음 주기에 다시 시도합니다.
         });
     void load();
     const t = setInterval(load, 5000);
@@ -812,8 +814,8 @@ export function SessionsTab({ taskId }: { taskId: string }) {
           if (alive && chatStatusRequestRef.current === request) setMainChatRunning(running);
         })
         .catch(() => {
-          // Keep the last authoritative value. Before the first success, recent
-          // activity remains a conservative fallback.
+          // 마지막으로 확인된 값을 유지합니다. 첫 성공 전에는 최근
+          // 활동을 보수적인 대체값으로 씁니다.
         });
     };
     void load();
@@ -833,7 +835,7 @@ export function SessionsTab({ taskId }: { taskId: string }) {
           if (alive) setLLMResolutions(value);
         })
         .catch(() => {
-          // Polling is best-effort; the next interval retries automatically.
+          // 주기 조회는 최선을 다할 뿐이고, 다음 주기에 다시 시도합니다.
         });
     void load();
     const timer = setInterval(load, 10_000);
@@ -852,7 +854,7 @@ export function SessionsTab({ taskId }: { taskId: string }) {
           if (alive) setPendingIntercepts(rows.filter((r) => r.status === "pending"));
         })
         .catch(() => {
-          // Polling is best-effort; the next interval retries automatically.
+          // 주기 조회는 최선을 다할 뿐이고, 다음 주기에 다시 시도합니다.
         });
     void load();
     const t = setInterval(load, 5000);
@@ -862,19 +864,19 @@ export function SessionsTab({ taskId }: { taskId: string }) {
     };
   }, [taskId]);
 
-  // Re-render on a timer so "streaming" liveness recomputes as activity goes stale.
+  // 타이머로 다시 그려, 활동이 오래되면 "스트리밍" 표시가 다시 계산되게 합니다.
   const [, setTick] = React.useState(0);
   React.useEffect(() => {
     const id = setInterval(() => setTick((t) => t + 1), 1500);
     return () => clearInterval(id);
   }, []);
 
-  // ── first load + single task SSE ────────────────────────────────────────────────
-  // On task open: load Main's latest page, take the task-level snapshot cursor from
-  // it, THEN open ONE task SSE at since=snapshot_cursor. History covers id≤cursor and
-  // the SSE covers id>cursor with no gap. The SSE tails ALL agents; frames are routed
-  // by session_key. EventSource auto-reconnects and (via our `id:` lines → Last-Event-
-  // ID) resumes from the DB, so a dropped realtime link self-heals; seq-merge dedups.
+  // ── 첫 로드와 작업 실시간 스트림 하나 ────────────────────────────────────────────────
+  // 작업을 열면 메인의 최신 페이지를 읽고, 거기서 작업 단위 기준 번호를 취한 다음
+  // 그제야 실시간 스트림 하나를 since=snapshot_cursor로 엽니다. 기록은 id≤커서,
+  // 스트림은 id>커서를 빈틈 없이 덮습니다. 스트림은 모든 에이전트를 따라가고, 프레임은
+  // session_key로 나눕니다. EventSource는 자동으로 다시 붙고(`id:` 줄 → Last-Event-
+  // ID) DB부터 이어 받아, 끊긴 실시간 연결이 스스로 회복됩니다. seq 합치기로 중복을 뺍니다.
   React.useEffect(() => {
     setStore({});
     setIntents([]);
@@ -887,18 +889,18 @@ export function SessionsTab({ taskId }: { taskId: string }) {
     setSessionTokens({});
     setLLMResolutions(null);
     setSseLive(false);
-    setActiveId(MAIN_ID); // a stale worker id from the previous task must not leak in
+    setActiveId(MAIN_ID); // 이전 작업의 오래된 워커 id가 새어 들어오면 안 됩니다
     setMainSegs([{ seq: 0, created_at: "" }]);
     setCurrentSeg(0);
     snapshotRef.current = 0;
     llmToastSeqRef.current = new Set();
     reqTokenRef.current = {};
-    // Reserve the initial main key so the active-session effect (which fires for main on
-    // mount) won't double-load it and pre-empt the SSE opened here.
+    // 처음 main 키를 예약해서, 마운트 때 main에도 켜지는 활성 세션 효과가
+    // 같은 것을 두 번 불러 여기서 연 실시간 스트림을 밀지 않게 합니다.
     loadingKeysRef.current = new Set([mainSessionKey(0)]);
     let alive = true;
 
-    // MOCK demo: no SSE backend — pull one activity snapshot and bucket by session.
+    // 목업 데모: 실시간 스트림 백엔드가 없어, 활동 스냅샷 하나를 받아 세션별로 나눕니다.
     if (MOCK) {
       api
         .activity(taskId)
@@ -936,9 +938,9 @@ export function SessionsTab({ taskId }: { taskId: string }) {
     const token = (reqTokenRef.current.mainboot ?? 0) + 1;
     reqTokenRef.current.mainboot = token;
     let bootKey = mainSessionKey(0);
-    // Resolve the main-agent segments first, then load the CURRENT segment's history and
-    // open the SSE from its snapshot cursor. The SSE tails all segments and routes each
-    // frame by session_key (main:<seg>), so switching segments needs no new stream.
+    // 메인 에이전트 조각을 먼저 정한 다음, 지금 조각의 기록을 읽고
+    // 그 기준 번호부터 실시간 스트림을 엽니다. 스트림은 모든 조각을 따라가고 각
+    // 프레임을 session_key(main:<seg>)로 보내므로, 조각을 바꿔도 새 스트림은 필요 없습니다.
     api
       .mainSessions(taskId)
       .then((ms) => {
@@ -968,19 +970,19 @@ export function SessionsTab({ taskId }: { taskId: string }) {
             unread: 0,
           };
         });
-        // Open the single task SSE from the snapshot cursor.
+        // 기준 번호부터 작업 실시간 스트림 하나를 엽니다.
         const es = new EventSource(
           sseUrl(`/api/exploration/activity/stream?task=${encodeURIComponent(taskId)}&since=${snapshotRef.current}`),
         );
         esRef.current = es;
         es.onopen = () => setSseLive(true);
-        es.onerror = () => setSseLive(false); // EventSource auto-reconnects; DB compensates the gap
+        es.onerror = () => setSseLive(false); // EventSource는 자동으로 다시 붙고, DB가 빈 구간을 메웁니다
         es.onmessage = (e) => {
           let a: Activity;
           try {
             a = JSON.parse(e.data) as Activity;
           } catch {
-            return; // ignore malformed frame
+            return; // 깨진 프레임은 무시
           }
           if ((a.kind === "llm_switch" || a.kind === "llm_failover") && !llmToastSeqRef.current.has(a.seq)) {
             llmToastSeqRef.current.add(a.seq);
@@ -998,17 +1000,17 @@ export function SessionsTab({ taskId }: { taskId: string }) {
                 if (alive) setLLMResolutions(value);
               })
               .catch(() => {
-                // The periodic resolver poll will retry if this event-triggered refresh fails.
+                // 이 사건으로 켠 새로고침이 실패하면, 주기적인 해석 조회가 다시 시도합니다.
               });
           }
           const k = sessionKeyOf(a);
           setStore((prev) => {
             const cur = prev[k] ?? emptyState();
             const activeK = activeKeyRef.current;
-            // Merge into sessions that are loaded, actively loading, or the current
-            // view (so returning is instant + a frame that lands mid-load isn't lost).
-            // A cold, inactive session also keeps a tiny accounting tail so the
-            // sidebar can add the latest unfinished usage without loading history.
+            // 이미 불러온 세션, 지금 불러오는 세션, 또는 현재
+            // 보기에 합칩니다(돌아오면 바로 보이고, 로딩 중에 온 프레임도 잃지 않음).
+            // 아직 차갑고 비활성인 세션도 아주 짧은 장부 꼬리를 남겨
+            // 기록을 다 안 읽어도 사이드바가 최근 미완료 사용량을 더할 수 있습니다.
             if (!cur.loaded && !cur.loading && k !== activeK) {
               const accountingItems =
                 a.kind === "usage" || a.kind === "result" ? mergeBySeq(cur.items, [a]).slice(-4) : cur.items;
@@ -1018,8 +1020,8 @@ export function SessionsTab({ taskId }: { taskId: string }) {
               };
             }
             let items = mergeBySeq(cur.items, [a]);
-            // Memory bound: trim oldest when over cap (older re-fetched on scroll-up),
-            // but never while the user is reading this session's history (scrolled up).
+            // 메모리 상한: 넘치면 가장 오래된 것을 자릅니다(위로 스크롤하면 다시 가져옴).
+            // 다만 사용자가 이 세션 기록을 읽는 중(위로 스크롤)에는 자르지 않습니다.
             let hasMore = cur.hasMore;
             let earliestSeq = cur.earliestSeq;
             const trimmable = k !== activeK || atBottomRef.current;
@@ -1056,7 +1058,7 @@ export function SessionsTab({ taskId }: { taskId: string }) {
           if (active) setIntentAssets(assets);
         })
         .catch(() => {
-          // The next poll retries; Worker controls and transcripts remain available.
+          // 다음 주기 조회가 다시 시도합니다. 워커 조작과 대화 기록은 그대로 쓸 수 있습니다.
         });
     void load();
     const timer = setInterval(load, 5000);
@@ -1066,7 +1068,7 @@ export function SessionsTab({ taskId }: { taskId: string }) {
     };
   }, [taskId]);
 
-  // ── worker (intent) session list — paged, poll first page lightly ───────────────
+  // ── 워커(의도) 세션 목록 — 페이지로, 첫 페이지만 가볍게 주기 조회 ───────────────
   React.useEffect(() => {
     let active = true;
     firstIntentsRef.current = [];
@@ -1096,7 +1098,7 @@ export function SessionsTab({ taskId }: { taskId: string }) {
           setFirstIntentsHasMore(r.hasMore);
         })
         .catch(() => {
-          // Polling is best-effort; the next interval retries automatically.
+          // 주기 조회는 최선을 다할 뿐이고, 다음 주기에 다시 시도합니다.
         });
     void load();
     const t = setInterval(load, 5000);
@@ -1123,16 +1125,16 @@ export function SessionsTab({ taskId }: { taskId: string }) {
         setHasLoadedOlderIntentsPage(true);
       })
       .catch(() => {
-        // A later manual retry can fetch this page again.
+        // 나중에 사람이 다시 시도하면 이 페이지를 또 가져올 수 있습니다.
       })
       .finally(() => setLoadingOlderIntents(false));
   }, [taskId, intents, olderIntents, loadingOlderIntents]);
 
-  // Combined, de-duplicated worker list (newest first page + older loaded pages).
+  // 합치고 중복을 뺀 워커 목록(최신 첫 페이지 + 더 불러온 이전 페이지).
   const allIntents = React.useMemo(() => {
     const byId = new Map<string, TaskNode>();
     for (const n of olderIntents) byId.set(n.id, n);
-    for (const n of intents) byId.set(n.id, n); // fresh poll wins over older snapshot
+    for (const n of intents) byId.set(n.id, n); // 새 주기 조회가 오래된 스냅샷보다 우선합니다
     return [...byId.values()].sort((a, b) => Number(b.id) - Number(a.id));
   }, [intents, olderIntents]);
   const intentAssetsByID = React.useMemo(() => {
@@ -1149,8 +1151,8 @@ export function SessionsTab({ taskId }: { taskId: string }) {
   const workerSessions = React.useMemo(() => allIntents.map(intentToSession), [allIntents]);
   const intentsHasMore = hasLoadedOlderIntentsPage ? olderIntentsHasMore : firstIntentsHasMore;
 
-  // For each worker session (intent), derive the display title from the intent
-  // payload summary. Also store the full TaskNode for the hover-JSON tooltip.
+  // 워커 세션(의도)마다 제목은 의도
+  // 요약에서 만듭니다. 호버 JSON 툴팁용으로 TaskNode 전체도 저장합니다.
   const sessionMeta = React.useMemo(() => {
     const map = new Map<string, { title: string; json: unknown; deleted: boolean; deleteReason: string }>();
     for (const node of allIntents) {
@@ -1174,15 +1176,15 @@ export function SessionsTab({ taskId }: { taskId: string }) {
     return map;
   }, [allIntents]);
 
-  // Returns true if any pending intercept belongs to this session.
-  // Worker agent_name format: "work#N · #intentID". Main/planner match by role key.
+  // 이 세션에 대기 중 가로채기가 하나라도 있으면 참입니다.
+  // 워커 agent_name 형식: "work#N · #intentID". 메인/플래너는 역할 키로 맞춥니다.
   const hasPendingForSession = React.useCallback(
     (s: Session): boolean => {
       if (s.inherited) return false;
       if (!pendingIntercepts.length) return false;
       if (s.role === "mainagent") return pendingIntercepts.some((r) => r.agent_name === "mainagent");
       if (s.role === "planner") return pendingIntercepts.some((r) => r.agent_name === "planner");
-      // Worker: extract intent ID from "work#N · #<intentID>"
+      // 워커: "work#N · #<intentID>"에서 의도 id를 꺼냅니다
       return pendingIntercepts.some((r) => {
         const m = r.agent_name.match(/·\s*#(\d+)$/);
         return m ? m[1] === s.intent_id : false;
@@ -1191,7 +1193,7 @@ export function SessionsTab({ taskId }: { taskId: string }) {
     [pendingIntercepts],
   );
 
-  // Liveness from each session's last-seen activity time (kept fresh by the 1.5s tick).
+  // 각 세션이 마지막으로 보인 활동 시각으로 살아 있음을 판단합니다(1.5초 틱으로 갱신).
   const recentLive = React.useCallback(
     (key: string) => {
       const ts = store[key]?.lastTs;
@@ -1204,14 +1206,14 @@ export function SessionsTab({ taskId }: { taskId: string }) {
   const currentMainKey = mainSessionKey(currentSeg);
   const plannerLive = recentLive("plan");
 
-  // Which main segment is streaming RIGHT NOW. A main turn is serialized per task, so at
-  // most one segment is live. Gate on the real running flag (sending / mainChatRunning)
-  // rather than "recent activity", and drop it the moment the turn's terminal record
-  // (kind='result', or an error) lands — otherwise the badge lingers for STREAM_WINDOW_MS
-  // after the agent already finished. null = nothing running.
+  // 지금 스트리밍 중인 메인 조각. 메인 차례는 작업당 하나라, 동시에
+  // 살아 있는 조각은 최대 하나입니다. "최근 활동"이 아니라 실제 실행 표시(sending / mainChatRunning)로
+  // 판단하고, 차례의 끝 기록
+  // (kind='result' 또는 오류)이 오면 바로 내립니다. 아니면 배지가 STREAM_WINDOW_MS 동안
+  // 에이전트가 끝난 뒤에도 남습니다. null이면 실행 중인 것이 없습니다.
   const liveMainSeg = React.useMemo<number | null>(() => {
     if (!(sending || mainChatRunning)) return null;
-    // the streaming segment is the one with the freshest activity (incl. the just-sent turn)
+    // 스트리밍 조각은 활동이 가장 최근인 쪽입니다(방금 보낸 차례 포함)
     let seg = currentSeg;
     let bestTs = -1;
     for (const m of mainSegs) {
@@ -1228,8 +1230,8 @@ export function SessionsTab({ taskId }: { taskId: string }) {
     return seg;
   }, [sending, mainChatRunning, mainSegs, store, currentSeg]);
 
-  // Every main-agent segment is an independent, interactive session (like the top-level
-  // chat conversations) — you can talk in any of them, newest-first.
+  // 메인 에이전트 조각은 모두 독립된 대화 세션입니다(위쪽
+  // 채팅 대화와 같음). 어느 조각이든 말할 수 있고, 최신이 먼저입니다.
   const mainSessions = React.useMemo<Session[]>(
     () =>
       mainSegs.map((m) => ({
@@ -1271,10 +1273,10 @@ export function SessionsTab({ taskId }: { taskId: string }) {
   const isSystem = active.role === "system";
   const activeKey = keyForSession(active);
   const activeState = store[activeKey];
-  // A main turn is serialized per task (chat lock), so "busy" is task-wide: while any
-  // main segment is mid-turn the active composer is disabled. Clear it the moment the
-  // active session's terminal record (kind='result', or an error) lands, so the input
-  // re-enables immediately instead of waiting for the next chat-status poll.
+  // 메인 차례는 작업당 하나라(채팅 잠금), "바쁨"은 작업 전체입니다. 어떤
+  // 메인 조각이든 차례 중이면 활성 입력칸을 막습니다. 그 순간
+  // 활성 세션의 끝 기록(kind='result' 또는 오류)이 오면 풀어서, 입력이
+  // 다음 채팅 상태 조회를 기다리지 않고 바로 다시 켜지게 합니다.
   const activeItems = activeState?.items ?? [];
   const activeLast = activeItems[activeItems.length - 1];
   const activeSettled =
@@ -1288,9 +1290,9 @@ export function SessionsTab({ taskId }: { taskId: string }) {
     [store, activeKey],
   );
 
-  // Keep the SSE dispatcher's notion of the active session current, and lazily load
-  // + clear unread whenever the active session changes.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: cache updates must not reactivate the current session.
+  // 실시간 분배기가 아는 활성 세션을 최신으로 유지하고, 활성 세션이 바뀔 때
+  // 나중에 불러오며 안 읽음을 지웁니다.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 캐시 갱신이 현재 세션을 다시 활성화하면 안 됩니다.
   React.useEffect(() => {
     activeKeyRef.current = activeKey;
     const st = store[activeKey];
@@ -1327,25 +1329,25 @@ export function SessionsTab({ taskId }: { taskId: string }) {
     if (approvalFocus.state) atBottomRef.current = false;
   }, [approvalFocus.state]);
 
-  // Main agent is the human↔orchestrator CONSOLE: only the conversation (user msgs +
-  // the main agent's own replies/steps). Planner session shows planner steps; a
-  // worker session shows only its intent's activity, led by the intent objective.
+  // 메인 에이전트는 사람과 조율자의 콘솔입니다. 대화만 보여 줍니다(사용자 메시지와
+  // 메인 에이전트 자신의 답과 단계). 플래너 세션은 플래너 단계를,
+  // 워커 세션은 그 의도의 활동만, 의도 목표를 앞에 두고 보여 줍니다.
   const activity = React.useMemo(() => {
     const items = activeState?.items ?? [];
-    // The main-agent console renders purely from server data: the human turn is
-    // persisted+broadcast by the backend BEFORE it returns, so it arrives over the
-    // same SSE stream (worker="mainagent") as every agent step — no client-side
-    // optimistic echo, hence no fabricated seq that could collide with real DB ids.
+    // 메인 에이전트 콘솔은 서버 데이터만으로 그립니다. 사람 차례는
+    // 백엔드가 응답을 돌려주기 전에 저장하고 방송하므로,
+    // 다른 에이전트 단계와 같은 실시간 스트림(worker="mainagent")으로 옵니다. 브라우저에서
+    // 먼저 그리지 않으므로, 진짜 DB id와 부딪힐 가짜 seq도 없습니다.
     if (isMain) return items;
     if (isPlanner || isSystem) return items;
-    // Worker session: the intent leads the transcript as a right-aligned "user"-style
-    // message (the task handed to this worker), followed by its execution steps.
+    // 워커 세션: 의도가 대화 기록 맨 앞에 오른쪽 "사용자"형
+    // 메시지로 옵니다(이 워커에게 맡긴 일). 그 다음 실행 단계가 이어집니다.
     const intentTitle = sessionMeta.get(active.id)?.title ?? active.title;
     const intentMsg: Activity = {
-      seq: -1, // sorts/leads before any real step (real seq ≥ 0)
-      worker: items[0]?.worker ?? active.id, // reuse the lane so no worker chips appear
+      seq: -1, // 실제 단계보다 앞에 정렬됩니다(실제 seq는 0 이상)
+      worker: items[0]?.worker ?? active.id, // 같은 레인을 써서 워커 칩이 보이지 않게 합니다
       ts: active.last_activity || "",
-      kind: "intent", // LLM-generated objective — rendered as a distinct (non-human) bubble
+      kind: "intent", // 모델이 만든 목표. 사람 말풍선과 구분되는 말풍선으로 그립니다
       summary: intentTitle,
       source_task_id: active.source_task_id,
       inherited: active.inherited,
@@ -1364,7 +1366,7 @@ export function SessionsTab({ taskId }: { taskId: string }) {
     sessionMeta,
   ]);
 
-  // seq of this session's most-recent TodoWrite call — for the Todo popover.
+  // 이 세션에서 가장 최근 TodoWrite 호출의 seq. 할 일 팝오버용.
   const latestTodoSeq = React.useMemo(() => {
     for (let i = activity.length - 1; i >= 0; i--) {
       const a = activity[i];
@@ -1373,9 +1375,9 @@ export function SessionsTab({ taskId }: { taskId: string }) {
     return null;
   }, [activity]);
 
-  // Persisted result totals come from the backend's full activity history. Only
-  // the latest unfinished usage frame is added client-side, so partial history
-  // pages cannot undercount completed runs or double-count the active one.
+  // 저장된 결과 합계는 백엔드의 전체 활동 기록에서 옵니다.
+  // 아직 끝나지 않은 최신 사용량 프레임만 브라우저에서 더하므로, 일부 기록
+  // 페이지가 끝난 실행을 덜 세거나 진행 중을 두 번 세지 않습니다.
   const tokenForSession = React.useCallback(
     (key: string): TokenTotal => {
       const saved = sessionTokens[key];
@@ -1414,8 +1416,8 @@ export function SessionsTab({ taskId }: { taskId: string }) {
       0,
   };
 
-  // Run duration = span from this session's first step to its last (for a live
-  // session, "now" so it ticks up — the 1.5s setTick above re-renders it).
+  // 실행 시간 = 이 세션의 첫 단계에서 마지막 단계까지(실시간
+  // 세션은 "지금"까지라 숫자가 올라갑니다. 위의 1.5초 setTick이 다시 그립니다).
   const runDuration = React.useMemo(() => {
     let min = Infinity,
       max = 0;
@@ -1430,26 +1432,26 @@ export function SessionsTab({ taskId }: { taskId: string }) {
     return Math.max(0, end - min);
   }, [activity, active.live]);
 
-  // ---- transcript auto-scroll (open → bottom; stick to bottom unless scrolled up) ----
+  // ---- 대화 기록 자동 스크롤(열면 맨 아래, 올려 보면 맨 아래에 붙이지 않음) ----
   const contentRef = React.useRef<HTMLDivElement | null>(null);
   const viewport = React.useCallback(
     () => (contentRef.current?.closest('[data-slot="scroll-area-viewport"]') as HTMLElement | null) ?? null,
     [],
   );
-  // biome-ignore lint/correctness/useExhaustiveDependencies: activeId intentionally rebinds the scroll listener.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: activeId가 바뀌면 스크롤 듣기를 일부러 다시 겁니다.
   React.useEffect(() => {
     const vp = viewport();
     if (!vp) return;
     const onScroll = () => {
       if (approvalFocus.state && !focusHistory.ready) return;
       atBottomRef.current = vp.scrollTop + vp.clientHeight >= vp.scrollHeight - 60;
-      if (vp.scrollTop <= 80) loadEarlier(activeKeyRef.current, viewport); // near top → older page
+      if (vp.scrollTop <= 80) loadEarlier(activeKeyRef.current, viewport); // 맨 위 근처 → 더 오래된 페이지
     };
     vp.addEventListener("scroll", onScroll, { passive: true });
     return () => vp.removeEventListener("scroll", onScroll);
   }, [viewport, activeId, loadEarlier, approvalFocus.state, focusHistory.ready]);
-  // open/switch a session → jump to the latest (bottom)
-  // biome-ignore lint/correctness/useExhaustiveDependencies: activeId intentionally scrolls a newly selected session.
+  // 세션을 열거나 바꾸면 최신(맨 아래)으로 점프
+  // biome-ignore lint/correctness/useExhaustiveDependencies: activeId가 바뀌면 새로 고른 세션을 일부러 스크롤합니다.
   React.useLayoutEffect(() => {
     const vp = viewport();
     if (vp && !approvalFocus.state) {
@@ -1457,22 +1459,22 @@ export function SessionsTab({ taskId }: { taskId: string }) {
       atBottomRef.current = true;
     }
   }, [activeId, viewport, approvalFocus.state]);
-  // new activity → stick to bottom only if the user is already pinned there
-  // biome-ignore lint/correctness/useExhaustiveDependencies: activity growth intentionally drives live-edge scrolling.
+  // 새 활동은 사용자가 이미 맨 아래에 붙어 있을 때만 맨 아래에 붙입니다
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 활동이 늘면 실시간 끝 스크롤을 일부러 갱신합니다.
   React.useLayoutEffect(() => {
     if (approvalFocus.state || !atBottomRef.current) return;
     const vp = viewport();
     if (vp) vp.scrollTop = vp.scrollHeight;
   }, [activity, viewport, approvalFocus.state]);
-  // Lazy detail loads (AnswerBlock / ToolBlock / Markdown) grow the content AFTER the
-  // activity array settles, WITHOUT changing its reference — so the layout effects
-  // above never re-fire and a freshly opened session would leave its last message
-  // scrolled partly off-screen (the final answer expands from a one-line summary to
-  // full markdown below the fold). A ResizeObserver re-pins to the bottom on any
-  // height change while the user is still at the bottom, so opening the main agent
-  // lands on the last message fully shown. contentRef's div is always mounted, so the
-  // observer catches the transcript mounting + each detail expanding.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: activeId intentionally rebinds the observer to the new session's content.
+  // 느린 상세 로드(AnswerBlock / ToolBlock / Markdown)는 활동
+  // 배열이 잠잠해진 뒤에 내용을 키우고, 배열 참조는 바꾸지 않습니다. 그래서 위 레이아웃 효과는
+  // 다시 실행되지 않고, 방금 연 세션의 마지막 메시지가
+  // 화면 밖으로 잘릴 수 있습니다(최종 답이 한 줄 요약에서
+  // 접힌 곳 아래의 전체 마크다운으로 커짐). ResizeObserver가 맨 아래에 있는 동안
+  // 높이가 변하면 다시 맨 아래에 붙여, 메인 에이전트를 열면
+  // 마지막 메시지가 전부 보이게 합니다. contentRef의 div는 항상 마운트되므로
+  // 관찰자가 대화 기록이 붙는 것과 상세가 커지는 것을 모두 잡습니다.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: activeId가 바뀌면 관찰자를 새 세션 내용에 일부러 다시 겁니다.
   React.useEffect(() => {
     const el = contentRef.current;
     if (!el || typeof ResizeObserver === "undefined") return;
@@ -1496,10 +1498,10 @@ export function SessionsTab({ taskId }: { taskId: string }) {
     const atts = attachments;
     if (side.handleCommand(text, () => setInput(""))) return;
     if ((!text && atts.length === 0) || sending || mainBusy) return;
-    // No optimistic echo: the backend persists+broadcasts the human turn before it
-    // returns, so it streams back over SSE (worker="mainagent") with its real DB
-    // seq — the transcript renders it from server data like every other step. Clear
-    // the composer eagerly for responsiveness; restore it if the send fails.
+    // 먼저 그리지 않습니다. 백엔드는 사람 차례를 응답 전에 저장하고 방송하므로
+    // 돌아오기 전에 실시간 스트림(worker="mainagent")으로 진짜 DB
+    // seq와 함께 흘러옵니다. 대화 기록은 다른 단계처럼 서버 데이터로 그립니다. 반응을 위해
+    // 입력칸은 바로 비우고, 보내기가 실패하면 되돌립니다.
     setInput("");
     setAttachments([]);
     setSending(true);
@@ -1511,7 +1513,7 @@ export function SessionsTab({ taskId }: { taskId: string }) {
         setMainChatRunning(mode === "llm");
       })
       .catch((e) => {
-        setInput(text); // restore so the user doesn't lose their text / attachments
+        setInput(text); // 사용자가 글과 첨부를 잃지 않게 되돌립니다
         setAttachments(atts);
         toast.error(`전송 실패:${(e as Error).message || "잠시 후 다시 시도하세요"}`);
       })
@@ -1533,8 +1535,8 @@ export function SessionsTab({ taskId }: { taskId: string }) {
     api
       .sendWorkerMessage(taskId, intentId, message, requestId)
       .then((result) => {
-        // The server records the user turn and streams the run over SSE, so there is
-        // no optimistic insert: the message and the continuation arrive live.
+        // 서버가 사용자 차례를 기록하고 실행을 실시간 스트림으로 보내므로
+        // 먼저 끼워 넣지 않습니다. 메시지와 이어지는 내용이 실시간으로 옵니다.
         patchIntentState(intentId, result.state);
         setWorkerMessage("");
         setWorkerMessageRequestId("");
@@ -1549,7 +1551,7 @@ export function SessionsTab({ taskId }: { taskId: string }) {
   const mainLoaded = !!store[currentMainKey]?.loaded;
   // 전송 키는 시스템 설정이 정합니다(localStorage). 기본은 Enter로 전송.
   const sendMode = useChatSendMode();
-  // What the transcript pane should show for the active session.
+  // 활성 세션의 대화 기록 칸에 무엇을 보일지.
   const showLoader = !activeState || (activeState.loading && !activeState.loaded);
   const resolutionForSession = (session: Session): TaskLLMResolution | undefined => {
     if (!llmResolutions || session.inherited || session.role === "system") return undefined;
@@ -1573,7 +1575,7 @@ export function SessionsTab({ taskId }: { taskId: string }) {
           "lg:h-[calc(100svh-13rem)] lg:grid-cols-[18rem_1fr] lg:grid-rows-[minmax(0,1fr)]",
         )}
       >
-        {/* Left: session list */}
+        {/* 왼쪽: 세션 목록 */}
         <div className="flex min-h-0 flex-col overflow-hidden rounded-lg border bg-card">
           <div className="border-b px-3 py-2">
             <div className="flex items-center justify-between gap-2">
@@ -1729,7 +1731,7 @@ export function SessionsTab({ taskId }: { taskId: string }) {
           </ScrollArea>
         </div>
 
-        {/* Right: transcript */}
+        {/* 오른쪽: 대화 기록 */}
         <SideQuestionWorkspace
           side={side}
           label={active.role === "worker" ? `Worker #${active.intent_id} · ${activeDisplayTitle}` : activeDisplayTitle}
@@ -1739,8 +1741,8 @@ export function SessionsTab({ taskId }: { taskId: string }) {
               {(() => {
                 const isWorker = active.role === "worker";
                 const meta = isWorker ? sessionMeta.get(active.id) : undefined;
-                // Worker: the intent moved into the transcript as a message, so the
-                // header shows a stable generic label (intent JSON stays on hover).
+                // 워커: 의도는 대화 기록 속 메시지로 옮겨 갔으므로
+                // 머리에는 안정된 일반 이름을 보여 줍니다(의도 JSON은 호버에 남음).
                 const title = isWorker ? "워커 실행 세션" : active.title;
                 const titleEl = <span className="min-w-0 truncate text-sm font-medium">{title}</span>;
                 return meta?.json ? (
@@ -1862,10 +1864,10 @@ export function SessionsTab({ taskId }: { taskId: string }) {
               }}
               history={focusHistory}
             />
-            {/* Force Radix's internal viewport wrapper (display:table, sizes to content)
-            to block so wide/unbreakable steps (long commands, code, URLs) can't blow
-            out the width and defeat the truncation below — the transcript wraps to
-            the panel instead of overflowing horizontally. */}
+            {/* Radix 안쪽 뷰포트(display:table이라 내용만큼 커짐)를
+            block으로 바꿔, 긴 명령·코드·주소가
+            너비를 밀어 아래 말줄임을 깨지 않게 합니다. 대화 기록은
+            패널 너비에 맞춰 줄바꿈되고 가로로 넘치지 않습니다. */}
             <ScrollArea type="auto" className="min-h-0 min-w-0 flex-1 [&_[data-slot=scroll-area-viewport]>div]:block!">
               <div className="min-w-0 max-w-full p-4" ref={contentRef}>
                 {activeState?.loadingMore && (

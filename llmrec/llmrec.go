@@ -20,8 +20,8 @@ import (
 type taskIDContextKey struct{}
 type workerContextKey struct{}
 
-// WithTaskID attaches the owning task registry id to an LLM call. Session ids
-// are based on exploration ids, which are not interchangeable with task ids.
+// WithTaskID는 LLM 호출에 소유 작업의 등록 번호를 붙입니다.
+// 세션 번호는 탐색 그래프의 탐색 번호라서, 작업 등록 번호와 바꿔 쓸 수 없습니다.
 func WithTaskID(ctx context.Context, taskID string) context.Context {
 	taskID = strings.TrimSpace(taskID)
 	if taskID == "" {
@@ -30,7 +30,7 @@ func WithTaskID(ctx context.Context, taskID string) context.Context {
 	return context.WithValue(ctx, taskIDContextKey{}, taskID)
 }
 
-// TaskIDFrom returns the explicit task registry id attached by the task runtime.
+// TaskIDFrom은 작업 런타임이 붙인 명시적 등록 번호를 돌려줍니다.
 func TaskIDFrom(ctx context.Context) string {
 	if ctx == nil {
 		return ""
@@ -39,11 +39,11 @@ func TaskIDFrom(ctx context.Context) string {
 	return strings.TrimSpace(taskID)
 }
 
-// WithWorker overrides the agent-lane ("worker") label for an LLM call. The lane
-// is normally parsed from the transcript session id (exp<N>-<role>); calls made
-// outside the engine's worker/planner sessions — e.g. the intercept fallback judge
-// — carry no such session, so they attach their lane explicitly here. This lets the
-// usage ledger single out that spend (worker='judge') for the config page.
+// WithWorker는 LLM 호출의 에이전트 레인(worker) 라벨을 덮어씁니다. 레인은
+// 보통 대화 세션 번호(exp<N>-<role>)에서 뽑습니다. 엔진의 워커·플래너
+// 세션 밖에서 난 호출, 예를 들어 가로채기 폴백 판정은 그런 세션이 없어
+// 여기서 레인을 직접 붙입니다. 사용량 장부가 그 지출(worker가 judge)을
+// 설정 화면용으로 가를 수 있습니다.
 func WithWorker(ctx context.Context, worker string) context.Context {
 	worker = strings.TrimSpace(worker)
 	if worker == "" {
@@ -52,7 +52,7 @@ func WithWorker(ctx context.Context, worker string) context.Context {
 	return context.WithValue(ctx, workerContextKey{}, worker)
 }
 
-// workerFrom returns the explicit lane override, or "" when none is set.
+// workerFrom은 명시적 레인 덮어쓰기입니다. 없으면 빈 문자열입니다.
 func workerFrom(ctx context.Context) string {
 	if ctx == nil {
 		return ""
@@ -61,25 +61,25 @@ func workerFrom(ctx context.Context) string {
 	return strings.TrimSpace(worker)
 }
 
-// Recorder wraps an llm.Provider and records every completion call.
+// Recorder는 llm.Provider를 감싸 완료 호출마다 기록합니다.
 type Recorder struct {
 	inner llm.Provider
 	pg    *db.DB
-	model string // model name (from config, not in CompletionRequest)
-	prof  string // LLM profile name (from llm_profiles)
+	model string // 설정에서 온 모델 이름입니다. CompletionRequest에는 없습니다
+	prof  string // llm_profiles의 LLM 프로필 이름입니다
 	// thinkingType / reasoningEffort는 설정 수준의 생각 파라미터(생각 스위치 / 생각 강도)입니다.
 	// norma의 buildBody()가 provider 설정에서 실제 HTTP body로 넣고, CompletionRequest에는
 	// 없습니다. 그래서 Recorder가 따로 들고 있다가 기록에 직렬화합니다.
 	// 초보용: LLM 호출 기록(llmrec)은 플래너·워커·메인 에이전트가 쓴 토큰을 화면에 보여 줍니다.
 	thinkingType    string
 	reasoningEffort string
-	enabled         func() bool // reports whether recording is currently on; nil = always record
+	enabled         func() bool // 지금 기록이 켜져 있는지입니다. nil이면 항상 기록합니다
 }
 
-// Wrap returns a Provider that records calls to pg when enabled() reports true.
-// profName is the LLM profile name (e.g. "default"); may be empty. thinkingType /
-// reasoningEffort are the config-level thinking params actually sent to the API
-// (empty = not sent). A nil enabled predicate records unconditionally.
+// Wrap은 enabled()가 참일 때 pg에 호출을 기록하는 Provider를 돌려줍니다.
+// profName은 LLM 프로필 이름(예: default)이며 비어 있을 수 있습니다. thinkingType과
+// reasoningEffort는 API로 실제로 보내는 설정 수준 생각 파라미터입니다
+// (비면 보내지 않음). enabled가 nil이면 조건 없이 기록합니다.
 func Wrap(inner llm.Provider, pg *db.DB, model, profName, thinkingType, reasoningEffort string, enabled func() bool) *Recorder {
 	return &Recorder{
 		inner: inner, pg: pg, model: model, prof: profName,
@@ -87,22 +87,22 @@ func Wrap(inner llm.Provider, pg *db.DB, model, profName, thinkingType, reasonin
 	}
 }
 
-// parseSession extracts task id and worker role from session strings like
-// "exp1-worker-i3" → ("1", "worker") or "exp2-planner" → ("2", "planner").
+// parseSession은 세션 문자열에서 작업 번호와 워커 역할을 뽑습니다.
+// "exp1-worker-i3"이면 ("1", "worker"), "exp2-planner"이면 ("2", "planner")입니다.
 func parseSession(s string) (taskID, worker string) {
-	// format: exp<N>-<role>[-suffix]
+	// 형식: exp<N>-<role>[-suffix] (번호-역할-접미사)
 	if !strings.HasPrefix(s, "exp") {
 		return "", ""
 	}
-	rest := s[3:] // after "exp"
-	// split task number
+	rest := s[3:] // "exp" 다음입니다
+	// 작업 번호를 나눕니다
 	i := strings.IndexByte(rest, '-')
 	if i < 0 {
 		return rest, ""
 	}
 	taskID = rest[:i]
 	rest = rest[i+1:]
-	// worker role is up to the next '-' (e.g. "worker" from "worker-i3")
+	// 워커 역할은 다음 '-'까지입니다(예: "worker-i3"에서 "worker")
 	if j := strings.IndexByte(rest, '-'); j >= 0 {
 		worker = rest[:j]
 	} else {
@@ -111,17 +111,17 @@ func parseSession(s string) (taskID, worker string) {
 	return taskID, worker
 }
 
-// Stream implements llm.Provider. It delegates to the inner provider, accumulates
-// the streamed events to reconstruct the response, and records the full exchange.
+// Stream은 llm.Provider입니다. 안쪽 프로바이더에 맡기고, 흘러온 이벤트를
+// 모아 응답을 다시 만든 뒤, 주고받은 전체를 기록합니다.
 //
-// The session identifier (e.g. "exp1-worker-i3") is carried on ctx by the norma
-// harness via transcript.WithSessionID; reading it per-call is race-free even when
-// planner and multiple workers share one Recorder instance.
+// 세션 식별자(예: "exp1-worker-i3")는 norma 하네스가 transcript.WithSessionID로
+// ctx에 실어 옵니다. 호출마다 읽으므로 플래너와 여러 워커가 Recorder 하나를
+// 나눠 써도 경합이 없습니다.
 func (r *Recorder) Stream(ctx context.Context, req llm.CompletionRequest) iter.Seq2[llm.StreamEvent, error] {
-	// Body recording (the heavy debug trace: full request/response) is gated by the
-	// llm_record setting. Lightweight usage metering always runs — it powers token
-	// stats and must be complete even for interrupted/failed runs, so it is NOT
-	// gated. Only body serialization + response accumulation are skipped when off.
+	// 본문 기록(무거운 디버그 추적, 요청·응답 전문)은 llm_record 설정으로 엽니다.
+	// 가벼운 사용량 계량은 항상 돕니다. 토큰 통계의 근거이고, 끊기거나 실패한
+	// 실행까지 빠지면 안 되므로 이 스위치에 넣지 않습니다. 꺼져 있을 때 건너뛰는
+	// 것은 본문 직렬화와 응답 누적뿐입니다.
 	recordBodies := r.enabled == nil || r.enabled()
 	start := time.Now()
 	session := transcript.SessionIDFrom(ctx)
@@ -132,16 +132,16 @@ func (r *Recorder) Stream(ctx context.Context, req llm.CompletionRequest) iter.S
 	expID := db.ParseExpID(parsedID)
 	taskID := TaskIDFrom(ctx)
 	if taskID == "" {
-		// Backward compatibility for non-task callers. For task calls, the task
-		// runtime always supplies the registry id explicitly.
+		// 작업이 아닌 호출자의 하위 호환입니다. 작업 호출은 런타임이
+		// 등록 번호를 항상 명시합니다.
 		taskID = parsedID
 	}
 
-	// Serialize the request only when storing bodies (this is the expensive part).
-	// Alongside it, attach a Capture so the HTTP transport can hand back the
-	// untouched wire bodies — the normalized view below cannot reconstruct them
-	// (tool schemas are dropped, tool_use blocks never reach this layer, and the
-	// SSE framing is already decoded). See capture.go.
+	// 본문을 저장할 때만 요청을 직렬화합니다(비싼 부분입니다).
+	// 함께 Capture를 붙여, HTTP 전송이 손을 대지 않은 전송 원문을 돌려주게 합니다.
+	// 아래 정규화 보기에서는 다시 만들 수 없습니다. 도구 스키마는 빠지고,
+	// tool_use 블록은 이 층에 오지 않으며, SSE 프레임은 이미 풀려 있습니다.
+	// capture.go를 보세요.
 	reqBody := ""
 	var capt *Capture
 	if recordBodies {
@@ -168,9 +168,9 @@ func (r *Recorder) Stream(ctx context.Context, req llm.CompletionRequest) iter.S
 			if err != nil {
 				status = "error"
 			}
-			// Lightweight metering row — always written.
+			// 가벼운 계량 행은 항상 씁니다.
 			r.recordUsage(taskID, expID, worker, usage, int(time.Since(start).Milliseconds()), status)
-			// Heavy trace row — only when body recording is on.
+			// 무거운 추적 행은 본문 기록이 켜져 있을 때만 씁니다.
 			if recordBodies {
 				r.record(req, session, taskID, worker, reqBody, capt, start, textBuf.String(), thinkingBuf.String(), usage, stopReason, err)
 			}
@@ -186,12 +186,11 @@ func (r *Recorder) Stream(ctx context.Context, req llm.CompletionRequest) iter.S
 				}
 				return
 			}
-			// Always track usage (cheap); accumulate text/thinking only for bodies.
-			// Anthropic (and the other providers) split token usage across events:
-			// message_start carries ONLY the input side (input + cache), message_delta
-			// ONLY the output. They must be FOLDED with Add — overwriting on delta
-			// would zero out the input already counted at start (mirrors the SDK's own
-			// llm.Accumulator; see norma/llm/accumulate.go).
+			// 사용량은 항상 셉니다(가볍습니다). 글과 생각은 본문 기록일 때만 모읍니다.
+			// Anthropic을 비롯한 프로바이더는 토큰 사용량을 이벤트에 나눠 보냅니다.
+			// message_start는 입력 쪽(입력과 캐시)만, message_delta는 출력만 담습니다.
+			// Add로 접어야 합니다. delta에서 덮어쓰면 시작 때 센 입력이 0이 됩니다
+			// (SDK의 llm.Accumulator와 같고, norma/llm/accumulate.go를 보세요).
 			switch ev.Type {
 			case llm.SETextDelta:
 				if recordBodies {
@@ -214,13 +213,13 @@ func (r *Recorder) Stream(ctx context.Context, req llm.CompletionRequest) iter.S
 			}
 		}
 
-		// Stream completed normally.
+		// 스트림이 정상으로 끝났습니다.
 		finish(streamErr)
 	}
 }
 
-// Complete implements the atomic completion path while preserving the same
-// usage metering, normalized body recording and raw wire capture as Stream.
+// Complete는 한 번에 끝나는 완료 경로입니다. Stream과 같이 사용량 계량,
+// 정규화 본문 기록, 전송 원문 캡처를 유지합니다.
 func (r *Recorder) Complete(ctx context.Context, req llm.CompletionRequest) (llm.Message, string, llm.Usage, error) {
 	recordBodies := r.enabled == nil || r.enabled()
 	start := time.Now()
@@ -264,8 +263,8 @@ func thinkingText(msg llm.Message) string {
 	return b.String()
 }
 
-// recordUsage appends one lightweight metering row to llm_usage (no bodies). Skips
-// zero-token calls with no model, which carry nothing worth metering.
+// recordUsage는 llm_usage에 가벼운 계량 행 하나를 붙입니다(본문 없음).
+// 모델도 없고 토큰도 0인 호출은 잴 내용이 없어 건너뜁니다.
 func (r *Recorder) recordUsage(taskID string, expID int64, worker string, usage llm.Usage, latencyMs int, status string) {
 	if r.pg == nil {
 		return
@@ -292,9 +291,9 @@ func (r *Recorder) recordUsage(taskID string, expID int64, worker string, usage 
 	}
 }
 
-// record persists one LLM call to PostgreSQL before the provider stream returns.
-// Keeping the write inside the owning task operation means task deletion can
-// drain calls and then remove records without a late async insert recreating one.
+// record는 프로바이더 스트림이 돌아가기 전에 LLM 호출 하나를 PostgreSQL에 남깁니다.
+// 쓰기를 소유 작업 연산 안에 두면, 작업을 지울 때 호출을 비운 뒤 기록을 지워도
+// 늦은 비동기 insert가 행을 다시 만들지 않습니다.
 func (r *Recorder) record(req llm.CompletionRequest, session, taskID, worker, reqBody string, capt *Capture, start time.Time, text, thinking string, usage llm.Usage, stopReason string, streamErr error) {
 	latency := int(time.Since(start).Milliseconds())
 	status := "ok"
@@ -304,7 +303,7 @@ func (r *Recorder) record(req llm.CompletionRequest, session, taskID, worker, re
 		errMsg = streamErr.Error()
 	}
 
-	// Build response body JSON.
+	// 응답 본문 JSON을 만듭니다.
 	resp := map[string]any{
 		"text":        text,
 		"stop_reason": stopReason,
@@ -322,7 +321,7 @@ func (r *Recorder) record(req llm.CompletionRequest, session, taskID, worker, re
 
 	model := ""
 	if len(req.System) > 0 {
-		// model is not in CompletionRequest; use the configured model name
+		// 모델은 CompletionRequest에 없습니다. 설정된 모델 이름을 씁니다
 	}
 	model = r.model
 
@@ -341,9 +340,9 @@ func (r *Recorder) record(req llm.CompletionRequest, session, taskID, worker, re
 		Error:        errMsg,
 		RequestBody:  reqBody,
 		ResponseBody: string(respBody),
-		// Raw wire bodies; empty when the transport did not fill the Capture
-		// (e.g. a provider dialing through a client without the capture hook, or
-		// a call that failed before any HTTP request went out).
+		// 전송 원문입니다. 전송이 Capture를 채우지 않으면 비어 있습니다
+		// (캡처 갈고리 없는 클라이언트로 접속한 프로바이더, 또는
+		// HTTP 요청이 나가기 전에 실패한 호출).
 		RawRequest:  capt.RawRequest(),
 		RawResponse: capt.RawResponse(),
 	}
@@ -353,7 +352,7 @@ func (r *Recorder) record(req llm.CompletionRequest, session, taskID, worker, re
 	}
 }
 
-// serializeRequest builds a JSON representation of the completion request.
+// serializeRequest는 완료 요청의 JSON 표현을 만듭니다.
 func (r *Recorder) serializeRequest(req llm.CompletionRequest) string {
 	m := map[string]any{
 		"system":     req.System,
@@ -372,7 +371,7 @@ func (r *Recorder) serializeRequest(req llm.CompletionRequest) string {
 		m["thinking"] = map[string]string{"type": effType, "effort": r.reasoningEffort}
 	}
 	if len(req.Tools) > 0 {
-		// Store tool names only (full schemas are huge).
+		// 도구 이름만 저장합니다(스키마 전문은 큽니다).
 		names := make([]string, len(req.Tools))
 		for i, t := range req.Tools {
 			names[i] = t.Name

@@ -14,26 +14,25 @@ import (
 	"github.com/Autumn-27/norma/llm"
 )
 
-// captureRun drives one agent turn-to-completion over Session.Prompt and emits a
-// coalesced ActivityRecord per execution step (tool_use / tool_result / text /
-// thinking / result). It is shared by every LLM agent in the system (worker,
-// planner, …) so their execution is visible instead of a black box — the old
-// agentcore.Run discarded every event. The emitted records carry only
-// Kind/Tool/ToolUseID/IsError/Summary/Detail; the caller's emit fills in
-// IntentID/Worker. Returns the final assistant text + terminal error.
+// captureRun 은 Session.Prompt 로 에이전트 한 턴을 끝까지 돌리고, 실행 단계마다
+// 모은 활동 기록(tool_use / tool_result / text / thinking / result)을 냅니다.
+// 시스템의 모든 LLM 에이전트(워커, 플래너 등)가 같이 써서, 실행이 검은 상자가 되지 않습니다.
+// 예전 agentcore.Run 은 이벤트를 모두 버렸습니다. 나가는 기록에는
+// Kind/Tool/ToolUseID/IsError/Summary/Detail 만 있고, 호출자의 emit 이
+// IntentID/Worker 를 채웁니다. 마지막 도우미 글과 종료 오류를 돌려줍니다.
 //
-// KindText/KindThinking arrive as streaming deltas (one event per fragment); a
-// contiguous run is coalesced into a single record so the trace shows whole
-// messages, not dozens of fragments.
+// KindText/KindThinking 은 스트리밍 조각(조각마다 이벤트 하나)으로 옵니다.
+// 이어진 구간은 기록 하나로 모아, 활동 기록에 조각 수십 개가 아니라 통째 문장이 보이게 합니다.
+// 초보: 워커와 플래너가 도구를 쓰는 과정이 UI 활동 기록에 여기서 올라갑니다.
 func captureRun(ctx context.Context, opts agentcore.Options, input string, emit func(db.Activity)) (string, harness.TerminalReason, error) {
 	s := agentcore.NewSession(opts)
-	defer s.Close() // release the session's background-task manager (temp dir + processes)
+	defer s.Close() // 세션의 백그라운드 작업 관리자(임시 디렉터리와 프로세스)를 놓습니다
 	return captureRunSession(ctx, s, input, emit)
 }
 
-// captureRunSession is captureRun over an existing session, so a caller can run
-// multiple prompts on the SAME conversation (e.g. a settlement round that reuses
-// the worker's accumulated context after the main run hit max_turns).
+// captureRunSession 은 이미 있는 세션 위의 captureRun 입니다. 호출자가 같은 대화에
+// 프롬프트를 여러 번 돌릴 수 있습니다(예: 본 실행이 max_turns 에 닿은 뒤, 워커가 쌓은
+// 맥락을 그대로 쓰는 마무리 라운드).
 func captureRunSession(ctx context.Context, s *agentcore.Session, input string, emit func(db.Activity)) (string, harness.TerminalReason, error) {
 	ctx, auditTrace := intercept.WithTrace(ctx, input, approvalHistory(s.Messages()))
 	defer auditTrace.Finish()
@@ -46,7 +45,7 @@ func captureRunSession(ctx context.Context, s *agentcore.Session, input string, 
 			emit(r)
 		}
 	}
-	toolNames := map[string]string{} // tool_use id -> name, to label results
+	toolNames := map[string]string{} // tool_use id → 이름. 결과에 이름을 붙입니다
 
 	var tbuf strings.Builder
 	var tkind string
@@ -80,7 +79,7 @@ func captureRunSession(ctx context.Context, s *agentcore.Session, input string, 
 	for ev, err := range s.Prompt(ctx, input) {
 		if err != nil {
 			flush()
-			if ctx.Err() != nil { // engine/user cancellation, not a provider failure
+			if ctx.Err() != nil { // 엔진이나 사용자의 취소입니다. 공급자 실패가 아닙니다
 				sum, detail := terminalText(ctx, &harness.Terminal{Reason: reason, Err: ctx.Err()}, lastTool)
 				rec(activityWithUsage(db.Activity{Kind: "result", Summary: firstLine(sum, 400), Detail: detail}, lastUsage))
 				return finalText, reason, ctx.Err()
@@ -115,10 +114,10 @@ func captureRunSession(ctx context.Context, s *agentcore.Session, input string, 
 		case harness.KindThinking:
 			addDelta("thinking", ev.Text)
 		case harness.KindUsage:
-			// live cumulative token usage (per model turn). Emitted as a non-rendered
-			// "usage" activity carrying only the token fields; the UI uses the latest
-			// one for a running session's live token count. Don't flush() here — the
-			// buffered final-answer text must stay for the KindResult de-dup.
+			// 살아 있는 누적 token 사용량(모델 턴마다)입니다. 화면에 그리지 않는
+			// "usage" 활동으로 나가고 token 필드만 담습니다. UI 는 돌고 있는 세션의
+			// 실시간 token 수에 가장 최근 것을 씁니다. 여기서 flush() 하지 않습니다.
+			// 버퍼에 있는 마지막 답 글은 KindResult 중복 제거에 남아 있어야 합니다.
 			if ev.Usage != nil {
 				u := *ev.Usage
 				lastUsage = &u
@@ -133,18 +132,18 @@ func captureRunSession(ctx context.Context, s *agentcore.Session, input string, 
 				}
 				finalText = ev.Terminal.Text
 				reason = ev.Terminal.Reason
-				// the buffered tail text usually equals Terminal.Text (final answer);
-				// drop it to avoid a duplicate record, the result row carries it.
+				// 버퍼의 꼬리 글은 보통 Terminal.Text(마지막 답)와 같습니다.
+				// 기록이 두 번 나가지 않게 버립니다. 결과 행이 그 글을 담습니다.
 				if tkind == "text" && strings.TrimSpace(tbuf.String()) == strings.TrimSpace(ev.Terminal.Text) {
 					tbuf.Reset()
 					tkind = ""
 				}
-				flush() // flush any trailing thinking / non-final text
+				flush() // 뒤에 남은 생각이나, 마지막 답이 아닌 글을 비웁니다
 				sum, detail := ev.Terminal.Text, ev.Terminal.Text
 				if sum == "" || ev.Terminal.Reason == harness.ReasonAbortedTools || ev.Terminal.Reason == harness.ReasonAbortedStreaming {
 					sum, detail = terminalText(ctx, ev.Terminal, lastTool)
 				}
-				u := ev.Terminal.Usage // cumulative token usage for this session
+				u := ev.Terminal.Usage // 이 세션의 누적 token 사용량
 				rec(db.Activity{Kind: "result", IsError: ev.Terminal.Err != nil,
 					Summary: firstLine(sum, 400), Detail: detail,
 					InputTokens: &u.InputTokens, OutputTokens: &u.OutputTokens,
@@ -155,7 +154,7 @@ func captureRunSession(ctx context.Context, s *agentcore.Session, input string, 
 			}
 		}
 	}
-	flush() // safety: any unflushed text if the stream ended without KindResult
+	flush() // 안전장치: KindResult 없이 스트림이 끝나면 아직 안 비운 글을 비웁니다
 	return finalText, reason, rerr
 }
 
@@ -171,7 +170,7 @@ func activityWithUsage(activity db.Activity, usage *llm.Usage) db.Activity {
 	return activity
 }
 
-// blocksText concatenates the text of a tool-result's content blocks.
+// blocksText 는 도구 결과의 content 블록 글을 이어 붙입니다.
 func blocksText(blocks []llm.ContentBlock) string {
 	var b strings.Builder
 	for _, bl := range blocks {
@@ -185,7 +184,7 @@ func blocksText(blocks []llm.ContentBlock) string {
 	return b.String()
 }
 
-// firstLine returns a single-line, rune-capped preview for the summary column.
+// firstLine 은 요약 칸에 넣을, 한 줄이고 글자 수 상한이 있는 미리보기를 돌려줍니다.
 func firstLine(s string, max int) string {
 	s = strings.TrimSpace(s)
 	if before, _, found := strings.Cut(s, "\n"); found {
@@ -197,9 +196,10 @@ func firstLine(s string, max int) string {
 	return s
 }
 
-// Preserve the recorded session's visible messages, excluding thinking blocks.
-// This is audit context; the judge receives only bounded, paired execution
-// evidence selected from it, never assistant prose or thinking blocks.
+// 기록된 세션에서 보이는 메시지를 남깁니다. 생각 블록은 뺍니다.
+// 이것은 감사 맥락입니다. 판정자는 여기서 고른, 짝이 맞는 실행 증거만 받고
+// 도우미의 산문이나 생각 블록은 받지 않습니다.
+// 초보: 가로채기 판정이 워커 실행의 도구 호출만 보게, 활동 기록을 여기서 고릅니다.
 func approvalHistory(messages []llm.Message) []db.InterceptContextEntry {
 	var entries []db.InterceptContextEntry
 	for _, message := range messages {

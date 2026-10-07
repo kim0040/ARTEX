@@ -31,7 +31,7 @@ func (e *Engine) isSettling(taskID string) bool {
 	return b
 }
 
-// markSettling flips settling on; returns true only for the first caller.
+// markSettling은 settling을 켭니다. 처음 호출한 쪽만 true입니다.
 func (e *Engine) markSettling(taskID string) bool {
 	_, loaded := e.settling.LoadOrStore(taskID, true)
 	return !loaded
@@ -44,9 +44,9 @@ func (e *Engine) inflightCounter(taskID string) *int64 {
 	return v.(*int64)
 }
 
-// beginTaskOperation atomically registers a task-owned operation unless deletion
-// has already installed its barrier. The delete handler can therefore wait for
-// inflight==0 without a check-then-start race recreating files after cleanup.
+// beginTaskOperation은 그 작업에 속한 조작을 원자적으로 등록합니다. 삭제가
+// 이미 장벽을 세웠으면 등록하지 않습니다. 그래서 삭제 처리기는
+// inflight가 0이 되길 기다릴 수 있고, 확인 뒤에 시작이 끼어 정리 후 파일을 다시 만들지 못합니다.
 func (e *Engine) beginTaskOperation(taskID string) bool {
 	e.deleteMu.RLock()
 	defer e.deleteMu.RUnlock()
@@ -62,11 +62,11 @@ func (e *Engine) inflightCount(taskID string) int64 {
 	return atomic.LoadInt64(e.inflightCounter(taskID))
 }
 
-// ---------- deadline ----------
+// ---------- 마감 ----------
 
-// taskDeadline returns the task's absolute deadline (unix). Prefers the in-process
-// map (stamped this session); falls back to the DB-loaded value (restart), seeding
-// the map. 0 = no timeout / not yet stamped.
+// taskDeadline은 작업의 절대 마감(유닉스)을 돌려줍니다. 이 프로세스의
+// 맵을 우선합니다(이번 세션에 찍힘). 없으면 DB에 읽어 둔 값(재시작)으로 가고,
+// 맵에 다시 넣습니다. 0은 시간 제한 없음, 또는 아직 안 찍힘입니다.
 func (e *Engine) taskDeadline(t *Task) int64 {
 	if v, ok := e.deadline.Load(t.ID); ok {
 		return v.(int64)
@@ -79,11 +79,11 @@ func (e *Engine) taskDeadline(t *Task) int64 {
 	return 0
 }
 
-// resetTimeoutRevival clears only the per-run timeout state after PostgreSQL has
-// atomically committed timeout -> running and reset first_run_at/deadline_at. The
-// configured TimeoutSeconds remains on Task, so the next real Planner/Worker run
-// stamps a fresh full budget. coordStarted is reset because the coordinator that
-// produced the timeout has already completed (or is in its final return path).
+// resetTimeoutRevival은 PostgreSQL이 timeout을 running으로 확정하고
+// first_run_at/deadline_at을 지운 뒤에, 이번 실행의 시간 초과 상태만 지웁니다.
+// 설정한 TimeoutSeconds는 Task에 남으므로, 다음 진짜 플래너/워커 실행이
+// 예산 전체를 새로 찍습니다. coordStarted도 지웁니다. 시간 초과를 만든
+// 조정자는 이미 끝났거나, 돌아오는 마지막 길에 있기 때문입니다.
 func (e *Engine) resetTimeoutRevival(taskID string) {
 	e.settling.Delete(taskID)
 	e.deadline.Delete(taskID)
@@ -91,8 +91,8 @@ func (e *Engine) resetTimeoutRevival(taskID string) {
 	e.coordStarted.Delete(taskID)
 }
 
-// stampFirstRun records first_run_at + deadline_at on the FIRST real run (LLM ready)
-// of a timeout task, once per process. No-op when the task has no timeout.
+// stampFirstRun은 시간 제한 작업의 첫 진짜 실행(LLM 준비됨)에
+// first_run_at과 deadline_at을 남깁니다. 프로세스마다 한 번. 시간 제한이 없으면 아무 일도 안 합니다.
 func (e *Engine) stampFirstRun(t *Task) {
 	if t.TimeoutSeconds <= 0 {
 		return
@@ -112,22 +112,23 @@ func (e *Engine) stampFirstRun(t *Task) {
 	}
 }
 
-// clockCtx layers the task's TaskClock (absolute deadline) onto a run's context so
-// worker/planner can clamp their wall-clock budget and pick per-run vs task-timeout
-// wrap-up words. final marks the coordinator-driven terminal planner round.
+// clockCtx는 실행 컨텍스트 위에 작업의 TaskClock(절대 마감)을 얹습니다.
+// 워커/플래너가 벽시계 예산을 맞추고, 이번 실행용 말과 작업 시간 초과용
+// 마무리 말을 고르게 합니다. final은 조정자가 시키는 마지막 플래너 라운드입니다.
 func (e *Engine) clockCtx(base context.Context, t *Task, final bool) context.Context {
 	dl := e.taskDeadline(t)
 	if dl <= 0 && !final {
-		return base // no timeout → unchanged behavior
+		return base // 시간 제한이 없으면 동작을 바꾸지 않습니다.
 	}
 	return agent.WithTaskClock(base, agent.TaskClock{DeadlineUnix: dl, Final: final})
 }
 
 // ---------- 조정기 ----------
 
-// startDeadlineCoordinator launches the per-task deadline timer once (idempotent).
-// Called from Run() and from the restart reload path, so non-active timeout tasks
-// still get settled after their deadline even without live planner/worker loops.
+// startDeadlineCoordinator는 작업마다 마감 타이머를 한 번만 띄웁니다(여러 번 해도 한 번).
+// Run()과 재시작 복구 경로에서 부릅니다. 그래서 지금 돌지 않는 시간 제한 작업도
+// 플래너/워커 루프가 없어도 마감 뒤에 정리됩니다.
+// 초보용: 엔진이 작업의 시간 제한을 세고, 끝나면 마무리를 시작하게 합니다.
 func (e *Engine) startDeadlineCoordinator(ctx context.Context, t *Task) {
 	if t == nil || t.TimeoutSeconds <= 0 {
 		return
@@ -146,8 +147,8 @@ func (e *Engine) startDeadlineCoordinator(ctx context.Context, t *Task) {
 	runTaskRoutine(rt, func(loopCtx context.Context) { e.deadlineCoordinator(loopCtx, t) })
 }
 
-// deadlineCoordinator waits until the task's absolute deadline, then runs the settle
-// sequence. Absolute wall-clock: it keeps counting through pauses.
+// deadlineCoordinator는 작업의 절대 마감까지 기다린 뒤 정리
+// 절차를 돌립니다. 절대 벽시계라서, 일시정지 중에도 시간은 계속 갑니다.
 func (e *Engine) deadlineCoordinator(ctx context.Context, t *Task) {
 	for {
 		select {
@@ -156,11 +157,11 @@ func (e *Engine) deadlineCoordinator(ctx context.Context, t *Task) {
 		default:
 		}
 		if isTerminalStatus(e.m.TaskStatus(t.ID)) {
-			return // already finished (goals met / failed) — nothing to time out
+			return // 이미 끝났습니다(목표 달성 또는 실패). 시간 초과로 돌릴 일이 없습니다.
 		}
 		dl := e.taskDeadline(t)
 		if dl <= 0 {
-			if sleepCtx(ctx, deadlinePollInterval) { // not yet stamped (task hasn't really run)
+			if sleepCtx(ctx, deadlinePollInterval) { // 아직 시각을 안 찍었습니다(작업이 진짜로 돌지 않음).
 				return
 			}
 			continue
@@ -180,7 +181,8 @@ func (e *Engine) deadlineCoordinator(ctx context.Context, t *Task) {
 	}
 }
 
-// settleTask runs the ordered settle sequence once (§4 steps ①–⑥).
+// settleTask는 정해진 정리 절차를 한 번 돌립니다(§4의 ①–⑥).
+// 초보용: 작업 시간이 다 되면 엔진이 이 순서로 마무리를 한 번만 합니다.
 func (e *Engine) settleTask(ctx context.Context, t *Task) {
 	if !e.markSettling(t.ID) {
 		return
@@ -226,9 +228,9 @@ func (e *Engine) settleTask(ctx context.Context, t *Task) {
 	}
 }
 
-// runFinalPlannerRound drives exactly ONE terminal planner round with the
-// task-timeout planner words (final goal judgment; no new intents). Waits for the
-// LLM to be ready (bounded by ctx) so a completable task isn't mis-judged timeout.
+// runFinalPlannerRound는 마지막 플래너 라운드를 정확히 한 번 돌립니다.
+// 작업 시간 초과용 플래너 말을 씁니다(마지막 목표 판정, 새 의도는 없음). LLM이
+// 준비될 때까지 기다립니다(ctx 한도 안). 끝낼 수 있는 작업을 시간 초과로 잘못 보지 않으려고요.
 func (e *Engine) runFinalPlannerRound(ctx context.Context, t *Task) (met bool) {
 	if e.IsDeleting(t.ID) {
 		return false

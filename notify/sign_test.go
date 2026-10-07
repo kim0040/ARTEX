@@ -9,11 +9,11 @@ import (
 // 서명 기준값은 OpenSSL이 따로 계산한 것입니다. 이 패키지 구현으로 만들면
 // 「코드가 안 바뀌었다」만 증명하고 「알고리즘이 맞다」는 증명하지 못합니다.
 //
-//	TS=1700000000000, SECRET=SECtest123
+//	시각 TS=1700000000000, 비밀 SECRET=SECtest123
 //	딩톡: printf '%s\n%s' "$TS" "$SECRET" | openssl dgst -sha256 -hmac "$SECRET" -binary | openssl base64 -A
-//	      -> w3RMHXzixTMdzr8OHJUmVLS4IoPJVdu+Ut1LE48MePE=
+//	      딩톡 기대값 -> w3RMHXzixTMdzr8OHJUmVLS4IoPJVdu+Ut1LE48MePE=
 //	페이슈: printf '' | openssl dgst -sha256 -hmac "$(printf '%s\n%s' "$TS" "$SECRET")" -binary | openssl base64 -A
-//	      -> Hd4xFWQU6R6ad4nzy4ETIznzlqebqH7xcTFVmONTudo=
+//	      페이슈 기대값 -> Hd4xFWQU6R6ad4nzy4ETIznzlqebqH7xcTFVmONTudo=
 const (
 	signTestTSMillis = int64(1700000000000)
 	signTestSecret   = "SECtest123"

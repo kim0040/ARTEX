@@ -10,7 +10,7 @@ import (
 
 const IntentBlockedLLMQuota = "llm_quota_exhausted"
 
-// TaskLLMProfile is one ordered entry in a task's explicit failover chain.
+// TaskLLMProfile은 작업의 명시적 장애 조치 사슬에서 순서가 있는 항목 하나다.
 type TaskLLMProfile struct {
 	ProfileID   int64      `json:"profile_id"`
 	Position    int        `json:"position"`
@@ -19,7 +19,7 @@ type TaskLLMProfile struct {
 	ExhaustedAt *time.Time `json:"exhausted_at,omitempty"`
 }
 
-// TaskSource identifies one directly related task and its exploration.
+// TaskSource는 직접 연결된 작업 하나와 그 탐색을 가리킨다.
 type TaskSource struct {
 	TaskID        int64
 	ExplorationID int64
@@ -28,16 +28,16 @@ type TaskSource struct {
 	Status        string
 }
 
-// TaskLLMTransition reports the shared task-level result of marking one profile
-// quota-exhausted. NextProfileID is nil when the explicit chain is exhausted.
+// TaskLLMTransition은 프로파일 하나를 할당량 소진으로 표시한, 작업 단위 공유 결과다.
+// 명시적 사슬이 끝나면 NextProfileID는 nil이다.
 type TaskLLMTransition struct {
 	PreviousProfileID int64
 	NextProfileID     *int64
 	ChainExhausted    bool
 	Advanced          bool
-	// Stale means the chain was replaced after the failing call selected its
-	// provider. The caller may retry a pre-stream request against the new chain,
-	// but must not report or persist a transition for this result.
+	// Stale는 실패한 호출이 provider를 고른 뒤에 사슬이 바뀌었다는 뜻이다.
+	// 호출자는 새 사슬로 스트림 전 요청을 다시 시도할 수 있다.
+	// 다만 이 결과의 전환을 보고하거나 저장하면 안 된다.
 	Stale bool
 }
 
@@ -45,9 +45,9 @@ func (d *DB) hydrateTaskContext(t *Task) error {
 	if t == nil {
 		return nil
 	}
-	// A nil cursor on a non-empty chain is a persisted end-of-chain marker. Do not
-	// repair it from an earlier ready entry: the user may have manually selected a
-	// profile in the middle and legitimately exhausted every candidate after it.
+	// 사슬이 비어 있지 않은데 커서가 nil이면, 사슬 끝을 저장해 둔 표시다.
+	// 앞의 준비된 항목으로 고치지 않는다. 사용자가 중간 프로파일을 직접 고르고
+	// 그 뒤 후보를 모두 소진했을 수 있다.
 	legacyProfileID, activeProfileID, revision, chain, err := d.taskLLMContext(t.ID)
 	if err != nil {
 		return err
@@ -112,9 +112,8 @@ type taskBatchContext struct {
 	companyIDs      []int64
 }
 
-// hydrateTasksContext loads every task's LLM chain, source tasks, and company
-// scopes with three bulk queries. ListTasks used to issue these queries once per
-// task, making startup and task-list hydration grow as 3N+1 database round trips.
+// hydrateTasksContext는 모든 작업의 LLM 사슬, 원본 작업, 기업 범위를 조회 세 번으로 읽는다.
+// ListTasks는 예전에는 작업마다 이 조회를 해서, 시작과 작업 목록 채우기가 3N+1번 왕복으로 늘었다.
 func (d *DB) hydrateTasksContext(tasks []*Task) error {
 	if len(tasks) == 0 {
 		return nil
@@ -253,10 +252,9 @@ ORDER BY task_id, id`, ids)
 	return nil
 }
 
-// taskLLMContext reads the compatibility profile, current cursor, and ordered
-// chain in one statement. Runtime chain edits commit atomically, and one SQL
-// statement gives hydration one matching snapshot instead of a transient mix of
-// an old task cursor and a newly replaced chain (or vice versa).
+// taskLLMContext는 호환 프로파일, 현재 커서, 순서 있는 사슬을 한 문으로 읽는다.
+// 실행 중 사슬 수정은 한 번에 커밋된다. SQL 한 문이라 채우기가 맞는 스냅샷 하나를 본다.
+// 옛 작업 커서와 새로 바뀐 사슬이 잠깐 섞이지 않는다.
 func (d *DB) taskLLMContext(taskID int64) (*int64, *int64, int64, []TaskLLMProfile, error) {
 	rows, err := d.Query(`
 SELECT t.llm_profile_id, t.active_llm_profile_id, t.llm_chain_revision,
@@ -337,8 +335,8 @@ func (d *DB) TaskSourceIDs(taskID int64) ([]int64, error) {
 	return out, rows.Err()
 }
 
-// TaskCompanyIDs returns the companies whose asset scopes are available to the
-// task. The task_scope rows remain the single source of truth.
+// TaskCompanyIDs는 이 작업이 쓸 수 있는 자산 범위를 가진 기업을 돌려준다.
+// 기준은 여전히 task_scope 행이다.
 func (d *DB) TaskCompanyIDs(taskID int64) ([]int64, error) {
 	rows, err := d.Query(`
 SELECT company_id FROM task_scope
@@ -410,9 +408,9 @@ func (d *DB) ReplaceTaskLLMProfiles(taskID int64, profileIDs []int64, activeProf
 		return err
 	}
 	defer tx.Rollback()
-	// Keep the task -> profile lock order shared by all task LLM mutations and
-	// DeleteProfile. Inserts below may take KEY SHARE locks on llm_profiles for
-	// their foreign keys, so the task row must be locked before any of them.
+	// 작업 → 프로파일 잠금 순서를 모든 작업 LLM 변경과 DeleteProfile이 같이 쓴다.
+	// 아래 INSERT는 외래 키 때문에 llm_profiles에 KEY SHARE 잠금을 잡을 수 있다.
+	// 그래서 그 전에 작업 행을 잠가야 한다.
 	var lockedID int64
 	if err := tx.QueryRow(`SELECT id FROM tasks WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`, taskID).Scan(&lockedID); err != nil {
 		if err == sql.ErrNoRows {
@@ -452,15 +450,15 @@ WHERE id=$1`, taskID, active); err != nil {
 	return tx.Commit()
 }
 
-// MarkTaskLLMProfileQuotaExhausted advances the shared task cursor once. A late
-// in-flight error from an older profile records that entry as exhausted but does
-// not advance past the profile another call already selected.
+// MarkTaskLLMProfileQuotaExhausted는 공유 작업 커서를 한 번 앞으로 보낸다.
+// 더 옛 프로파일의 늦은 오류는 그 항목만 소진으로 적고,
+// 다른 호출이 이미 고른 프로파일 너머로는 커서를 밀지 않는다.
 func (d *DB) MarkTaskLLMProfileQuotaExhausted(taskID, profileID int64, reason string) (TaskLLMTransition, error) {
 	return d.markTaskLLMProfileQuotaExhausted(taskID, profileID, 0, false, reason)
 }
 
-// MarkTaskLLMProfileQuotaExhaustedAtRevision applies a provider failure only
-// when it belongs to the chain snapshot used to start that call.
+// MarkTaskLLMProfileQuotaExhaustedAtRevision은 그 호출을 시작할 때 본
+// 사슬 스냅샷에 속할 때만 provider 실패를 적용한다.
 func (d *DB) MarkTaskLLMProfileQuotaExhaustedAtRevision(taskID, profileID, revision int64, reason string) (TaskLLMTransition, error) {
 	return d.markTaskLLMProfileQuotaExhausted(taskID, profileID, revision, true, reason)
 }
@@ -491,15 +489,14 @@ func (d *DB) markTaskLLMProfileQuotaExhausted(taskID, profileID, revision int64,
 	if err := tx.QueryRow(`SELECT position, status FROM task_llm_profiles WHERE task_id=$1 AND profile_id=$2`, taskID, profileID).
 		Scan(&position, &entryStatus); err != nil {
 		if err == sql.ErrNoRows {
-			// The chain was edited while this request was in flight. Its provider
-			// error remains valid for the caller, but it must not mutate the new chain.
+			// 이 요청이 나가는 동안 사슬이 고쳐졌다. provider
+			// 오류는 호출자에게 여전히 유효하지만, 새 사슬을 고치면 안 된다.
 			return out, tx.Commit()
 		}
 		return out, err
 	}
-	// Once the cursor reached the end, late failures must be idempotent. This also
-	// prevents an older in-flight request from reviving a ready entry before a
-	// manually selected starting position.
+	// 커서가 끝에 닿은 뒤의 늦은 실패는 같은 결과를 다시 내야 한다.
+	// 더 옛 진행 중 요청이, 사람이 고른 시작 위치 앞의 준비된 항목을 되살리지 못하게 한다.
 	if !active.Valid {
 		out.ChainExhausted = true
 		return out, tx.Commit()

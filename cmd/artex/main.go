@@ -26,8 +26,8 @@ import (
 	"github.com/Autumn-27/artex/server"
 )
 
-// version is the build version, injected at release time via
-// -ldflags "-X main.version=<tag>". Defaults to "dev" for local builds.
+// version 은 빌드 버전입니다. 릴리스 때 -ldflags "-X main.version=<tag>" 로 넣습니다.
+// 로컬 빌드의 기본값은 "dev" 입니다.
 var version = "dev"
 
 const banner = `
@@ -38,7 +38,7 @@ const banner = `
 /_/   \_\_| \_\|_| |_____/_/\_\
 `
 
-// printBanner writes the startup banner + version/runtime info to stdout.
+// printBanner 는 시작 배너와 버전·런타임 정보를 표준 출력에 찍습니다.
 func printBanner(addr string) {
 	fmt.Print(banner)
 	fmt.Println("  AI 자율 모의침투 시스템")
@@ -46,10 +46,10 @@ func printBanner(addr string) {
 		version, runtime.GOOS, runtime.GOARCH, runtime.Version(), addr)
 }
 
-// main only maps run's result onto the process exit code. The exit code is part
-// of the update protocol — the supervising start script reads it to decide
-// whether to relaunch us (see selfupdate.ExitRestart) — so the body has to live
-// in a function that can *return* rather than os.Exit past its own defers.
+// main 은 run 의 결과를 프로세스 종료 코드로만 바꿉니다. 종료 코드는 업데이트
+// 약속의 일부입니다. start 스크립트가 그 값을 보고 다시 띄울지 정합니다
+// (selfupdate.ExitRestart). 그래서 본문은 os.Exit 로 defer 를 건너뛰지 않고
+// return 할 수 있는 함수에 둡니다.
 func main() {
 	os.Exit(run())
 }
@@ -62,28 +62,26 @@ func run() int {
 	)
 	flag.Parse()
 
-	// hand the build version to the server package so GET /api/health can report it
-	// to the frontend top bar.
+	// 빌드 버전을 server 패키지에 넘겨, GET /api/health 가 화면 위쪽에 보여 주게 합니다.
 	server.BuildVersion = version
 
 	printBanner(*addr)
 
-	// capture backend logs into the in-memory sink (still to stderr) so the /logs
-	// page can show a live log stream. Do this first, to catch startup logs too.
+	// 백엔드 로그를 메모리에도 담습니다(표준 에러에는 그대로 나갑니다). /logs 화면이
+	// 실시간 로그를 보게 하려는 것입니다. 시작 로그도 잡으려면 가장 먼저 켭니다.
 	server.StartLogCapture()
 
-	// Self-update bootstrap: swap in a staged binary, or count a post-swap boot
-	// attempt and roll back if the new build keeps dying. Must run before we open
-	// the stores or bind a port — this may end with "exit and let the start script
-	// relaunch me", and there is no point paying for either first.
+	// 자체 업데이트: 준비된 바이너리로 바꾸거나, 바꾼 뒤 부팅 횟수를 세어 새 빌드가
+	// 계속 죽으면 되돌립니다. 저장소를 열거나 포트를 잡기 전에 해야 합니다. 여기서
+	// 끝나고 start 스크립트가 다시 띄울 수 있어서, 그 전에 비용을 들일 이유가 없습니다.
 	action, upState := selfupdate.Bootstrap()
 	server.SetBootUpdateState(upState)
 	if action == selfupdate.Restart {
 		return selfupdate.ExitRestart
 	}
 
-	// surface which config file the binary reads (absolute, so `go run`'s relative
-	// "config.json" — resolved against the CWD — is unambiguous).
+	// 바이너리가 읽는 설정 파일을 보여 줍니다. 절대 경로라서 `go run` 의 상대
+	// "config.json"(현재 작업 디렉터리 기준)도 헷갈리지 않습니다.
 	cfgPath := config.Path()
 	if abs, e := filepath.Abs(cfgPath); e == nil {
 		cfgPath = abs
@@ -105,9 +103,9 @@ func run() int {
 	}
 	defer mgr.Close()
 
-	// Surviving this long means a freshly swapped-in build actually works, so drop
-	// the upgrade marker and stop counting attempts. Until it fires, every boot
-	// increments the count and a build that keeps dying gets rolled back.
+	// 여기까지 살아 있으면 방금 바꾼 빌드가 실제로 동작하는 것입니다. 업그레이드
+	// 표시를 지우고 시도 횟수를 멈추게 합니다. 그 전까지는 부팅마다 횟수가 늘고,
+	// 계속 죽는 빌드는 되돌려집니다.
 	settle := time.AfterFunc(selfupdate.SettleDelay, selfupdate.Settle)
 	defer settle.Stop()
 
@@ -130,9 +128,9 @@ func run() int {
 		}
 	}()
 
-	// Two ways out: a signal (normal stop → exit 0, the start script stops looping)
-	// or a staged update / rollback (→ exit 75, the script relaunches us and the
-	// bootstrap above installs the new build).
+	// 나가는 길은 두 가지입니다. 신호면 정상 종료(코드 0, start 스크립트가 루프를 멈춤)이고,
+	// 준비된 업데이트나 되돌리기면 코드 75 입니다. 스크립트가 다시 띄우고, 위의
+	// bootstrap 이 새 빌드를 설치합니다.
 	code := 0
 	select {
 	case <-ctx.Done():
@@ -148,9 +146,9 @@ func run() int {
 	return code
 }
 
-// shutdownContext deliberately does not derive from signalCtx. If it did, the
-// parent's plain context.Canceled could win the race before AbortShutdown was
-// attached to the child, losing the diagnostic cause in every running Agent.
+// shutdownContext 는 일부러 signalCtx 에서 파생하지 않습니다. 그렇게 하면
+// 부모의 평범한 context.Canceled 가 AbortShutdown 보다 먼저 자식에 붙어,
+// 돌고 있는 에이전트마다 종료 이유가 사라집니다.
 func shutdownContext(signalCtx context.Context) (context.Context, context.CancelCauseFunc) {
 	ctx, shutdown := context.WithCancelCause(context.Background())
 	go func() {

@@ -6,11 +6,11 @@ import { ListTodo } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 
-// TodoPopover shows the latest TodoWrite state of a session (chat conversation or
-// task worker/planner replay). The full todo list isn't in the activity list
-// (detail is lazy), so on open it fetches the detail of the most-recent TodoWrite
-// call — by seq — and parses its {todos:[…]} JSON. Purely client-side; the caller
-// supplies the seq + a detail fetcher (conversation or exploration endpoint).
+// TodoPopover는 세션의 최신 TodoWrite 상태를 보여 줍니다(대화 또는
+// 작업의 워커/플래너 재생). 할 일 전체는 활동 목록에 없고
+// 상세는 나중에 불러오므로, 열 때 가장 최근 TodoWrite
+// 호출의 상세를 seq로 가져와 {todos:[…]} JSON을 읽습니다. 브라우저에서만 하고, 호출하는 쪽이
+// seq와 상세 조회 함수(대화 또는 탐색 주소)를 넘깁니다.
 export function TodoPopover({
   seq,
   fetchDetail,
@@ -40,7 +40,7 @@ export function TodoPopover({
     }
   }, [seq, fetchDetail]);
 
-  // refetch on each open — todos change as the run progresses.
+  // 열 때마다 다시 읽습니다. 실행이 진행되면 할 일이 바뀝니다.
   React.useEffect(() => {
     if (open) load();
   }, [open, load]);

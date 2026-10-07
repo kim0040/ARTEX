@@ -5,9 +5,8 @@ import (
 	"sort"
 )
 
-// taskArchiveAggregate is the compact, non-sensitive statistics section of a
-// cold archive manifest. Fields are additive so older archive formats remain
-// readable when new dashboard dimensions are introduced.
+// taskArchiveAggregate는 차가운 보관 목록의 작고 민감하지 않은 통계 구간이다.
+// 필드는 더하기만 한다. 대시보드 축이 새로 생겨도 옛 보관 형식을 읽을 수 있다.
 type taskArchiveAggregate struct {
 	TokenProfiles     []ProfileUsage    `json:"token_profiles"`
 	TokenDaily        []ProfileDayUsage `json:"token_daily"`
@@ -59,8 +58,8 @@ func mergeArchivedSkillStats(live []SkillStat, archived []taskArchiveAggregate, 
 		if missing {
 			coldStats = aggregate.MissingSkillStats
 		} else if len(coldStats) == 0 {
-			// Format v1 initially retained only the call-count map. Preserve those
-			// summaries even though agent and timestamp dimensions are unavailable.
+			// 형식 v1은 처음에는 호출 수 맵만 남겼다. 에이전트와 시각 축이 없어도
+			// 그 요약은 그대로 둔다.
 			for skill, calls := range aggregate.Skills {
 				coldStats = append(coldStats, SkillStat{Skill: skill, Calls: calls, Tasks: 1})
 			}

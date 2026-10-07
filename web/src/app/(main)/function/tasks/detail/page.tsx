@@ -84,9 +84,9 @@ function TaskLLMControl({ task, profiles, onUpdated }: { task: Task; profiles: L
   // 어떤 상태에서도 사슬을 바꿀 수 있고, 종료 상태도 예외가 아닙니다. 작업이 끝난 뒤에도 메인 에이전트 대화는 이 사슬을 타고,
   // 사슬의 모델에 문제가 생기면 바꿀 수 있어야 합니다. 그렇지 않으면 이미 끝난 작업은 대화를 이어갈 수 없습니다.
   const terminal = ["done", "failed", "timeout"].includes(task.status);
-  // A null active profile on an exhausted, non-empty chain is a persisted end
-  // cursor. Keep the status display honest; choosing the first profile is only
-  // the editor's reset draft and does not mean it is currently active.
+  // 사슬이 비어 있지 않은데 활성 프로필이 null이면, 저장된 끝
+  // 위치입니다. 상태 표시는 사실대로 두고, 첫 프로필을 고르는 것은
+  // 편집기의 초기 초안일 뿐 지금 활성은 아닙니다.
   let activeID = chain[0] ?? "";
   if (exhausted) activeID = "";
   if (task.active_llm_profile_id) activeID = String(task.active_llm_profile_id);
@@ -230,7 +230,7 @@ function TaskDetailInner() {
           if (alive) setInterceptPendingCount(rows.filter((r) => r.status === "pending").length);
         })
         .catch(() => {
-          // Polling is best-effort; the next interval retries automatically.
+          // 주기 조회는 최선을 다할 뿐이고, 다음 주기에 다시 시도합니다.
         });
     void load();
     const t = setInterval(load, 5000);
@@ -260,7 +260,7 @@ function TaskDetailInner() {
         setPaused(at?.paused ?? base.paused ?? false);
       })
       .catch(() => {
-        // Keep the last rendered task state during a transient poll failure.
+        // 주기 조회가 잠깐 실패해도 마지막으로 그린 작업 상태를 유지합니다.
       })
       .finally(() => {
         if (taskLoadInFlight.current === id) {
@@ -349,7 +349,7 @@ function TaskDetailInner() {
 
   return (
     <Tabs value={tab} onValueChange={setTab} className="flex flex-1 flex-col gap-0">
-      {/* Top fixed area */}
+      {/* 위쪽 고정 영역 */}
       <header className="sticky top-0 z-10 flex flex-col gap-2 border-b bg-background/95 px-4 py-2.5 backdrop-blur lg:px-6">
         <div className="flex items-center gap-2">
           <SidebarTrigger className="-ml-1" />
@@ -397,7 +397,7 @@ function TaskDetailInner() {
           </Button>
         </div>
         <p className="truncate text-xs text-muted-foreground">{task.goal}</p>
-        {/* Tabs */}
+        {/* 탭 */}
         <div className="no-scrollbar min-w-0 overflow-x-auto">
           <TabsList variant="default" className="min-w-max">
             {TABS.map((t) => (
@@ -414,7 +414,7 @@ function TaskDetailInner() {
         </div>
       </header>
 
-      {/* Tab content */}
+      {/* 탭 내용 */}
       <div className="flex-1 p-4 lg:p-6">
         <TabsContent value="sessions" className="mt-0">
           <SessionsTab taskId={id} />
@@ -451,7 +451,7 @@ function TaskDetailInner() {
   );
 }
 
-// useSearchParams must sit under a Suspense boundary for static export.
+// useSearchParams는 정적 내보내기를 위해 Suspense 안에 있어야 합니다.
 export default function TaskDetailPage() {
   return (
     <React.Suspense fallback={null}>

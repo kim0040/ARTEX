@@ -41,9 +41,10 @@ func (s *Server) resolutionFromProfile(p *db.LLMProfile, source string) taskLLMR
 	return result
 }
 
-// resolveTaskRoleLLM mirrors taskLLMRuntime.current without creating a provider:
-// role Agent binding -> explicit task chain -> active/global environment config.
-// Database failures are returned rather than represented as an unavailable model.
+// resolveTaskRoleLLM은 프로바이더를 만들지 않고 taskLLMRuntime.current와 같은 순서로 고릅니다.
+// 역할 에이전트 바인딩 → 작업에 명시한 체인 → 활성/전역 환경 설정.
+// DB 오류는 '모델을 쓸 수 없음'으로 바꾸지 않고 그대로 돌려줍니다.
+// 초보용: 플래너, 워커, 메인 에이전트가 엔진에서 쓸 모델 설정을 고르기만 합니다.
 func (s *Server) resolveTaskRoleLLM(t *Task, agentKey string) (taskLLMResolution, error) {
 	if s == nil || s.m == nil || s.m.pg == nil {
 		return taskLLMResolution{}, fmt.Errorf("데이터베이스를 쓸 수 없습니다")

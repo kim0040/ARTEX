@@ -18,10 +18,10 @@ import { cn } from "@/lib/utils";
 
 import { MainContent } from "./_components/main-content";
 
-// Reads a layout-critical preference from the browser cookie (falls back to the
-// default during static-export prerender where document is unavailable). Kept
-// fully client-side so the app can be statically exported — no Server Actions /
-// next/headers.
+// 화면 배치에 꼭 필요한 설정을 브라우저 쿠키에서 읽습니다(정적 내보내기 사전 렌더에는
+// document가 없어서 기본값으로 돌아갑니다). 앱을 정적으로 보낼 수 있게
+// 전부 브라우저에서만 처리합니다. Server Actions나
+// next/headers는 쓰지 않습니다.
 function readPref<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
   if (typeof document === "undefined") return fallback;
   const value = getClientCookie(key);
@@ -29,9 +29,9 @@ function readPref<T extends string>(key: string, allowed: readonly T[], fallback
 }
 
 export default function Layout({ children }: Readonly<{ children: ReactNode }>) {
-  // Client-side auth gate — replaces the Next proxy/middleware that static export
-  // disables. No token → bounce to /login; render nothing until confirmed so no
-  // protected UI (or its API calls) flashes for a logged-out visitor.
+  // 브라우저 쪽 로그인 문입니다. 정적 내보내기가 끄는 Next 프록시/미들웨어를
+  // 대신합니다. 토큰이 없으면 /login으로 보내고, 확인 전에는 아무것도 그리지 않아
+  // 로그아웃한 사람에게 보호된 화면이나 API 호출이 깜빡이지 않습니다.
   const [authed, setAuthed] = React.useState(false);
   React.useEffect(() => {
     if (auth.getToken()) {

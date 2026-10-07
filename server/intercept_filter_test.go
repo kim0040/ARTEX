@@ -59,7 +59,7 @@ func TestInterceptFilterHTTP(t *testing.T) {
 				t.Fatalf("invalid filter %s: %d %s", query, rec.Code, rec.Body.String())
 			}
 		}
-		// Filtering without explicit page parameters must still apply the filters.
+		// 페이지 매개변수를 안 줘도 필터는 적용돼야 합니다.
 		rec := do(base+"?status=denied&decision_source=model", true)
 		var body struct {
 			Items []db.InterceptApprovalRow `json:"items"`

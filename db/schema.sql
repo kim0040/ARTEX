@@ -43,9 +43,9 @@ CREATE TABLE IF NOT EXISTS assets (
                         'root_domain','ip','subdomain','app','service','endpoint'
                     )),
     company_id      BIGINT REFERENCES companies(id) ON DELETE SET NULL,
-    -- explicit: caller/user selected the company; scope: derived from company_scope.
-    -- Existing installations are conservatively migrated as explicit so a scope
-    -- rebuild can never erase a historical manual association.
+    -- explicit: 호출자나 사용자가 기업을 직접 고름. scope: company_scope에서 계산함.
+    -- 이미 설치된 DB는 보수적으로 explicit로 옮긴다. 범위를
+    -- 다시 계산해도 과거의 수동 연결이 지워지지 않게 한다.
     company_source  TEXT NOT NULL DEFAULT 'explicit'
                     CHECK (company_source IN ('explicit','scope')),
     task_ids        BIGINT[] NOT NULL DEFAULT '{}',
@@ -130,7 +130,7 @@ CREATE TABLE IF NOT EXISTS company_scope (
         OR (kind IN ('icp','keyword') AND domain IS NULL AND net IS NULL AND value IS NOT NULL)
     )
 );
--- Existing installations need the new text payload and expanded kind check.
+-- 이미 설치된 DB에는 새 글 본문과 넓힌 kind 검사가 필요하다.
 ALTER TABLE company_scope ADD COLUMN IF NOT EXISTS value TEXT;
 ALTER TABLE company_scope DROP CONSTRAINT IF EXISTS company_scope_kind_check;
 ALTER TABLE company_scope ADD CONSTRAINT company_scope_kind_check
@@ -159,9 +159,9 @@ CREATE TABLE IF NOT EXISTS explorations (
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
--- cold-digest (§2.3): per-task planner round counter — bumped once each time the
--- planner wakes and processes a round. Drives the ≥R cold-node debounce (measured in
--- this exploration's own rounds, not global node ids or wall-clock).
+-- cold-digest (§2.3): 작업마다 있는 플래너 라운드 카운터. 플래너가 깨어나
+-- 한 라운드를 처리할 때마다 하나 올린다. ≥R 식은 노드 디바운스를 이끈다
+-- (이 탐색 자신의 라운드로 재고, 전역 노드 id나 벽시계로 재지 않는다).
 ALTER TABLE explorations ADD COLUMN IF NOT EXISTS round_no BIGINT NOT NULL DEFAULT 0;
 DROP TRIGGER IF EXISTS trg_exp_upd ON explorations;
 CREATE TRIGGER trg_exp_upd BEFORE UPDATE ON explorations
@@ -195,12 +195,12 @@ CREATE TABLE IF NOT EXISTS exploration_nodes (
 ALTER TABLE exploration_nodes ADD COLUMN IF NOT EXISTS blocked_reason TEXT;
 -- 의도 소프트 삭제(soft delete): state='deleted'일 때, delete_reason에 사용자가 적은 삭제 이유를 기록한다.
 ALTER TABLE exploration_nodes ADD COLUMN IF NOT EXISTS delete_reason TEXT;
--- cold-digest (§2.3/§5.3): content_version bumps on any change that could alter a
--- digest body (summary/state/confidence); cold_since_round stamps the planner round
--- a node most recently went from "has a live downstream branch" to none (NULL = hot).
+-- cold-digest (§2.3/§5.3): content_version은 다이제스트 본문을 바꿀 수 있는
+-- 변경(요약/상태/확신)마다 올라간다. cold_since_round는 노드가
+-- 「살아있는 아래 가지가 있음」에서 없음으로 가장 최근에 바뀐 플래너 라운드를 찍는다(NULL = 뜨거움).
 ALTER TABLE exploration_nodes ADD COLUMN IF NOT EXISTS content_version  INT    NOT NULL DEFAULT 0;
 ALTER TABLE exploration_nodes ADD COLUMN IF NOT EXISTS cold_since_round BIGINT;
--- ck_node_kind: existing installs predate the 'digest' kind — recreate to allow it.
+-- ck_node_kind: 이미 설치된 DB는 'digest' 종류보다 앞선다. 허용하려고 제약 조건을 다시 만든다.
 DO $$
 BEGIN
     IF EXISTS (
@@ -214,8 +214,8 @@ BEGIN
             CHECK (kind IN ('begin','goal','intent','fact','finding','hint','digest'));
     END IF;
 END $$;
--- ck_node_state: recreate when it lacks the 'paused' (older), 'superseded' (digest rev),
--- or 'deleted' (intent soft-delete rev) branches.
+-- ck_node_state: 'paused'(더 옛 것), 'superseded'(다이제스트 개정),
+-- 'deleted'(의도 소프트 삭제 개정) 갈래가 없으면 제약 조건을 다시 만든다.
 DO $$
 BEGIN
     IF EXISTS (
@@ -257,8 +257,8 @@ CREATE TABLE IF NOT EXISTS exploration_edges (
 );
 CREATE INDEX IF NOT EXISTS idx_expedges_src ON exploration_edges(src_id, rel);
 CREATE INDEX IF NOT EXISTS idx_expedges_dst ON exploration_edges(dst_id, rel);
--- cold-digest (§1): the 'covers' relation (digest→member) postdates shipped installs,
--- whose rel CHECK is an inline auto-named constraint. Find and recreate it as ck_edge_rel.
+-- cold-digest (§1): 'covers' 관계(다이제스트→구성원)는 배포된 설치보다 늦다.
+-- 그 rel CHECK는 인라인으로 자동 이름 붙은 제약 조건이다. 찾아 ck_edge_rel로 다시 만든다.
 DO $$
 DECLARE cname text;
 BEGIN
@@ -314,25 +314,25 @@ CREATE TABLE IF NOT EXISTS activity (
     created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ALTER TABLE activity ADD COLUMN IF NOT EXISTS metadata JSONB NOT NULL DEFAULT '{}';
--- main_seg segments the main-agent session into resettable conversations: a new
--- main session bumps the segment so its transcript + activity start clean while the
--- task's graph/assets/goal are untouched. NULL == legacy rows == segment 0 (the
--- original session). Only worker='mainagent' rows carry it.
+-- main_seg는 메인 에이전트 세션을 초기화할 수 있는 대화로 나눈다. 새
+-- 메인 세션은 구간을 올려, 기록과 활동은 깨끗이 시작하고
+-- 작업의 탐색 그래프·자산·목표는 건드리지 않는다. NULL은 옛 행이자 구간 0
+-- (원래 세션)이다. worker='mainagent' 행만 이 값을 가진다.
 ALTER TABLE activity ADD COLUMN IF NOT EXISTS main_seg INTEGER;
 CREATE INDEX IF NOT EXISTS idx_act_node  ON activity(exploration_id, node_id, id);
 CREATE INDEX IF NOT EXISTS idx_act_since ON activity(exploration_id, id);
 CREATE INDEX IF NOT EXISTS idx_act_tool_call ON activity(exploration_id, tool_use_id, id)
   WHERE kind IN ('tool_use', 'tool_result');
--- Main/Plan history pages filter by worker (both carry NULL node_id, so idx_act_node
--- can't distinguish them); this covers reverse pagination of those sessions.
+-- 메인/플랜 이력 페이지는 worker로 거른다(둘 다 node_id가 NULL이라 idx_act_node로는
+-- 구분할 수 없다). 이 인덱스가 그 세션의 역방향 페이지를 덮는다.
 CREATE INDEX IF NOT EXISTS idx_act_worker ON activity(exploration_id, worker, id);
--- Main-session pages filter by segment on top of worker='mainagent'; this partial
--- index covers reverse pagination within one segment.
+-- 메인 세션 페이지는 worker='mainagent' 위에 구간으로 거른다. 이 부분
+-- 인덱스가 한 구간 안의 역방향 페이지를 덮는다.
 CREATE INDEX IF NOT EXISTS idx_act_main_seg ON activity(exploration_id, main_seg, id)
     WHERE worker='mainagent';
--- Task-list polls aggregate result usage and find the latest event repeatedly.
--- Cover the token columns for index-only aggregation and the timestamp order for
--- per-exploration latest-activity lookups.
+-- 작업 목록 폴링은 결과 사용량을 모으고 최신 사건을 반복해서 찾는다.
+-- 토큰 열을 덮어 인덱스만으로 합계를 내고, 시각 순서로
+-- 탐색마다 최신 활동을 찾게 한다.
 CREATE INDEX IF NOT EXISTS idx_act_result_usage ON activity(exploration_id)
     INCLUDE (input_tokens, output_tokens, cache_read_tokens, cache_write_tokens)
     WHERE kind='result';
@@ -351,7 +351,7 @@ CREATE TABLE IF NOT EXISTS main_sessions (
 );
 
 -- =====================================================================
--- C. LLM profiles
+-- C. LLM 프로필
 -- =====================================================================
 CREATE TABLE IF NOT EXISTS settings (
     key        TEXT PRIMARY KEY,
@@ -489,8 +489,8 @@ CREATE TABLE IF NOT EXISTS llm_profile_health (
 -- =====================================================================
 -- D. 작업 층
 -- =====================================================================
--- Global task categories are intentionally independent from task templates.
--- Deleting a category only moves its tasks back to the uncategorized bucket.
+-- 전역 작업 분류는 작업 템플릿과 일부러 독립이다.
+-- 분류를 지워도 그 작업은 미분류 통으로만 돌아간다.
 -- 작업 층은 탐색 그래프의 작업을 화면 목록에서 묶는 분류다.
 CREATE TABLE IF NOT EXISTS task_categories (
     id         BIGSERIAL PRIMARY KEY,
@@ -548,9 +548,9 @@ ALTER TABLE tasks ADD COLUMN IF NOT EXISTS queued BOOLEAN NOT NULL DEFAULT false
 -- agent에게 add_task_scope/list_untested_assets를 연다; false=모두 끈다(task_scope.go 참고).
 -- 기존 작업은 기본값 true로 원래 동작을 유지한다; company 연관(task_scope kind=company)은 이 스위치의 영향을 받지 않는다.
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS coverage_enabled BOOLEAN NOT NULL DEFAULT true;
--- queued_at makes admission FIFO reflect the actual enqueue order rather than the
--- task creation order. queue_mode distinguishes first bootstrap from resuming an
--- exploration that already owns goals/history.
+-- queued_at은 입장 FIFO가 작업 생성 순이 아니라 실제 대기열 순서를 따르게 한다.
+-- queue_mode는 첫 기동과, 이미 목표·이력을 가진
+-- 탐색을 다시 시작하는 것을 구분한다.
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS queued_at TIMESTAMPTZ;
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS queue_mode TEXT NOT NULL DEFAULT '';
 -- 선택적 작업 이름; 기존 DB를 보완한다. 빈 문자열=이름 없음, 프론트엔드에 보일 때는 설명으로 되돌아간다.
@@ -567,9 +567,9 @@ CREATE INDEX IF NOT EXISTS idx_tasks_pinned ON tasks(pinned_at DESC)
 CREATE INDEX IF NOT EXISTS idx_tasks_archived ON tasks(archived_at DESC)
     WHERE archived_at IS NOT NULL;
 
--- Cold task archives retain only compact metadata in PostgreSQL. The complete
--- task payload lives in a versioned .tar.zst package under data/archives/tasks.
--- task_id stays unique so an operation can be retried safely after a restart.
+-- 차가운 작업 보관은 PostgreSQL에 작은 메타데이터만 남긴다. 작업 본문
+-- 전체는 data/archives/tasks 아래 버전이 있는 .tar.zst 패키지에 있다.
+-- task_id는 유일하게 남아, 재시작 뒤에도 작업을 안전하게 다시 시도할 수 있다.
 CREATE TABLE IF NOT EXISTS task_archives (
     id                         BIGSERIAL PRIMARY KEY,
     task_id                    BIGINT NOT NULL UNIQUE REFERENCES tasks(id) ON DELETE CASCADE,
@@ -610,8 +610,8 @@ DROP TRIGGER IF EXISTS trg_task_archives_upd ON task_archives;
 CREATE TRIGGER trg_task_archives_upd BEFORE UPDATE ON task_archives
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
--- Reusable task description/goal presets. nkey is the normalized, case-insensitive
--- identity used to reject visually equivalent duplicate names.
+-- 다시 쓸 수 있는 작업 설명·목표 프리셋. nkey는 정규화되고 대소문자를 가리지 않는
+-- 식별자로, 눈에 같아 보이는 중복 이름을 거절한다.
 CREATE TABLE IF NOT EXISTS task_templates (
     id          BIGSERIAL PRIMARY KEY,
     name        TEXT NOT NULL,
@@ -633,8 +633,8 @@ DROP TRIGGER IF EXISTS trg_task_templates_upd ON task_templates;
 CREATE TRIGGER trg_task_templates_upd BEFORE UPDATE ON task_templates
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
--- Direct, read-only task context inheritance. Relations are intentionally not
--- recursive: a task sees only the source tasks explicitly chosen at creation.
+-- 직접적이고 읽기 전용인 작업 맥락 상속. 관계는 일부러
+-- 재귀하지 않는다. 작업은 만들 때 명시적으로 고른 원본 작업만 본다.
 CREATE TABLE IF NOT EXISTS task_relations (
     task_id        BIGINT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
     source_task_id BIGINT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
@@ -644,9 +644,9 @@ CREATE TABLE IF NOT EXISTS task_relations (
 );
 CREATE INDEX IF NOT EXISTS idx_task_relations_source ON task_relations(source_task_id);
 
--- Task/asset provenance supplements the legacy assets.task_ids association. The
--- array remains the compatibility source for existing query and cleanup paths;
--- this relation records how each association was obtained for operator review.
+-- 작업·자산 출처는 예전 assets.task_ids 연결을 보완한다.
+-- 배열은 기존 조회·정리 경로의 호환 출처로 남고,
+-- 이 관계는 각 연결을 어떻게 얻었는지 운영자 검토용으로 남긴다.
 CREATE TABLE IF NOT EXISTS task_asset_links (
     task_id        BIGINT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
     asset_id       BIGINT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
@@ -664,8 +664,8 @@ DROP TRIGGER IF EXISTS trg_task_asset_links_upd ON task_asset_links;
 CREATE TRIGGER trg_task_asset_links_upd BEFORE UPDATE ON task_asset_links
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
--- Keep provenance rows synchronized when existing asset upsert paths append or
--- remove task ids. Detailed callers overwrite the generic source after upsert.
+-- 기존 자산 upsert 경로가 작업 id를 더하거나 뺄 때 출처 행을 같이 맞춘다.
+-- 자세한 호출자는 upsert 뒤에 일반 출처를 덮어쓴다.
 CREATE OR REPLACE FUNCTION sync_task_asset_links() RETURNS trigger AS $$
 BEGIN
     INSERT INTO task_asset_links(task_id, asset_id, source, source_summary)
@@ -684,8 +684,8 @@ DROP TRIGGER IF EXISTS trg_assets_task_links ON assets;
 CREATE TRIGGER trg_assets_task_links AFTER INSERT OR UPDATE OF task_ids ON assets
     FOR EACH ROW EXECUTE FUNCTION sync_task_asset_links();
 
--- Existing installations receive an auditable legacy source without rewriting
--- task_ids. Ignore stale array ids that no longer resolve to a live task.
+-- 이미 설치된 DB는 task_ids를 다시 쓰지 않고도 감사 가능한 옛 출처를 받는다.
+-- 살아있는 작업으로 이어지지 않는 낡은 배열 id는 무시한다.
 INSERT INTO task_asset_links(task_id, asset_id, source, source_summary)
 SELECT task.id, asset.id, 'legacy', '과거 작업 자산 연관에서 이전'
 FROM assets asset
@@ -693,8 +693,8 @@ CROSS JOIN LATERAL unnest(asset.task_ids) AS requested(task_id)
 JOIN tasks task ON task.id=requested.task_id AND task.deleted_at IS NULL
 ON CONFLICT (task_id, asset_id) DO NOTHING;
 
--- Ordered task-level LLM failover chain. A quota-exhausted entry is skipped
--- until the user saves/resets the chain, which clears all failure state.
+-- 순서가 있는 작업 단위 LLM 장애 조치 사슬. 할당량이 소진된 항목은
+-- 사용자가 사슬을 저장하거나 초기화할 때까지 건너뛴다. 그때 실패 상태가 모두 지워진다.
 CREATE TABLE IF NOT EXISTS task_llm_profiles (
     task_id          BIGINT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
     profile_id       BIGINT NOT NULL REFERENCES llm_profiles(id) ON DELETE CASCADE,
@@ -716,9 +716,9 @@ DROP TRIGGER IF EXISTS trg_task_llm_profiles_upd ON task_llm_profiles;
 CREATE TRIGGER trg_task_llm_profiles_upd BEFORE UPDATE ON task_llm_profiles
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
--- One-time-compatible backfill: old pinned tasks become one-entry chains. A user
--- can still clear the chain later because the update path also clears the legacy
--- llm_profile_id column, preventing this block from re-adding it on restart.
+-- 한 번만 호환되는 메우기: 예전에 고정한 작업은 항목 하나짜리 사슬이 된다. 사용자는
+-- 나중에 사슬을 지울 수 있다. 갱신 경로가 옛
+-- llm_profile_id 열도 지우므로, 재시작 때 이 블록이 다시 넣지 못한다.
 INSERT INTO task_llm_profiles(task_id, profile_id, position)
 SELECT t.id, t.llm_profile_id, 0
 FROM tasks t
@@ -733,7 +733,7 @@ WHERE t.active_llm_profile_id IS NULL
 
 -- 작업 테스트 범위(자산 커버리지의 분모 + 인가 경계).
 --   자동 채움(source='auto'): insertAssets 최상위에서 워커가 명시적으로 넣은 자산 유형에 보수적인 범위를 더한다
---     (root_domain→root_domain, subdomain/service/endpoint→subdomain(host), ip→ip);
+--     (root_domain→root_domain, subdomain/service/endpoint→subdomain(호스트), ip→ip);
 --     side-effect로 파생된 자산은 범위에 넣지 않는다(훅은 handler 최상위, 파생은 db 층 내부).
 --   agent 채움(source='agent'): add_task_scope로 company/root_domain/subdomain/ip를 더한다.
 -- 커버리지 = active 행과 맞는 assets(분모) 가운데 fact 노드로 앵커된 비율(분자).
@@ -847,7 +847,7 @@ CREATE TABLE IF NOT EXISTS mcp_servers (
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- Allow legacy MCP SSE servers on databases created before SSE support.
+-- SSE를 지원하기 전에 만든 데이터베이스에서도 옛 MCP SSE 서버를 허용한다.
 ALTER TABLE mcp_servers DROP CONSTRAINT IF EXISTS mcp_servers_transport_check;
 ALTER TABLE mcp_servers ADD CONSTRAINT mcp_servers_transport_check
     CHECK (transport IN ('stdio','http','sse'));
@@ -1076,7 +1076,7 @@ CREATE INDEX IF NOT EXISTS idx_intercept_pending_status ON intercept_pending(sta
 CREATE INDEX IF NOT EXISTS idx_intercept_pending_task   ON intercept_pending(task_id, created_at DESC);
 -- 기존 데이터베이스 보강: reason 열(이미 배포됨, 열을 추가할 때는 IF NOT EXISTS를 붙입니다).
 ALTER TABLE intercept_pending ADD COLUMN IF NOT EXISTS reason TEXT NOT NULL DEFAULT '';
--- Detail payloads are lazy-loaded; NULL preserves the meaning of legacy history.
+-- 자세한 본문은 필요할 때 읽는다. NULL은 옛 이력이 뜻하던 바를 그대로 둔다.
 ALTER TABLE intercept_pending ADD COLUMN IF NOT EXISTS audit JSONB;
 ALTER TABLE intercept_pending ADD COLUMN IF NOT EXISTS decision_source TEXT NOT NULL DEFAULT '';
 UPDATE intercept_pending SET decision_source=CASE WHEN rule_id IS NOT NULL THEN 'rule'
@@ -1194,7 +1194,7 @@ CREATE TABLE IF NOT EXISTS server_logs (
 );
 CREATE INDEX IF NOT EXISTS idx_server_logs_id ON server_logs(id DESC);
 
--- Independent /btw history and the latest provider-ready main checkpoint.
+-- 독립된 /btw 이력과, provider가 이어서 쓸 수 있는 최신 메인 체크포인트.
 CREATE TABLE IF NOT EXISTS side_question_sessions (
     session_key TEXT PRIMARY KEY,
     conversation_id BIGINT REFERENCES conversations(id) ON DELETE CASCADE,
@@ -1233,7 +1233,7 @@ CREATE TABLE IF NOT EXISTS side_question_requests (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_side_request_running ON side_question_requests(session_key) WHERE status='running';
 CREATE INDEX IF NOT EXISTS idx_side_requests_history ON side_question_requests(session_key,ordinal DESC);
 
--- Additive v3 archive fields; old archives restore these as empty objects.
+-- 더해진 v3 보관 필드. 옛 보관은 이 칸을 빈 객체로 복원한다.
 ALTER TABLE side_question_sessions ADD COLUMN IF NOT EXISTS memory JSONB NOT NULL DEFAULT '{}';
 ALTER TABLE side_question_requests ADD COLUMN IF NOT EXISTS context_info JSONB NOT NULL DEFAULT '{}';
 
@@ -1320,17 +1320,17 @@ CREATE TABLE IF NOT EXISTS notification_channels (
     enabled      BOOLEAN NOT NULL DEFAULT true,
     -- 자격 증명(평문 저장, UI는 가려서 보여 줌. server 측 maskChannelSecrets 참고). 여섯 채널의 필드 차이가 매우 커서,
     -- JSONB로 통일하고 Go 측에서 kind별로 엄격히 검증하여, 채널마다 NULL 열을 잔뜩 두지 않습니다:
-    --   dingtalk {webhook,secret}
-    --   feishu   {webhook,secret}
-    --   wecom    {webhook}
-    --   webhook  {url,method,content_type,headers{},body_template}
-    --   telegram {bot_token,chat_id,base_url}
-    --   email    {host,port,username,password,from,to[],tls}
+    --   dingtalk {webhook,secret}                         딩톡: 웹훅, 비밀
+    --   feishu   {webhook,secret}                         페이슈: 웹훅, 비밀
+    --   wecom    {webhook}                                기업 위챗: 웹훅
+    --   webhook  {url,method,content_type,headers{},body_template}  범용 웹훅
+    --   telegram {bot_token,chat_id,base_url}             텔레그램: 봇 토큰, 대화 id, 기본 주소
+    --   email    {host,port,username,password,from,to[],tls}  메일 서버
     config       JSONB NOT NULL DEFAULT '{}',
     -- 푸시 시점: realtime은 맞으면 바로 푸시 / digest는 배치에 넣고 전역 주기마다 한 건으로 모읍니다.
     mode         TEXT NOT NULL DEFAULT 'realtime',
     -- 필터 조건, 필드는 모두 선택입니다(기본값=필터 없음):
-    --   min_severity       ''|low|medium|high|critical
+    --   min_severity       ''|low|medium|high|critical   최소 심각도
     --   task_ids/asset_ids 빈 배열=제한 없음. 비어 있지 않으면 교집합이 비어 있으면 안 됩니다
     --   vulnclass_include/exclude 키워드 배열(대소문자를 구분하지 않는 부분 문자열). include가 비면=전부 수신
     --   on_status_change   bool, realtime 모드에서만 의미가 있습니다
@@ -1353,7 +1353,7 @@ CREATE TRIGGER trg_notification_channels_upd BEFORE UPDATE ON notification_chann
 -- 이 행은 알림 채널로 나가기 전의 사건 원본이며, 전달 이력은 여기를 기준으로 남는다.
 CREATE TABLE IF NOT EXISTS notification_events (
     id         BIGSERIAL PRIMARY KEY,
-    -- finding_created | finding_status_changed
+    -- finding_created(발견 생성) | finding_status_changed(발견 상태 변경)
     kind       TEXT NOT NULL,
     finding_id BIGINT NOT NULL,
     snapshot   JSONB NOT NULL,

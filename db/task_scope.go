@@ -8,17 +8,17 @@ import (
 	"strings"
 )
 
-// TaskScope is one row of a task's test scope — the coverage denominator and the
-// per-task authorization edge. Rows come either from insertAssets (source='auto',
-// conservative, one per explicitly-inserted asset) or from the add_task_scope tool
-// (source='agent', for company / domain / network / ICP / keyword scope).
+// TaskScope는 작업 시험 범위의 한 줄이다. 커버리지의 분모이자
+// 작업마다의 인가 경계다. 행은 insertAssets에서 오거나(source='auto',
+// 보수적, 명시적으로 넣은 자산마다 하나) add_task_scope 도구에서 온다
+// (source='agent', 기업 / 도메인 / 네트워크 / ICP / 키워드 범위).
 type TaskScope struct {
 	ID        int64  `json:"id"`
 	TaskID    int64  `json:"task_id"`
-	Kind      string `json:"kind"` // company|root_domain|subdomain|ip|cidr|icp|keyword
+	Kind      string `json:"kind"` // company|root_domain|subdomain|ip|cidr|icp|keyword (범위 종류)
 	CompanyID *int64 `json:"company_id,omitempty"`
-	// CompanyName is resolved for kind=company so callers can label a scope row
-	// without a second lookup. Empty when the row is not a company reference.
+	// CompanyName은 kind=company일 때 채워, 호출자가 범위를 두 번 조회하지 않고 이름 붙이게 한다.
+	// 기업 참조가 아니면 비어 있다.
 	CompanyName string `json:"company_name,omitempty"`
 	Domain      string `json:"domain,omitempty"`
 	Net         string `json:"net,omitempty"`
@@ -27,11 +27,11 @@ type TaskScope struct {
 	Reason      string `json:"reason,omitempty"`
 }
 
-// stripHostPort drops a trailing :port from a host:port / ip:port / [ipv6]:port
-// value, returning the bare host. Bare hosts, bare IPs (v4 or v6, whose colons make
-// them ambiguous), and anything not in host:port form are returned unchanged. Scope
-// is host/net based, so the port from a target like "10.0.188.136:3000" or
-// "api.example.com:8080" is simply discarded rather than baked into the key.
+// stripHostPort는 host:port / ip:port / [ipv6]:port 끝의 :포트를 떼고
+// 호스트만 돌려준다. 호스트만 있거나, IP만 있거나(v4·v6는 콜론 때문에
+// 헷갈린다), host:port 꼴이 아니면 그대로 돌려준다. 범위는
+// 호스트/네트워크 기준이라 "10.0.188.136:3000"이나
+// "api.example.com:8080"의 포트는 키에 넣지 않고 버린다.
 func stripHostPort(v string) string {
 	v = strings.TrimSpace(v)
 	if host, _, err := net.SplitHostPort(v); err == nil {
@@ -40,7 +40,7 @@ func stripHostPort(v string) string {
 	return v
 }
 
-// ipToHostCIDR turns a bare IP into its single-host CIDR (/32 or /128). "" if invalid.
+// ipToHostCIDR는 IP 하나를 호스트 하나짜리 CIDR(/32 또는 /128)로 바꾼다. 잘못되면 "".
 func ipToHostCIDR(ip string) string {
 	ip = strings.TrimSpace(ip)
 	p := net.ParseIP(ip)
@@ -53,8 +53,8 @@ func ipToHostCIDR(ip string) string {
 	return ip + "/128"
 }
 
-// upsertTaskScope inserts one scope row idempotently (uq_task_scope). A duplicate is
-// silently ignored. taskID<=0 or empty kind → no-op.
+// upsertTaskScope는 범위 한 줄을 중복 없이 넣는다(uq_task_scope). 중복은
+// 조용히 무시한다. taskID가 0 이하거나 kind가 비면 아무 일도 하지 않는다.
 func (s *AssetStore) upsertTaskScopeResult(ts TaskScope) (bool, error) {
 	if ts.TaskID <= 0 || ts.Kind == "" {
 		return false, nil
@@ -127,7 +127,7 @@ func (s *AssetStore) AddAutoScope(taskID int64, assetType, domain, rawURL, ip st
 		if host != "" && net.ParseIP(host) == nil {
 			return s.upsertTaskScope(TaskScope{TaskID: taskID, Kind: "subdomain", Domain: host})
 		}
-		// IP-literal host or no host → fall back to ip scope if we have one.
+		// 호스트가 IP 그대로이거나 호스트가 없으면, IP가 있을 때 ip 범위로 내려간다.
 		if c := ipToHostCIDR(ip); c != "" {
 			return s.upsertTaskScope(TaskScope{TaskID: taskID, Kind: "ip", Net: c})
 		}
@@ -139,10 +139,10 @@ func (s *AssetStore) AddAutoScope(taskID int64, assetType, domain, rawURL, ip st
 	return nil
 }
 
-// AddAgentScope parses a (kind,value) pair and records it as task scope.
-// source is "agent" when called from an LLM tool, "manual" from the UI.
-// company: value = company name or id (must already exist). root_domain/subdomain:
-// value = a domain. ip/cidr: value = an IP or CIDR (bare IP → /32,/128).
+// AddAgentScope는 (kind, value) 쌍을 읽어 작업 범위로 기록한다.
+// LLM 도구에서 부르면 source는 "agent", UI에서 부르면 "manual"이다.
+// company: 값은 기업 이름 또는 id(이미 있어야 한다). root_domain/subdomain:
+// 값은 도메인. ip/cidr: 값은 IP 또는 CIDR(IP 하나면 /32, /128).
 func (s *AssetStore) AddAgentScope(taskID int64, kind, value, reason, source string) (TaskScope, error) {
 	if source == "" {
 		source = "agent"
@@ -220,8 +220,8 @@ func (s *AssetStore) AddAgentScope(taskID int64, kind, value, reason, source str
 	return ts, nil
 }
 
-// DeleteTaskScope removes a single scope row by id, scoped to the given task.
-// Returns whether a row was actually deleted.
+// DeleteTaskScope는 지정한 작업 안에서 id로 범위 한 줄을 지운다.
+// 실제로 지웠는지를 돌려준다.
 func (s *AssetStore) DeleteTaskScope(taskID, scopeID int64) (bool, error) {
 	res, err := s.db.Exec(`DELETE FROM task_scope WHERE id=$1 AND task_id=$2`, scopeID, taskID)
 	if err != nil {
@@ -231,7 +231,7 @@ func (s *AssetStore) DeleteTaskScope(taskID, scopeID int64) (bool, error) {
 	return n > 0, nil
 }
 
-// ListTaskScope returns all scope rows for a task.
+// ListTaskScope는 작업의 범위 행을 모두 돌려준다.
 func (s *AssetStore) ListTaskScope(taskID int64) ([]TaskScope, error) {
 	rows, err := s.db.Query(`
 SELECT ts.id, ts.kind, COALESCE(ts.company_id,0), COALESCE(c.name,''), COALESCE(ts.domain,''),
@@ -259,23 +259,23 @@ WHERE ts.task_id=$1 ORDER BY ts.id`, taskID)
 	return out, rows.Err()
 }
 
-// CoverageAsset is one in-scope asset (used for the untested backlog sample).
+// CoverageAsset은 범위 안 자산 하나다. 아직 시험하지 않은 목록 표본에 쓴다.
 type CoverageAsset struct {
 	ID    int64  `json:"id"`
 	Type  string `json:"type"`
 	Label string `json:"label"`
 }
 
-// CoverageByType is per-asset-type coverage: total in scope vs tested.
+// CoverageByType은 자산 유형별 커버리지다. 범위 안 총수와 시험한 수.
 type CoverageByType struct {
 	Type   string `json:"type"`
 	Total  int    `json:"total"`
 	Tested int    `json:"tested"`
 }
 
-// Coverage is a task's rough asset test coverage — a reference figure for the agent,
-// NOT a precise metric. Denominator = assets matching any active task_scope row;
-// Tested = those anchored to at least one fact node in the exploration.
+// Coverage는 작업의 대략적인 자산 시험 커버리지다. 에이전트용 참고 숫자이지
+// 정밀 지표가 아니다. 분모는 활성 task_scope 행과 맞는 자산이고,
+// Tested는 탐색 그래프의 사실 노드에 하나 이상 앵커된 자산이다.
 type Coverage struct {
 	Enabled     bool             `json:"enabled"`     // 자산 커버리지 기능이 켜져 있는지. false이면 나머지 필드는 제로값
 	ScopeRows   int              `json:"scope_rows"`  // 0이면 범위가 앵커되지 않음
@@ -285,9 +285,9 @@ type Coverage struct {
 	ByType      []CoverageByType `json:"by_type"`     // 자산 유형별 총수/테스트됨
 }
 
-// CoverageEnabled reports whether a task has the asset-coverage feature turned on
-// (tasks.coverage_enabled). Missing row / error → true (fail open to the default),
-// so unknown/legacy tasks keep the historical behavior. taskID<=0 → true.
+// CoverageEnabled는 작업의 자산 커버리지 기능이 켜져 있는지 알려 준다
+// (tasks.coverage_enabled). 행이 없거나 오류면 true다(기본으로 열어 둔다).
+// 그래서 모르거나 옛 작업은 예전 동작을 유지한다. taskID가 0 이하면 true다.
 func (s *AssetStore) CoverageEnabled(taskID int64) bool {
 	if taskID <= 0 {
 		return true
@@ -299,7 +299,7 @@ func (s *AssetStore) CoverageEnabled(taskID int64) bool {
 	return enabled
 }
 
-// task_scope→assets match predicate, reused by the count / by-type / untested queries. $1=taskID.
+// task_scope가 assets와 맞는 조건. 개수 / 유형별 / 미시험 조회가 같이 쓴다. $1=taskID.
 const covTargetCTE = `
 target AS (
   SELECT DISTINCT a.id, a.type,
@@ -323,8 +323,8 @@ tested AS (
   WHERE en.exploration_id = $2 AND en.kind = 'fact'
 )`
 
-// TaskCoverage computes rough per-type coverage for a task. taskID indexes
-// task_scope + assets; expID indexes the fact anchors. Reference figure only.
+// TaskCoverage는 작업의 유형별 대략 커버리지를 계산한다. taskID는
+// task_scope와 assets를, expID는 사실 앵커를 가리킨다. 참고 숫자일 뿐이다.
 func (s *AssetStore) TaskCoverage(taskID, expID int64) (*Coverage, error) {
 	cov := &Coverage{ByType: []CoverageByType{}}
 	_ = s.db.QueryRow(`SELECT count(*) FROM task_scope WHERE task_id=$1`, taskID).Scan(&cov.ScopeRows)
@@ -356,21 +356,20 @@ FROM target t GROUP BY t.type ORDER BY t.type`, taskID, expID)
 }
 
 // ---------------------------------------------------------------------------
-// Coverage graph — a force-directed view of a task's in-scope assets.
+// 커버리지 그래프 — 작업 범위 안 자산을 힘 방향으로 펼친 보기.
 // ---------------------------------------------------------------------------
 
-// CoverageGraphNode is one node of the asset coverage graph. Node identity is a
-// string key: an asset row is "a:<id>", a company is "c:<id>", and a root domain
-// with no asset row of its own is the synthetic "r:<domain>". Out-of-scope
-// connector nodes (roots pulled in only to link subdomains, and the companies
-// above them) carry InScope=false and are rendered gray.
+// CoverageGraphNode는 자산 커버리지 그래프의 노드 하나다. 노드 식별은
+// 문자열 키다. 자산 행은 "a:<id>", 기업은 "c:<id>", 자기 자산 행이 없는
+// 루트 도메인은 합성 "r:<domain>"이다. 범위 밖 연결 노드
+// (서브도메인을 잇려고만 끌어온 루트와, 그 위의 기업)는 InScope=false이고 회색으로 그린다.
 type CoverageGraphNode struct {
 	Key         string `json:"key"`
-	Kind        string `json:"kind"` // company|root_domain|subdomain|ip|service|app|endpoint
+	Kind        string `json:"kind"` // company|root_domain|subdomain|ip|service|app|endpoint (자산 종류)
 	Label       string `json:"label"`
 	Tested      bool   `json:"tested"`
 	InScope     bool   `json:"in_scope"`
-	AssetID     int64  `json:"asset_id,omitempty"` // 0 for company / synthetic root
+	AssetID     int64  `json:"asset_id,omitempty"` // 기업이거나 합성 루트이면 0
 	CompanyID   int64  `json:"company_id,omitempty"`
 	Domain      string `json:"domain,omitempty"`
 	RootDomain  string `json:"root_domain,omitempty"`
@@ -383,14 +382,14 @@ type CoverageGraphNode struct {
 	StatusCode  int    `json:"status_code,omitempty"`
 }
 
-// CoverageGraphEdge is a child→parent containment link (endpoint→service→
-// subdomain/ip→root_domain→company, app→company).
+// CoverageGraphEdge는 자식→부모 포함 간선이다(endpoint→service→
+// subdomain/ip→root_domain→회사, app→회사).
 type CoverageGraphEdge struct {
 	Src string `json:"src"`
 	Dst string `json:"dst"`
 }
 
-// CoverageGraphData is the whole graph for one task.
+// CoverageGraphData는 작업 하나의 그래프 전체다. UI가 이 값으로 범위 안 자산을 그린다.
 type CoverageGraphData struct {
 	Nodes []CoverageGraphNode `json:"nodes"`
 	Edges []CoverageGraphEdge `json:"edges"`
@@ -399,8 +398,8 @@ type CoverageGraphData struct {
 func assetKey(id int64) string   { return "a:" + strconv.FormatInt(id, 10) }
 func companyKey(id int64) string { return "c:" + strconv.FormatInt(id, 10) }
 
-// hostPortOf returns the (host, port) a service / endpoint node hangs off — the
-// domain if set, otherwise the URL host, otherwise the IP.
+// hostPortOf는 service / endpoint 노드가 매달린 (호스트, 포트)를 돌려준다.
+// 도메인이 있으면 그것을, 없으면 URL 호스트, 없으면 IP를 쓴다.
 func hostPortOf(n *CoverageGraphNode) (string, int) {
 	host, port := n.Domain, n.Port
 	if host == "" && n.URL != "" {
@@ -416,10 +415,10 @@ func hostPortOf(n *CoverageGraphNode) (string, int) {
 	return host, port
 }
 
-// BuildCoverageGraph assembles the full coverage graph for a task and its direct
-// read-only sources: every in-scope asset plus connector root domains/companies,
-// with current-or-source fact anchors reflected in Tested. The legacy expID
-// argument is retained for API compatibility; the task registry is authoritative.
+// BuildCoverageGraph는 작업과 직접 읽기 전용 원본의 커버리지 그래프 전체를 조립한다.
+// 범위 안 자산 전부와, 잇기용 루트 도메인·기업을 담고,
+// 현재 또는 원본의 사실 앵커를 Tested에 반영한다. 옛 expID
+// 인자는 API 호환으로 남긴다. 기준은 작업 등록부다.
 func (s *AssetStore) BuildCoverageGraph(taskID, _ int64) (*CoverageGraphData, error) {
 	g := &CoverageGraphData{Nodes: []CoverageGraphNode{}, Edges: []CoverageGraphEdge{}}
 	if taskID <= 0 {
@@ -439,12 +438,12 @@ ORDER BY a.id`, taskID)
 	defer rows.Close()
 
 	byKey := map[string]*CoverageGraphNode{}
-	rootByDomain := map[string]string{} // root domain → node key
-	subByDomain := map[string]string{}  // subdomain    → node key
-	ipByAddr := map[string]string{}     // ip literal   → node key
+	rootByDomain := map[string]string{} // 루트 도메인 → 노드 키
+	subByDomain := map[string]string{}  // subdomain    → 노드 키
+	ipByAddr := map[string]string{}     // IP 그대로   → 노드 키
 	svcByHostPort := map[string]string{}
 	svcByHost := map[string]string{}
-	companyIDs := map[int64]bool{} // referenced company ids (need a node)
+	companyIDs := map[int64]bool{} // 참조된 기업 id (노드가 필요함)
 
 	add := func(n CoverageGraphNode) *CoverageGraphNode {
 		if _, ok := byKey[n.Key]; ok {
@@ -497,9 +496,9 @@ ORDER BY a.id`, taskID)
 		return nil, err
 	}
 
-	// Connector root domains: any subdomain whose root domain is not itself an
-	// in-scope node. Pull the real asset row if one exists (so the drawer shows
-	// real detail), else synthesize a bare "r:<domain>" placeholder. Both gray.
+	// 연결용 루트 도메인: 루트 도메인 자신이 범위 안 노드가 아닌 서브도메인.
+	// 실제 자산 행이 있으면 그것을 가져온다(서랍이 진짜 자세한 내용을 보이게).
+	// 없으면 맨 "r:<domain>" 자리표시를 만든다. 둘 다 회색이다.
 	missingRoots := map[string]bool{}
 	for _, n := range g.Nodes {
 		if n.Kind == "subdomain" && n.RootDomain != "" {
@@ -526,7 +525,7 @@ WHERE type='root_domain' AND domain=$1 LIMIT 1`, root).Scan(&id, &companyID)
 		rootByDomain[root] = node.Key
 	}
 
-	// Company nodes for every referenced company id — always gray context.
+	// 참조된 기업 id마다 기업 노드. 항상 회색 맥락이다.
 	for id := range companyIDs {
 		key := companyKey(id)
 		if _, ok := byKey[key]; ok {
@@ -540,7 +539,7 @@ WHERE type='root_domain' AND domain=$1 LIMIT 1`, root).Scan(&id, &companyID)
 			Label: name, AssetID: 0})
 	}
 
-	// Derived containment edges (only when the parent node exists).
+	// 계산한 포함 간선(부모 노드가 있을 때만).
 	link := func(childKey, parentKey string) {
 		if parentKey == "" || parentKey == childKey {
 			return
@@ -583,7 +582,7 @@ WHERE type='root_domain' AND domain=$1 LIMIT 1`, root).Scan(&id, &companyID)
 	return g, nil
 }
 
-// coverageNodeLabel picks the human label for a coverage-graph node.
+// coverageNodeLabel은 커버리지 그래프 노드에 사람이 읽을 이름을 고른다.
 func coverageNodeLabel(n *CoverageGraphNode) string {
 	switch n.Kind {
 	case "endpoint", "service":
@@ -603,8 +602,8 @@ func coverageNodeLabel(n *CoverageGraphNode) string {
 	return n.Key
 }
 
-// ListUntestedAssets returns a task's in-scope, not-yet-tested assets, optionally
-// filtered by asset type, paginated. Returns the page + the total count. limit<=0 → 10.
+// ListUntestedAssets는 작업 범위 안에서 아직 시험하지 않은 자산을
+// 자산 유형으로 거르고 페이지로 나눠 돌려준다. 페이지와 전체 개수를 돌려준다. limit이 0 이하면 10이다.
 func (s *AssetStore) ListUntestedAssets(taskID, expID int64, typ string, limit, offset int) ([]CoverageAsset, int, error) {
 	if limit <= 0 {
 		limit = 10

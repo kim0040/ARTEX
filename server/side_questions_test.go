@@ -94,7 +94,7 @@ func TestSideHTTPPreparationCancellationAndClear(t *testing.T) {
 			if err != nil || row.Context.Phase != "summarizing_history" {
 				t.Fatalf("phase not persisted: %+v %v", row, err)
 			}
-			// A blocked summary must not hold the global admission/clear mutex.
+			// 막힌 요약이 전역 입장/해제 뮤텍스를 잡고 있으면 안 됩니다.
 			other, otherPath := f.conversation(t)
 			f.checkpoint(t, other)
 			f.call(t, "POST", otherPath, map[string]string{"question": "other session", "client_request_id": "independent"}, 202)
@@ -229,7 +229,7 @@ func TestSideHTTPBusyIsolationClearAndReconnect(t *testing.T) {
 	p, path := f.conversation(t)
 	f.call(t, "POST", path, map[string]string{"question": "old session", "client_request_id": "old"}, 409)
 	f.checkpoint(t, p)
-	// Main busy status must not reject the side request.
+	// 메인이 바쁘다는 상태가 사이드 요청을 거절하면 안 됩니다.
 	f.s.chatMu.Lock()
 	f.s.chatBusy[fmt.Sprintf("conv-%d", p.ConversationID)] = true
 	f.s.chatMu.Unlock()
@@ -247,7 +247,7 @@ func TestSideHTTPBusyIsolationClearAndReconnect(t *testing.T) {
 		t.Fatal("duplicate request re-executed")
 	}
 	f.call(t, "POST", path, map[string]string{"question": "another", "client_request_id": "two"}, 409)
-	// SSE reconnect always starts with a cumulative snapshot even with Last-Event-ID.
+	// SSE가 다시 붙으면 Last-Event-ID가 있어도 항상 누적 스냅샷부터 시작합니다.
 	httpServer := httptest.NewServer(f.handler)
 	defer httpServer.Close()
 	for i := 0; i < 2; i++ {
@@ -378,7 +378,7 @@ func TestSideCheckpointPersistsBeforeAdmissionAndRestart(t *testing.T) {
 	<-done
 	f.call(t, "POST", "/api/side-questions/"+e.ID+"/cancel", nil, 200)
 	waitSide(t, f.m.pg, e.ID, "cancelled")
-	// Simulate an abrupt process exit: persisted running row survives, memory doesn't.
+	// 프로세스가 갑자기 죽은 척합니다. 저장된 실행 중 행은 남고, 메모리는 없습니다.
 	orphan, _, err := f.m.pg.StartSideRequest(t.Context(), *snap, "orphan", "restart")
 	if err != nil {
 		t.Fatal(err)
@@ -405,7 +405,7 @@ func TestSideCheckpointPersistsBeforeAdmissionAndRestart(t *testing.T) {
 	if req, err := sidequestion.BuildRequest(*restored, nil, "continue after restart"); err != nil || req.Messages[0].Text() != "live checkpoint" {
 		t.Fatal("restart cannot ask from stored context")
 	}
-	// All routes pass the same authentication middleware.
+	// 모든 경로는 같은 인증 미들웨어를 탑니다.
 	w := httptest.NewRecorder()
 	f.handler.ServeHTTP(w, httptest.NewRequest("GET", path, nil))
 	if w.Code != 401 {
@@ -461,7 +461,7 @@ func TestSideTaskDrainPersistsBeforeArchive(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("side never started")
 	}
-	// The real archive entry point closes this same admission barrier first.
+	// 실제 보관 입구는 먼저 이 같은 입장 장벽을 닫습니다.
 	if !f.s.beginTaskDelete(task.ID) {
 		t.Fatal("cannot close task admission")
 	}
@@ -504,8 +504,8 @@ func TestSideRestoredWorkerRuntimePublishesNewCheckpoint(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Exercise the production startup path, including the deadline coordinator
-	// which registers the shared runtime before the worker loops.
+	// 운영 시작 경로를 시험합니다. 마감 조정자가
+	// 워커 루프보다 먼저 공유 런타임을 등록하는 것까지 포함합니다.
 	f.s.restoreTaskRuntimes()
 	t.Cleanup(func() {
 		for _, task := range f.m.List() {

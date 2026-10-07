@@ -226,7 +226,7 @@ func TestRetestFixedTriageOnlyAfterSuccessfulCompletion(t *testing.T) {
 			if err != nil || f.Status != tc.want || f.Evidence != "original evidence" {
 				t.Fatalf("finding=%+v err=%v want=%s", f, err, tc.want)
 			}
-			// Re-delivering completion must not undo a later user decision.
+			// 완료를 다시 전달해도 그 뒤의 사용자 결정을 되돌리면 안 된다.
 			if _, err := d.SetFindingStatus(fid, FindingIgnored); err != nil {
 				t.Fatal(err)
 			}

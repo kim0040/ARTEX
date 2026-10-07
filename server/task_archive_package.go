@@ -23,7 +23,7 @@ const (
 	archiveDirMode  = 0o700
 	archiveFileMode = 0o600
 	maxArchiveFiles = 1_000_000
-	maxArchiveBytes = int64(1 << 47) // 128 TiB safety ceiling for corrupt headers.
+	maxArchiveBytes = int64(1 << 47) // 깨진 헤더를 위한 128 TiB 안전 상한.
 )
 
 type archiveFileMove struct {
@@ -97,10 +97,10 @@ func stageTaskArchiveFiles(dataDir string, archiveID int64, taskID string, explo
 		if err := json.Unmarshal(raw, &stage.journal); err != nil {
 			return nil, fmt.Errorf("read task archive staging journal: %w", err)
 		}
-		// The journal is written before the first rename, so its presence does not mean
-		// the payload is complete: a previous round may have failed mid-loop with a
-		// rollback that itself errored, which leaves the root in place. Replay the moves
-		// rather than packaging a payload that is missing transcripts or workspace files.
+		// 저널은 첫 이름 바꾸기 전에 씁니다. 그래서 저널이 있다고 적재가
+		// 끝난 것은 아닙니다. 이전 라운드가 루프 중간에 실패하고, 되돌리기까지
+		// 오류가 나면 루트는 남습니다. 옮기기를 다시 하고,
+		// 대화 기록이나 작업 파일이 빠진 적재를 패키지로 만들지 않습니다.
 		if err := os.MkdirAll(filepath.Join(stage.payload, "files"), archiveDirMode); err != nil {
 			return nil, err
 		}
@@ -138,8 +138,8 @@ func stageTaskArchiveFiles(dataDir string, archiveID int64, taskID string, explo
 			Source: filepath.Join(transcriptDir, name), Relative: filepath.Join("files", "transcripts", name),
 		})
 	}
-	// Persist the complete plan before the first rename. Recovery can therefore
-	// roll back any prefix of the moves after an abrupt process termination.
+	// 첫 이름 바꾸기 전에 완성된 계획을 저장합니다. 그래서 복구는
+	// 프로세스가 갑자기 죽어도, 옮긴 앞부분만 되돌릴 수 있습니다.
 	stage.journal.Moves = targets
 	if err := writeArchiveJournal(journalPath, stage.journal); err != nil {
 		_ = stage.rollback()
@@ -152,9 +152,9 @@ func stageTaskArchiveFiles(dataDir string, archiveID int64, taskID string, explo
 	return stage, nil
 }
 
-// applyMoves performs the renames recorded in the journal. Entries already sitting
-// in the payload are skipped, so an interrupted staging round can be resumed in
-// place without moving anything twice.
+// applyMoves는 저널에 적힌 이름 바꾸기를 수행합니다. 이미 적재 안에
+// 있는 항목은 건너뜁니다. 끊긴 준비 라운드를 그 자리에서
+// 이어 가고, 같은 것을 두 번 옮기지 않습니다.
 func (s *taskArchiveFileStage) applyMoves() error {
 	for _, move := range s.journal.Moves {
 		destination := filepath.Join(s.payload, move.Relative)
@@ -165,8 +165,8 @@ func (s *taskArchiveFileStage) applyMoves() error {
 		}
 		if _, err := os.Lstat(move.Source); err != nil {
 			if os.IsNotExist(err) {
-				// Neither side exists: the path was removed outside the archive flow
-				// after the journal was written. Nothing can be staged for it.
+				// 양쪽 다 없습니다. 저널을 쓴 뒤에 보관 흐름 밖에서
+				// 경로가 지워진 것입니다. 준비할 것이 없습니다.
 				continue
 			}
 			return err
@@ -315,10 +315,10 @@ func (s *taskArchiveRestoreFiles) commit() error {
 	return os.RemoveAll(s.extracted)
 }
 
-// recoverTaskArchiveRestoreStages resolves file installs left by an interrupted
-// restore. If PostgreSQL committed, installed files are authoritative and only
-// the extraction directory is stale. Otherwise all completed renames are moved
-// back so the persistent restore job can retry from a clean destination.
+// recoverTaskArchiveRestoreStages는 끊긴 복원이 남긴 파일 설치를 정리합니다.
+// PostgreSQL이 확정했으면 설치된 파일이 기준이고,
+// 풀어 둔 디렉터리만 낡았습니다. 아니면 끝난 이름 바꾸기를 모두
+// 되돌려, 영구 복원 작업이 깨끗한 대상에서 다시 시도하게 합니다.
 func recoverTaskArchiveRestoreStages(dataDir string, pg *pgdb.DB) error {
 	parent := filepath.Join(taskArchiveRoot(dataDir), ".restore")
 	entries, err := os.ReadDir(parent)
@@ -336,7 +336,7 @@ func recoverTaskArchiveRestoreStages(dataDir string, pg *pgdb.DB) error {
 		root := filepath.Join(parent, entry.Name())
 		raw, err := os.ReadFile(filepath.Join(root, "restore-journal.json"))
 		if os.IsNotExist(err) {
-			// Extraction was interrupted before any destination rename.
+			// 대상 이름 바꾸기 전에 풀기가 끊겼습니다.
 			if err := os.RemoveAll(root); err != nil {
 				errs = append(errs, err)
 			}
@@ -383,9 +383,10 @@ func recoverTaskArchiveRestoreStages(dataDir string, pg *pgdb.DB) error {
 	return errors.Join(errs...)
 }
 
-// recoverTaskArchiveStages resolves file renames left by an interrupted archive.
-// A committed cold task already has a verified package, so stale staging can be
-// discarded; otherwise files are moved back before the persistent job retries.
+// recoverTaskArchiveStages는 끊긴 보관이 남긴 파일 이름 바꾸기를 정리합니다.
+// 확정된 차가운 작업은 검증된 패키지가 있으므로, 낡은 준비는
+// 버릴 수 있습니다. 아니면 영구 작업이 다시 시도하기 전에 파일을 되돌립니다.
+// 초보용: 엔진이 작업을 보관하다 끊기면, 파일을 패키지와 맞게 되돌리거나 버립니다.
 func recoverTaskArchiveStages(dataDir string, pg *pgdb.DB) error {
 	parent := filepath.Join(taskArchiveRoot(dataDir), ".staging")
 	entries, err := os.ReadDir(parent)
@@ -403,12 +404,12 @@ func recoverTaskArchiveStages(dataDir string, pg *pgdb.DB) error {
 		root := filepath.Join(parent, entry.Name())
 		raw, err := os.ReadFile(filepath.Join(root, "journal.json"))
 		if os.IsNotExist(err) {
-			// Either staging died between creating the directory tree and writing the
-			// journal — no rename had run, so payload holds nothing — or commit/rollback
-			// failed part-way through removing the root, in which case payload only holds
-			// copies already inside the package. Without a journal there is nothing to
-			// roll back, and reporting an error here keeps the archive worker from ever
-			// starting, so discard the directory instead.
+			// 준비는 디렉터리 트리를 만든 뒤 저널을 쓰기 전에 죽었거나
+			// (이름 바꾸기는 아직 없어 적재는 비어 있음), 확정/되돌리기가
+			// 루트를 지우다 중간에 실패했습니다. 그때 적재에는
+			// 이미 패키지 안에 있는 사본만 있습니다. 저널이 없으면 되돌릴 것이 없고,
+			// 여기서 오류를 보고하면 보관 워커가 영영 시작을 못 하므로
+			// 디렉터리를 버립니다.
 			if err := os.RemoveAll(root); err != nil {
 				errs = append(errs, err)
 			}
@@ -482,7 +483,7 @@ func recoverTaskArchiveDeletePackages(dataDir string, pg *pgdb.DB) error {
 			continue
 		}
 		if archive.State == pgdb.DeleteQueued || archive.State == pgdb.Deleting || archive.State == pgdb.DeleteFailed {
-			// The idempotent delete worker consumes the staged path directly.
+			// 여러 번 해도 되는 삭제 워커가 준비된 경로를 직접 소비합니다.
 			continue
 		}
 		if _, err := os.Lstat(original); err == nil {

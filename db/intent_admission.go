@@ -2,10 +2,9 @@ package db
 
 import "fmt"
 
-// DiscardOpenIntent compensates a follow-up creation when task admission fails.
-// The task execution gate must still be held by the caller, so the intent cannot
-// be claimed between this check and deletion. Edges and anchors cascade with the
-// node; activity is deleted explicitly because its node FK otherwise becomes NULL.
+// DiscardOpenIntent는 작업 입장이 실패했을 때, 방금 만든 후속 의도를 되돌린다.
+// 호출자가 작업 실행 잠금을 계속 잡고 있어야, 확인과 삭제 사이에 워커가 의도를 집어 가지 못한다.
+// 간선과 앵커는 노드와 함께 지워진다. 활동 기록은 노드 외래 키가 NULL이 되므로 따로 지운다.
 func (s *ExplorationStore) DiscardOpenIntent(id int64) error {
 	tx, err := s.db.Begin()
 	if err != nil {

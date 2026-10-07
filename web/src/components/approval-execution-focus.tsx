@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import type { Activity, InterceptExecution } from "@/lib/types";
 
-// Resolve one exact persisted call, independently of transcript pagination.
+// 페이지와 상관없이, 저장된 호출 하나를 정확히 찾습니다.
 export function useApprovalFocus({ taskId, conversationId }: { taskId?: string; conversationId?: number }) {
   const [state, setState] = React.useState<{
     id: number;
@@ -14,7 +14,7 @@ export function useApprovalFocus({ taskId, conversationId }: { taskId?: string; 
     loading: boolean;
   } | null>(null);
   const [revision, setRevision] = React.useState(0);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: revision is the explicit retry trigger.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: revision은 실패 뒤 같은 요청을 다시 시도하는 신호입니다.
   React.useEffect(() => {
     const q = new URLSearchParams(window.location.search);
     const id = Number(q.get("approval"));
@@ -56,8 +56,8 @@ export function useApprovalFocus({ taskId, conversationId }: { taskId?: string; 
 
 type HistoryPage = { items: Activity[]; hasMore: boolean };
 
-// Fill the existing transcript continuously back to the call, preserving all
-// intervening messages. Never splice an isolated call into a paginated history.
+// 그 호출까지 기존 대화 기록을 빈틈없이 채우고, 그 사이의 메시지는
+// 모두 남깁니다. 페이지 기록 한가운데 호출 하나만 끼워 넣지 않습니다.
 export function useApprovalHistory(
   source: InterceptExecution | undefined,
   loaded: boolean,

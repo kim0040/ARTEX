@@ -28,7 +28,7 @@ const (
 	syncDefaultPage    = 100
 )
 
-// findMCPByName returns the MCP server row with the given name, or nil.
+// findMCPByName은 그 이름의 MCP 서버 행을 돌려줍니다. 없으면 nil.
 func (s *Server) findMCPByName(name string) (*db.MCPServer, error) {
 	all, err := s.m.pg.ListMCP()
 	if err != nil {
@@ -42,8 +42,8 @@ func (s *Server) findMCPByName(name string) (*db.MCPServer, error) {
 	return nil, nil
 }
 
-// scopeSentryClient dials the configured ScopeSentry MCP (http transport). The env
-// map doubles as HTTP headers (X-API-Key). Callers must Close the client.
+// scopeSentryClient는 설정된 ScopeSentry MCP에 접속합니다(http 전송). env
+// 맵은 HTTP 헤더로도 씁니다(X-API-Key). 호출자가 Close해야 합니다.
 func (s *Server) scopeSentryClient(ctx context.Context) (*mcphttp.Client, error) {
 	m, err := s.findMCPByName(scopeSentryMCPName)
 	if err != nil {
@@ -58,8 +58,8 @@ func (s *Server) scopeSentryClient(ctx context.Context) (*mcphttp.Client, error)
 	return mcphttp.New(ctx, m.Name, m.URL, jsonStrMap(m.Env), m.Insecure)
 }
 
-// envHasValue reports whether the env/header map has any non-empty value
-// (i.e. an API key / Authorization header was filled in).
+// envHasValue는 env/헤더 맵에 비어 있지 않은 값이 있는지 알려 줍니다
+// (즉 API 키나 Authorization 헤더를 채웠는지).
 func envHasValue(raw json.RawMessage) bool {
 	for _, v := range jsonStrMap(raw) {
 		if strings.TrimSpace(v) != "" {
@@ -69,7 +69,7 @@ func envHasValue(raw json.RawMessage) bool {
 	return false
 }
 
-// ---------- GET /api/sync/scopesentry/status ----------
+// ---------- GET /api/sync/scopesentry/status — 상태 ----------
 
 func (s *Server) syncSSStatus(w http.ResponseWriter, r *http.Request) {
 	if s.pg(w) == nil {
@@ -98,7 +98,7 @@ func (s *Server) syncSSStatus(w http.ResponseWriter, r *http.Request) {
 	if m.Tools != nil {
 		resp["tools"] = m.Tools
 	}
-	// Light reachability probe only when it can actually connect.
+	// 실제로 접속될 수 있을 때만 가벼운 도달 확인을 합니다.
 	if configured && m.Enabled {
 		ctx, cancel := context.WithTimeout(r.Context(), 12*time.Second)
 		defer cancel()
@@ -112,8 +112,8 @@ func (s *Server) syncSSStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, resp)
 }
 
-// ---------- POST /api/sync/scopesentry/datasource ----------
-// Creates the placeholder row if missing, and/or sets URL + API key and enables it.
+// ---------- POST /api/sync/scopesentry/datasource — 데이터 소스 ----------
+// 없으면 자리 표시 행을 만들고, URL과 API 키를 넣거나 켭니다.
 
 func (s *Server) syncSSDatasource(w http.ResponseWriter, r *http.Request) {
 	pg := s.pg(w)
@@ -124,7 +124,7 @@ func (s *Server) syncSSDatasource(w http.ResponseWriter, r *http.Request) {
 		URL    string `json:"url"`
 		APIKey string `json:"api_key"`
 	}
-	_ = decode(r, &body) // empty body = just create the placeholder
+	_ = decode(r, &body) // 빈 본문 = 자리 표시만 만듭니다.
 	body.URL = strings.TrimSpace(body.URL)
 	body.APIKey = strings.TrimSpace(body.APIKey)
 
@@ -143,7 +143,7 @@ func (s *Server) syncSSDatasource(w http.ResponseWriter, r *http.Request) {
 		env, _ := json.Marshal(map[string]string{"X-API-Key": body.APIKey})
 		m.Env = env
 	}
-	// Enable only once it can actually be used.
+	// 실제로 쓸 수 있을 때만 켭니다.
 	m.Enabled = m.URL != "" && envHasValue(m.Env)
 
 	id, err := pg.SaveMCP(m)
@@ -152,7 +152,7 @@ func (s *Server) syncSSDatasource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	m.ID = id
-	// Best-effort tool discovery so the status card shows tools right away.
+	// 상태 카드가 도구를 바로 보이게, 도구 찾기는 실패해도 흐름을 계속합니다.
 	if m.Enabled {
 		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 		_ = s.discoverAndCacheMCP(ctx, m)
@@ -161,7 +161,7 @@ func (s *Server) syncSSDatasource(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"id": id, "enabled": m.Enabled})
 }
 
-// ---------- GET /api/sync/scopesentry/projects ----------
+// ---------- GET /api/sync/scopesentry/projects — 프로젝트 ----------
 
 func (s *Server) syncSSProjects(w http.ResponseWriter, r *http.Request) {
 	if s.pg(w) == nil {
@@ -188,7 +188,7 @@ func (s *Server) syncSSProjects(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 502, "list_projects_data 실패: "+err.Error())
 		return
 	}
-	// {result:{All:[{id,name,logo,AssetCount,tag}], <tag>:[...]}, tag:{...}}
+	// {result:{All:[{id,name,logo,AssetCount,tag}], <tag>:[...]}, tag:{...}} 모양
 	var env struct {
 		Result map[string]json.RawMessage `json:"result"`
 		Tag    map[string]int             `json:"tag"`
@@ -204,7 +204,7 @@ func (s *Server) syncSSProjects(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"projects": projects, "tag": env.Tag})
 }
 
-// ---------- GET /api/sync/scopesentry/tasks ----------
+// ---------- GET /api/sync/scopesentry/tasks — 작업 목록 ----------
 
 func (s *Server) syncSSTasks(w http.ResponseWriter, r *http.Request) {
 	if s.pg(w) == nil {
@@ -245,12 +245,12 @@ func (s *Server) syncSSTasks(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"tasks": tasks})
 }
 
-// ---------- POST /api/sync/scopesentry/sync ----------
+// ---------- POST /api/sync/scopesentry/sync — 동기화 ----------
 
 type ssSyncReq struct {
-	Dimension     string   `json:"dimension"`   // "project" | "task"
-	Targets       []string `json:"targets"`     // project ObjectIDs, or task names
-	AssetTypes    []string `json:"asset_types"` // subdomain | app | service
+	Dimension     string   `json:"dimension"`   // "project"=프로젝트 | "task"=작업
+	Targets       []string `json:"targets"`     // 프로젝트 ObjectID, 또는 작업 이름
+	AssetTypes    []string `json:"asset_types"` // subdomain=서브도메인 | app=앱 | service=서비스
 	CreateCompany bool     `json:"create_company"`
 	PageSize      int      `json:"page_size"`
 }
@@ -348,8 +348,8 @@ func (s *Server) syncSSRun(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Rebuild company attribution so freshly-synced assets attach to their company
-	// (scope was written above; assets came after).
+	// 기업 귀속을 다시 만들어, 방금 동기화한 자산이 기업에 붙게 합니다
+	// (범위는 위에서 썼고, 자산은 그 뒤에 왔습니다).
 	if madeCompany {
 		_ = cs.RecomputeAttribution()
 	}
@@ -362,8 +362,8 @@ func (s *Server) syncSSRun(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// ssProjectMeta fetches a project's display name and its target root domains
-// (get_project.target is a newline-separated list) for company + scope creation.
+// ssProjectMeta는 프로젝트 표시 이름과 대상 루트 도메인을 가져옵니다
+// (get_project.target은 줄바꿈으로 나뉜 목록). 기업과 범위를 만들 때 씁니다.
 func (s *Server) ssProjectMeta(ctx context.Context, cl *mcphttp.Client, projectID string) (name string, roots []string, err error) {
 	text, err := cl.Call(ctx, "get_project", map[string]any{"id": projectID})
 	if err != nil {
@@ -384,9 +384,9 @@ func (s *Server) ssProjectMeta(ctx context.Context, cl *mcphttp.Client, projectI
 	return p.Name, roots, nil
 }
 
-// ssPageAll pages through list_assets for one asset_type + filter until a short/empty
-// page or the protection cap. The {list:[...]} envelope has no total, so we stop when
-// a page returns fewer than pageSize items.
+// ssPageAll은 자산 종류와 필터 하나로 list_assets를 끝까지 넘깁니다.
+// 짧은/빈 페이지나 보호 상한에서 멈춥니다. {list:[...]} 봉투에 총계가 없어,
+// 페이지가 pageSize보다 적게 오면 멈춥니다.
 func (s *Server) ssPageAll(ctx context.Context, cl *mcphttp.Client, ssType string, filter map[string]any, pageSize int) (items []json.RawMessage, truncated bool, err error) {
 	for page := 1; ; page++ {
 		args := map[string]any{"asset_type": ssType, "pageIndex": page, "pageSize": pageSize}
@@ -419,8 +419,9 @@ func (s *Server) ssPageAll(ctx context.Context, cl *mcphttp.Client, ssType strin
 	return items, truncated, nil
 }
 
-// ssIngest maps one ScopeSentry asset JSON to the ARTEX asset store and upserts it.
-// Returns a non-empty error string on failure. synced is incremented per kind.
+// ssIngest는 ScopeSentry 자산 JSON 하나를 ARTEX 자산 저장소에 맞춰 넣고 업서트합니다.
+// 실패하면 비어 있지 않은 오류 문자열을 돌려줍니다. synced는 종류마다 올라갑니다.
+// 초보용: 바깥에서 온 자산을 자산 그래프에 넣습니다. 탐색 그래프의 앵커와는 별개입니다.
 func (s *Server) ssIngest(as *db.AssetStore, assetType string, raw json.RawMessage, synced map[string]int) string {
 	switch assetType {
 	case "subdomain":
@@ -502,7 +503,7 @@ func (s *Server) ssIngest(as *db.AssetStore, assetType string, raw json.RawMessa
 	return ""
 }
 
-// queryInt reads an int query param with a default fallback.
+// queryInt는 정수 쿼리를 읽습니다. 없으면 기본값을 씁니다.
 func queryInt(r *http.Request, key string, def int) int {
 	if v := r.URL.Query().Get(key); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {

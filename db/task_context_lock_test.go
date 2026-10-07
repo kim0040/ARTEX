@@ -422,9 +422,9 @@ func TestDeleteProfileRetriesReferenceCommittedAfterInitialScan(t *testing.T) {
 		_ = d.DeleteProfile(profileID)
 	})
 
-	// Keep the new reference uncommitted while deletion takes its initial
-	// READ COMMITTED snapshot. The task is therefore absent from the first lock
-	// set, while its FK KEY SHARE lock makes deletion wait at the profile row.
+	// 삭제가 첫
+	// READ COMMITTED 스냅샷을 찍는 동안 새 참조는 커밋하지 않는다. 그래서 작업은 첫 잠금
+	// 집합에 없고, 외래 키 KEY SHARE 잠금이 삭제를 프로필 행에서 기다리게 한다.
 	referenceTx, err := d.Begin()
 	if err != nil {
 		t.Fatal(err)

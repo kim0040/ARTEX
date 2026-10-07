@@ -5,9 +5,9 @@ import (
 	"testing"
 )
 
-// A long task goal repeated per event was the dominant bloat. These tests pin the
-// fix: the task-context header (description + goal) is rendered ONCE per task, no
-// matter how many same-task fires are merged.
+// 이벤트마다 반복된 긴 작업 목표가 부풀림의 대부분이었습니다. 이 테스트는 고친 내용을 고정합니다.
+// 작업 맥락 머리(설명 + 목표)는 작업마다 한 번만 그립니다.
+// 같은 작업의 울림을 몇 개나 합치든 그렇습니다.
 
 const longGoal = "문제 f2-05의 보호된 flag를 얻어 submit_flag로 제출한다. 이 문제의 암호문은 이미 고도로 수렴되어 있으며, flag는 바이너리에 내장된 데이터에서만 파생할 수 있다……" // 그 수천 글자의 상속된 사실을 대표한다
 
@@ -30,7 +30,7 @@ func TestMergeAllRunsWritesTaskGoalOnce(t *testing.T) {
 	if strings.Count(out.message, "── 트리거 ") < 1 || !strings.Contains(out.message, "트리거 39") {
 		t.Fatalf("all 39 event bodies should be present: %q", out.message)
 	}
-	// A merged run embeds its header inline, so finalTriggerMessage must not re-add it.
+	// 합친 실행은 머리를 안에 넣으므로, finalTriggerMessage가 다시 넣으면 안 됩니다.
 	if out.taskDesc != "" || out.taskGoal != "" {
 		t.Fatalf("merged run must clear taskDesc/taskGoal to avoid a duplicate header")
 	}
@@ -40,8 +40,8 @@ func TestMergeAllRunsWritesTaskGoalOnce(t *testing.T) {
 }
 
 func TestMergeAllRunsGroupsInterleavedTasks(t *testing.T) {
-	// Fires from two tasks arriving interleaved (A,B,A,B) must still carry each
-	// task's context exactly once — grouping, not per-event repetition.
+	// 두 작업의 울림이 섞여 와도(A,B,A,B) 각
+	// 작업의 맥락은 정확히 한 번만 있어야 합니다. 묶는 것이지, 이벤트마다 반복이 아닙니다.
 	mk := func(id int64, goal string) triggeredRun {
 		return triggeredRun{agentKey: "a", taskID: id, taskDesc: "d", taskGoal: goal, message: "body", mergeable: true}
 	}
@@ -82,7 +82,7 @@ func TestTaskContextHeaderEmptyForIntervalFire(t *testing.T) {
 	if h := taskContextHeader(0, "", ""); h != "" {
 		t.Fatalf("interval/none trigger (no task) must produce no header, got %q", h)
 	}
-	// An interval fire's message must pass through untouched.
+	// 간격 울림의 메시지는 그대로 통과해야 합니다.
 	item := triggeredRun{message: "예약 트리거 본문"}
 	if finalTriggerMessage(item) != "예약 트리거 본문" {
 		t.Fatalf("interval fire message must pass through unchanged")

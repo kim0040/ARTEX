@@ -68,7 +68,7 @@ type nopWriteCloser struct{ io.Writer }
 
 func (nopWriteCloser) Close() error { return nil }
 
-// zipFile describes one entry for buildZip.
+// zipFile은 buildZip용 항목 하나를 적습니다.
 type zipFile struct {
 	name    string
 	body    string
@@ -102,7 +102,7 @@ func buildZip(t *testing.T, files ...zipFile) []byte {
 	return buf.Bytes()
 }
 
-// uploadZip posts raw zip bytes to fsUploadSkill and returns the response.
+// uploadZip은 zip 바이트를 fsUploadSkill에 보내고 응답을 돌려줍니다.
 func uploadZip(t *testing.T, skillDir string, filename string, data []byte) (*httptest.ResponseRecorder, map[string]any) {
 	t.Helper()
 	var body bytes.Buffer
@@ -129,7 +129,7 @@ func uploadZip(t *testing.T, skillDir string, filename string, data []byte) (*ht
 const zhSkillMD = "---\nname: 중국어스킬\ndescription: 테스트\n---\n본문\n"
 
 // A zstd-compressed archive (WinZip의 선택적 압축 방식) used to blow up with
-// "zip: unsupported compression"; it now installs like any Deflate archive.
+// "zip: unsupported compression"으로 터지던 것이, 이제 Deflate 압축처럼 설치됩니다.
 func TestUploadSkillZstdAndChineseNames(t *testing.T) {
 	dir := t.TempDir()
 	data := buildZip(t,
@@ -179,8 +179,8 @@ func TestUploadSkillGBKNames(t *testing.T) {
 	}
 }
 
-// An archive we genuinely cannot decode should name the method in Chinese instead of
-// surfacing "zip: unsupported compression algorithm".
+// 정말 풀 수 없는 압축은 방식 이름을 중국어로 알려야 하고,
+// "zip: unsupported compression algorithm"을 그대로 보이면 안 됩니다.
 func TestUploadSkillUnsupportedMethod(t *testing.T) {
 	data := buildZip(t,
 		zipFile{name: "demo/SKILL.md", body: "---\nname: demo\n---\n", method: zipMethodDeflate64},
@@ -197,8 +197,8 @@ func TestUploadSkillUnsupportedMethod(t *testing.T) {
 
 func TestUploadSkillEncrypted(t *testing.T) {
 	data := buildZip(t, zipFile{name: "demo/SKILL.md", body: "---\nname: demo\n---\n", method: zip.Deflate})
-	// flip the "encrypted" general-purpose flag bit in the local file header
-	// (offset 6) and in the central directory copy (offset 8).
+	// 로컬 파일 헤더의 "암호화됨" 범용 플래그 비트를 뒤집습니다
+	// (오프셋 6)와 중앙 디렉터리 사본(오프셋 8)에서도.
 	local := bytes.Index(data, []byte("PK\x03\x04"))
 	central := bytes.Index(data, []byte("PK\x01\x02"))
 	if local < 0 || central < 0 {
@@ -216,7 +216,7 @@ func TestUploadSkillEncrypted(t *testing.T) {
 	}
 }
 
-// Zip-slip must still be refused now that the path check accepts Unicode.
+// 경로 검사가 유니코드를 받아도, Zip-slip은 여전히 거절돼야 합니다.
 func TestUploadSkillRejectsTraversal(t *testing.T) {
 	data := buildZip(t,
 		zipFile{name: "demo/SKILL.md", body: "---\nname: demo\n---\n", method: zip.Deflate},

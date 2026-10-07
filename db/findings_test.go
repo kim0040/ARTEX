@@ -25,7 +25,7 @@ func TestDeleteFinding(t *testing.T) {
 	}
 	defer d.DeleteTask(tk.ID)
 
-	// seed a finding node in the task's exploration graph, then a findings row on it
+	// 작업의 탐색 그래프에 발견 노드를 심고, 그 위에 findings 행을 둔다
 	es := d.Exploration(tk.ExplorationID)
 	nodeID, err := es.AddNode(KindFinding, map[string]any{"summary": "x", "severity": "high"}, 5, "confirmed", "worker", nil)
 	if err != nil {
@@ -52,15 +52,15 @@ func TestDeleteFinding(t *testing.T) {
 		t.Fatalf("originating finding node should be deleted, still %d", cnt)
 	}
 
-	// deleting a non-existent finding is a no-op (0 rows), not an error
+	// 없는 발견을 지우는 것은 아무 일도 아니다(0행). 오류가 아니다
 	if n, err := d.DeleteFinding(fid); err != nil || n != 0 {
 		t.Fatalf("re-delete: want (0,nil), got (%d,%v)", n, err)
 	}
 }
 
-// TestFindingsPageAndStats exercises ListFindingsPage (filter/sort/paging) and
-// FindingStats against the live dev PG. It tags its rows with a unique vulnclass
-// so assertions are isolated from any pre-existing data, and cleans up after.
+// TestFindingsPageAndStats는 ListFindingsPage(필터/정렬/페이지)와
+// FindingStats를 개발 PG에서 돈다. 행에 유일한 vulnclass를 달아
+// 기존 데이터와 단언을 갈라 두고, 끝나면 치운다.
 func TestFindingsPageAndStats(t *testing.T) {
 	d, err := Open(testDSN(t))
 	if err != nil {
@@ -69,13 +69,13 @@ func TestFindingsPageAndStats(t *testing.T) {
 	defer d.Close()
 
 	const vc = "__test_vc_pagination__"
-	// clean any leftovers from a prior aborted run, and clean up on exit
+	// 이전에 끊긴 실행이 남긴 것을 지우고, 끝날 때도 치운다
 	cleanup := func() { _, _ = d.Exec(`DELETE FROM findings WHERE vulnclass=$1`, vc) }
 	cleanup()
 	defer cleanup()
 
-	// Seed 6 findings under the marker vulnclass: 1 critical, 3 high, 2 low; 2 pending.
-	// The critical row carries a name to verify round-trip.
+	// 표식 vulnclass 아래 발견 6개를 심는다. critical 1, high 3, low 2, 그중 pending 2.
+	// critical 행에는 이름을 달아 왕복을 확인한다.
 	seed := []struct {
 		sev, status, name string
 	}{
@@ -98,7 +98,7 @@ func TestFindingsPageAndStats(t *testing.T) {
 		ids = append(ids, id)
 	}
 
-	// Filter by our vulnclass → exactly the 6 seeded rows, paged 2 per page.
+	// 우리 vulnclass로 거르면 심은 6행이 정확히 나오고, 페이지당 2개다.
 	p1, total, err := d.ListFindingsPage(FindingFilter{VulnClass: vc, Sort: "severity"}, 1, 2)
 	if err != nil {
 		t.Fatal(err)
@@ -109,7 +109,7 @@ func TestFindingsPageAndStats(t *testing.T) {
 	if len(p1) != 2 {
 		t.Fatalf("page1 size: want 2, got %d", len(p1))
 	}
-	// severity sort → critical first (with its name round-tripped), then high.
+	// 심각도 정렬이면 critical이 먼저(이름이 왕복됨)이고 그다음 high.
 	if p1[0].Severity != "critical" {
 		t.Fatalf("severity sort: want critical first, got %q", p1[0].Severity)
 	}
@@ -120,7 +120,7 @@ func TestFindingsPageAndStats(t *testing.T) {
 		t.Fatalf("severity sort: want high second, got %q", p1[1].Severity)
 	}
 
-	// Combined filter: vulnclass + status=pending → 2 rows.
+	// 합친 필터: vulnclass + status=pending → 2행.
 	pend, total, err := d.ListFindingsPage(FindingFilter{VulnClass: vc, Status: FindingPending}, 1, 50)
 	if err != nil {
 		t.Fatal(err)
@@ -129,7 +129,7 @@ func TestFindingsPageAndStats(t *testing.T) {
 		t.Fatalf("pending filter: want 2/2, got %d/%d", total, len(pend))
 	}
 
-	// Combined filter: vulnclass + severity=high → 3 rows.
+	// 합친 필터: vulnclass + severity=high → 3행.
 	_, total, err = d.ListFindingsPage(FindingFilter{VulnClass: vc, Severity: "high"}, 1, 50)
 	if err != nil {
 		t.Fatal(err)
@@ -138,8 +138,8 @@ func TestFindingsPageAndStats(t *testing.T) {
 		t.Fatalf("high filter: want 3, got %d", total)
 	}
 
-	// Stats: whole-table, so assert our contribution is reflected (>=) and the
-	// marker vulnclass is present.
+	// 통계는 표 전체다. 우리 기여가 반영됐는지(>=)와
+	// 표식 vulnclass가 있는지를 확인한다.
 	st, err := d.FindingStats()
 	if err != nil {
 		t.Fatal(err)
@@ -154,7 +154,7 @@ func TestFindingsPageAndStats(t *testing.T) {
 		t.Fatalf("stats vulnclasses missing %q", vc)
 	}
 
-	// GetFinding: single-row fetch round-trips id/name/severity.
+	// GetFinding: 한 행 읽기가 id/name/severity를 왕복한다.
 	one, err := d.GetFinding(ids[0])
 	if err != nil {
 		t.Fatal(err)
@@ -165,7 +165,7 @@ func TestFindingsPageAndStats(t *testing.T) {
 	if one.Report != "" {
 		t.Fatalf("new finding report should be empty, got %q", one.Report)
 	}
-	// report column round-trips through GetFinding.
+	// report 열은 GetFinding으로 왕복한다.
 	if _, err := d.Exec(`UPDATE findings SET report=$1 WHERE id=$2`, "# 보고서\n본문", ids[0]); err != nil {
 		t.Fatal(err)
 	}
@@ -203,7 +203,7 @@ func TestFindingsPageAndStats(t *testing.T) {
 		t.Fatalf("GetFinding(-1): want nil,nil got %+v,%v", miss, err)
 	}
 
-	// SetFindingSeverity: standalone row updates; 0 rows for unknown id.
+	// SetFindingSeverity: 독립 행은 갱신되고, 모르는 id는 0행이다.
 	if n, err := d.SetFindingSeverity(ids[0], "high"); err != nil || n != 1 {
 		t.Fatalf("SetFindingSeverity: want 1,nil got %d,%v", n, err)
 	}
@@ -313,8 +313,8 @@ func TestFindingGroupsAndUnassignedPaging(t *testing.T) {
 		t.Fatalf("query-filtered groups: %+v groups=%d findings=%d err=%v",
 			matchedGroups, matchedGroupTotal, matchedFindingTotal, err)
 	}
-	// Retained findings from deleted tasks join the same bucket as findings that
-	// were created without any task.
+	// 지운 작업에 남아 있는 발견은, 작업 없이 만든
+	// 발견과 같은 묶음에 들어간다.
 	if err := d.DeleteTask(taskB.ID); err != nil {
 		t.Fatal(err)
 	}

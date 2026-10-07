@@ -139,8 +139,8 @@ func (s *Server) startFindingRetest(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, code, map[string]any{"retest": retest, "created": created})
 }
 
-// Both tools derive the finding from server-owned conversation context. Tool
-// arguments cannot redirect a result into a different finding or conversation.
+// 두 도구 모두 서버가 가진 대화 맥락에서 발견을 정합니다. 도구
+// 인자로 다른 발견이나 다른 대화에 결과를 넣을 수 없습니다.
 func (s *Server) findingRetestTools() []actool.CoreTool {
 	return []actool.CoreTool{
 		roTool("get_finding_retest_context", "현재 재검증 세션에 연결된 발견(finding) 증거 스냅샷, 재검증 상태, 보충 설명, 현재 작업 제약을 읽습니다. 매개변수가 없으며 이 세션만 읽을 수 있습니다.",
@@ -189,8 +189,8 @@ func (s *Server) findingRetestTools() []actool.CoreTool {
 	}
 }
 
-// Seed the editable agent atomically, without an automatic discovery trigger.
-// Once seeded, user edits/deletion survive restarts; a pre-existing key is kept.
+// 편집 가능한 에이전트를 한 번에 심습니다. 자동으로 탐색을 시작하는 트리거는 걸지 않습니다.
+// 심은 뒤 사용자가 고치거나 지운 내용은 재시작해도 남습니다. 이미 있는 키는 유지합니다.
 func (s *Server) seedFindingRetester() error {
 	for _, t := range s.findingRetestTools() {
 		schema, _ := json.Marshal(t.InputSchema())
@@ -205,7 +205,7 @@ func (s *Server) seedFindingRetester() error {
 		return err
 	}
 	defer tx.Rollback()
-	// Lock this migration, including concurrent server initialization.
+	// 서버가 동시에 초기화돼도 이 이관이 겹치지 않게 잠급니다.
 	if _, err = tx.Exec(`SELECT pg_advisory_xact_lock(7337741010)`); err != nil {
 		return err
 	}
@@ -242,7 +242,7 @@ func (s *Server) seedFindingRetester() error {
 
 func (s *Server) finishRetest(id int64, status, reason string) {
 	if err := s.m.pg.FinishFindingRetest(id, status, reason); err != nil {
-		// Surface failure to the conversation runner rather than inventing a result.
+		// 결과를 지어내지 않고, 실패를 로그로 남겨 대화 실행 쪽이 보게 합니다.
 		log.Printf("[retest %d] finish: %v", id, err)
 	}
 }

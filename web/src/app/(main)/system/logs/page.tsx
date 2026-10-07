@@ -48,7 +48,7 @@ export default function LogsPage() {
   const pausedRef = React.useRef(false);
   pausedRef.current = paused;
 
-  // Minimum db_id seen — used as the cursor for loading older history.
+  // 지금까지 본 db_id의 최솟값. 더 오래된 기록을 불러올 기준 번호입니다.
   const minDbId = React.useMemo(() => {
     let min = 0;
     for (const l of lines) {
@@ -57,8 +57,8 @@ export default function LogsPage() {
     return min;
   }, [lines]);
 
-  // Live tail via SSE. on connect, replays whatever is in the ring (includes
-  // DB-restored history from the last 100 rows written before restart).
+  // SSE로 실시간 꼬리를 봅니다. 연결되면 링 버퍼에 있는 것을 다시 보냅니다(재시작 전에
+  // 쓴 마지막 100줄을 DB에서 복원한 기록도 포함).
   React.useEffect(() => {
     if (MOCK) {
       setLines(MOCK_LOGS);
@@ -71,13 +71,13 @@ export default function LogsPage() {
         const l = JSON.parse(e.data) as LogLine;
         setLines((prev) => (prev.some((x) => x.seq === l.seq) ? prev : [...prev, l].slice(-3000)));
       } catch {
-        /* ignore malformed frame */
+        /* 깨진 프레임은 무시 */
       }
     };
     return () => es.close();
   }, []);
 
-  // Mark "has more" once we have any db_id in view.
+  // 화면에 db_id가 하나라도 있으면 "더 있음"으로 표시합니다.
   React.useEffect(() => {
     if (minDbId > 1) setHasMore(true);
   }, [minDbId]);
@@ -91,14 +91,14 @@ export default function LogsPage() {
       if (!res.ok) return;
       const data = await res.json() as { items: LogLine[]; has_more: boolean };
       if (data.items?.length) {
-        // Assign synthetic seq numbers below current minimum to keep dedup working.
+        // 지금 최솟값보다 작은 임시 seq를 붙여, 중복 제거가 계속 되게 합니다.
         setLines((prev) => {
           const minSeq = prev.reduce((m, l) => Math.min(m, l.seq ?? 0), 0);
           const older = data.items.map((l, i) => ({
             ...l,
             seq: minSeq - data.items.length + i,
           }));
-          // Prepend, dedup by db_id, cap at 5000.
+          // 앞에 붙이고, db_id로 중복을 빼고, 5000개에서 자릅니다.
           const merged = [...older, ...prev];
           const seen = new Set<number>();
           const deduped = merged.filter((l) => {

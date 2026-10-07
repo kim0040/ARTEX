@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// cleanup helpers to remove test data
+// 테스트 데이터를 지우는 도우미
 func cleanupCompany(d *DB, id int64) {
 	d.Exec(`DELETE FROM company_scope WHERE company_id = $1`, id)
 	d.Exec(`DELETE FROM companies WHERE id = $1`, id)
@@ -31,7 +31,7 @@ func TestCompanyUpsertAndGet(t *testing.T) {
 		t.Error("first upsert should report created=true")
 	}
 
-	// duplicate: same nkey, should not create new
+	// 중복: 같은 nkey면 새로 만들면 안 된다
 	id2, created2, err := cs.UpsertCompany("Test Corp", "")
 	if err != nil {
 		t.Fatal(err)
@@ -51,8 +51,8 @@ func TestCompanyUpsertAndGet(t *testing.T) {
 		t.Errorf("name: %q", c.Name)
 	}
 
-	// GetCompanyByName
-	c2, err := cs.GetCompanyByName("test corp") // normalised
+	// 이름으로 회사 조회
+	c2, err := cs.GetCompanyByName("test corp") // 정규화된 이름
 	if err != nil || c2 == nil {
 		t.Fatalf("GetCompanyByName: %v", err)
 	}
@@ -148,7 +148,7 @@ func TestCompanyScope(t *testing.T) {
 		t.Errorf("unexpected skipped=%d invalid=%d", skipped, invalid)
 	}
 
-	// Adding again should skip (duplicate)
+	// 다시 넣으면 건너뛰어야 한다(중복)
 	added2, skipped2, invalid2, _ := cs.AddScope(id, lines, "test")
 	if added2 != 0 || skipped2 != 3 {
 		t.Errorf("want 0 added 3 skipped, got %d added %d skipped %d invalid", added2, skipped2, invalid2)
@@ -177,8 +177,8 @@ func TestCompanyScopeInvalid(t *testing.T) {
 	}
 	defer cleanupCompany(d, id)
 
-	// Explicitly typed TLD-only domains and overly broad CIDRs should be
-	// rejected. Untyped plain text is intentionally classified as a keyword.
+	// 종류를 명시한 TLD만 있는 도메인과 너무 넓은 CIDR은
+	// 거부된다. 종류 없는 일반 글은 일부러 키워드로 분류한다.
 	inputs := []ScopeInput{
 		{Kind: "domain", Value: "com"},
 		{Kind: "cidr", Value: "1.2.3.4/8"},
@@ -208,25 +208,25 @@ func TestResolveCompany(t *testing.T) {
 
 	cs.AddScope(id, []string{"resolve-test.io", "10.20.0.0/16"}, "test")
 
-	// domain match
+	// 도메인 일치
 	cid, err := cs.ResolveCompany("resolve-test.io", "")
 	if err != nil || cid == nil || *cid != id {
 		t.Errorf("domain resolve: want %d, got %v (err %v)", id, cid, err)
 	}
 
-	// no match
+	// 일치 없음
 	cid2, err := cs.ResolveCompany("notinscope.com", "")
 	if err != nil || cid2 != nil {
 		t.Errorf("no-match: want nil, got %v", cid2)
 	}
 
-	// IP/CIDR match
+	// IP/CIDR 일치
 	cid3, err := cs.ResolveCompany("", "10.20.5.1")
 	if err != nil || cid3 == nil || *cid3 != id {
 		t.Errorf("cidr resolve: want %d, got %v (err %v)", id, cid3, err)
 	}
 
-	// IP outside CIDR
+	// CIDR 밖의 IP
 	cid4, err := cs.ResolveCompany("", "10.30.0.1")
 	if err != nil || cid4 != nil {
 		t.Errorf("cidr no-match: want nil, got %v", cid4)
@@ -249,7 +249,7 @@ func TestUpdateScope(t *testing.T) {
 
 	cs.AddScope(id, []string{"old-domain.com"}, "initial")
 
-	// UpdateScope replaces
+	// UpdateScope는 바꿔 넣는다
 	added, invalid, errs := cs.UpdateScope(id, []string{"new-domain.com"}, "replacement")
 	if added != 1 || invalid != 0 || len(errs) != 0 {
 		t.Errorf("UpdateScope: added=%d invalid=%d errs=%v", added, invalid, errs)
@@ -260,8 +260,8 @@ func TestUpdateScope(t *testing.T) {
 		t.Errorf("UpdateScope: expected new-domain.com only, got %+v", scope)
 	}
 
-	// Invalid replacement input must not turn a partial validation response into
-	// a destructive replacement of the existing rules.
+	// 잘못된 교체 입력이 일부만 검사된 응답을
+	// 기존 규칙을 지우는 교체로 만들면 안 된다.
 	added, invalid, validationErrors, err := cs.UpdateScopeInputsChecked(id, []ScopeInput{
 		{Kind: "domain", Value: "co.uk"},
 	}, "invalid replacement")
@@ -334,7 +334,7 @@ func TestDeleteCompany(t *testing.T) {
 	if err != nil || c != nil {
 		t.Error("expected company to be gone")
 	}
-	// scope should be cascade-deleted
+	// 범위는 함께 지워져야 한다
 	scope, _ := cs.GetScope(id)
 	if len(scope) != 0 {
 		t.Errorf("expected scope cascade-deleted, got %d rules", len(scope))
@@ -404,21 +404,21 @@ func TestRecomputeAttribution(t *testing.T) {
 	defer cleanupCompany(d, id)
 	defer d.Exec(`DELETE FROM assets WHERE root_domain = 'attr-test.com'`)
 
-	// insert asset before adding scope
+	// 범위를 넣기 전에 자산을 넣는다
 	assetID, err := as.UpsertRootDomain(UpsertRootDomainReq{Domain: "attr-test.com"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer d.Exec(`DELETE FROM assets WHERE id = $1`, assetID)
 
-	// asset should not be attributed yet
+	// 자산은 아직 귀속되면 안 된다
 	var companyID *int64
 	d.QueryRow(`SELECT company_id FROM assets WHERE id = $1`, assetID).Scan(&companyID)
 	if companyID != nil {
 		t.Error("expected no company before scope added")
 	}
 
-	// add scope and recompute
+	// 범위를 넣고 다시 계산한다
 	cs.AddScope(id, []string{"attr-test.com"}, "test")
 	if err := cs.RecomputeAttribution(); err != nil {
 		t.Fatal(err)

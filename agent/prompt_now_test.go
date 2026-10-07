@@ -6,9 +6,9 @@ import (
 	"time"
 )
 
-// TestChatNowVarRenders verifies the universal {{.Now}} runtime variable: a custom
-// (chat) agent prompt referencing it renders the live server time each turn, rather
-// than failing template execution and falling back to DefaultAssistantPrompt.
+// TestChatNowVarRenders 는 공통 {{.Now}} 실행 변수를 확인합니다. 사용자 정의
+// (대화) 에이전트 프롬프트가 이것을 쓰면, 매 턴 서버의 현재 시각을 그립니다.
+// 템플릿 실행이 실패해 DefaultAssistantPrompt 로 돌아가지 않습니다.
 func TestChatNowVarRenders(t *testing.T) {
 	prev := PromptOverride
 	defer func() { PromptOverride = prev }()
@@ -30,9 +30,9 @@ func TestChatNowVarRenders(t *testing.T) {
 	}
 }
 
-// TestChatDataDirVarRenders verifies the universal {{.DataDir}} runtime variable:
-// a custom prompt referencing it renders the server data root (s.m.dir), rather
-// than failing template execution and falling back to DefaultAssistantPrompt.
+// TestChatDataDirVarRenders 는 공통 {{.DataDir}} 실행 변수를 확인합니다.
+// 사용자 정의 프롬프트가 이것을 쓰면 서버 데이터 뿌리(s.m.dir)를 그립니다.
+// 템플릿 실행이 실패해 DefaultAssistantPrompt 로 돌아가지 않습니다.
 func TestChatDataDirVarRenders(t *testing.T) {
 	prev := PromptOverride
 	defer func() { PromptOverride = prev }()
@@ -47,8 +47,8 @@ func TestChatDataDirVarRenders(t *testing.T) {
 	}
 }
 
-// TestChatUnknownVarFallsBack verifies an out-of-catalog {{.X}} still degrades
-// safely to the default assistant prompt (never a half-rendered prompt).
+// TestChatUnknownVarFallsBack 은 카탈로그에 없는 {{.X}} 가 기본 도우미
+// 프롬프트로 안전하게 내려가는지 봅니다(반쯤 그린 프롬프트는 없습니다).
 func TestChatUnknownVarFallsBack(t *testing.T) {
 	prev := PromptOverride
 	defer func() { PromptOverride = prev }()

@@ -109,7 +109,7 @@ func (s *Server) runOneTaskArchiveJob() error {
 		}
 		return fmt.Errorf("archive job %d (%s): %w", job.ID, job.State, runErr)
 	}
-	// Drain another queued item without waiting for the periodic poll.
+	// 주기적 폴링을 기다리지 않고, 대기 중인 항목을 하나 더 빼 갑니다.
 	s.notifyTaskArchiveWorker()
 	return nil
 }
@@ -242,8 +242,8 @@ func (s *Server) restoreTaskArchive(job *pgdb.TaskArchive) (runErr error) {
 	if err := validateArchivePath(s.m.dir, job.ArchivePath); err != nil {
 		return err
 	}
-	// A prior attempt may have committed PostgreSQL and files, then failed only
-	// while consuming the package. Finish that cleanup without replaying rows.
+	// 이전 시도가 PostgreSQL과 파일은 확정하고, 패키지를 소비할 때만
+	// 실패했을 수 있습니다. 행을 다시 넣지 않고 그 정리만 끝냅니다.
 	if restored, err := s.m.pg.IsTaskArchiveRestored(job.ID); err != nil {
 		return err
 	} else if restored {
@@ -655,9 +655,9 @@ func (s *Server) orderColdTaskArchiveBatch(ids []int64, restore bool) []int64 {
 	return ordered
 }
 
-// topoTaskIDs orders source->dependent for restore and dependent->source for
-// archive/delete. Cycles are impossible at creation, but stable fallback keeps a
-// damaged database operable.
+// topoTaskIDs는 복원 때는 원본→의존, 보관/삭제 때는 의존→원본 순입니다.
+// 만들 때는 순환이 불가능하지만, 안정적인 폴백이
+// 손상된 데이터베이스도 돌아가게 합니다.
 func topoTaskIDs(ids []string, sources map[string][]string, restore bool) []string {
 	set := map[string]bool{}
 	for _, id := range ids {

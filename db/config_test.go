@@ -7,11 +7,11 @@ import (
 	"testing"
 )
 
-// TestPoolProfilesOrder pins the failover chain query: keyless profiles can't
-// serve a request and excluded ones aren't fallback targets, so neither belongs
-// in the chain; the rest come back by priority, highest first.
-// Deliberately does NOT touch is_default — flipping the active profile would be a
-// side effect on the shared dev database.
+// TestPoolProfilesOrder는 장애 조치 사슬 쿼리를 고정한다. 키 없는 프로필은
+// 요청을 처리할 수 없고, 제외된 프로필은 대체 대상이 아니다. 둘 다
+// 사슬에 없다. 나머지는 우선순위가 높은 것부터 온다.
+// is_default는 일부러 건드리지 않는다. 활성 프로필을 바꾸면
+// 공유 개발 데이터베이스에 부수 효과가 난다.
 func TestPoolProfilesOrder(t *testing.T) {
 	d, err := Open(testDSN(t))
 	if err != nil {
@@ -32,8 +32,8 @@ func TestPoolProfilesOrder(t *testing.T) {
 	}
 	lo := mk("t-pool-lo", 1, false, "k1")
 	hi := mk("t-pool-hi", 9, false, "k2")
-	mk("t-pool-excluded", 99, true, "k3") // excluded despite the top priority
-	mk("t-pool-nokey", 50, false, "")     // no key → cannot serve anything
+	mk("t-pool-excluded", 99, true, "k3") // 우선순위가 맨 위여도 제외
+	mk("t-pool-nokey", 50, false, "")     // 키 없음 → 아무것도 처리할 수 없다
 
 	chain, err := d.PoolProfiles()
 	if err != nil {
@@ -71,7 +71,7 @@ func TestConfigStores(t *testing.T) {
 	}
 	defer d.Close()
 
-	// LLM profile: save, active, key never serialized
+	// LLM 프로필: 저장, 활성, 키는 직렬화하지 않음
 	pid, err := d.SaveProfile(&LLMProfile{Name: "t-default", Format: "openai", Model: "gpt-x", APIKey: "secret123"})
 	if err != nil {
 		t.Fatal(err)
@@ -87,7 +87,7 @@ func TestConfigStores(t *testing.T) {
 	if err != nil || act == nil || act.APIKey != "secret123" {
 		t.Fatalf("active profile/key: %+v err=%v", act, err)
 	}
-	// list must hide the key, expose hint
+	// 목록은 키를 숨기고 힌트만 보여야 한다
 	list, _ := d.ListProfiles()
 	for _, p := range list {
 		if p.ID == pid {
@@ -101,7 +101,7 @@ func TestConfigStores(t *testing.T) {
 		}
 	}
 
-	// agents seeded; prompt versioning
+	// 에이전트를 심고, 프롬프트 버전을 본다
 	ag, err := d.GetAgentByKey("planner")
 	if err != nil || ag == nil {
 		t.Fatalf("planner agent: %v", err)
@@ -123,24 +123,24 @@ func TestConfigStores(t *testing.T) {
 		t.Fatalf("want >=2 versions, got %d", len(vers))
 	}
 	pv, _ := d.PromptVars(ag.ID)
-	// planner must have at least the seeded catalog vars (Goal, AssetSummary)
+	// 플래너에는 적어도 심은 카탈로그 변수(Goal, AssetSummary)가 있어야 한다
 	if len(pv) < 2 {
 		t.Fatalf("planner catalog want >=2 vars, got %d", len(pv))
 	}
 	d.Exec(`DELETE FROM agent_prompts WHERE agent_id=$1`, ag.ID)
 	d.Exec(`UPDATE agents SET current_prompt_id=NULL WHERE id=$1`, ag.ID)
 
-	// mcp + skill + visibility (bidirectional via one join)
-	// Clean up any leftover MCP from prior runs to keep this test idempotent.
+	// mcp + 스킬 + 가시성(조인 하나로 양방향)
+	// 이전 실행에 남은 MCP를 지워 이 테스트를 여러 번 돌려도 같게 한다.
 	d.Exec(`DELETE FROM mcp_servers WHERE name = 't-gh'`)
 	mid, err := d.SaveMCP(&MCPServer{Name: "t-gh", Transport: "stdio", Command: "npx", Args: json.RawMessage(`["server-github"]`), Env: json.RawMessage(`{"GITHUB_TOKEN":"x"}`), Enabled: true})
 	if err != nil {
 		t.Fatal(err)
 	}
-	// agent-side write. MCP is id-keyed (generic visibility join); skills are now
-	// filesystem-based, so their visibility is keyed by skill (directory) name in a
-	// dedicated table. Clear any pre-existing MCP visibility rows so the assertions
-	// below isolate on exactly what this test sets.
+	// 에이전트 쪽 쓰기. MCP는 id 키다(일반 가시성 조인). 스킬은 이제
+	// 파일시스템 기반이라 가시성 키는 스킬(디렉터리) 이름이고
+	// 전용 표에 있다. 기존 MCP 가시성 행을 비워
+	// 아래 단언이 이 테스트가 넣은 것만 보게 한다.
 	d.Exec(`DELETE FROM agent_visibility WHERE agent_id = $1 AND resource_kind = 'mcp'`, ag.ID)
 	if err := d.ToggleVisibility(ag.ID, "mcp", mid, true); err != nil {
 		t.Fatal(err)
@@ -151,24 +151,24 @@ func TestConfigStores(t *testing.T) {
 	if err := d.ToggleSkillVisibility(ag.ID, "t-skill", true); err != nil {
 		t.Fatal(err)
 	}
-	// agent-side read
+	// 에이전트 쪽 읽기
 	vm, _ := d.AgentVisible(ag.ID, "mcp")
 	if len(vm) != 1 || vm[0] != mid {
 		t.Fatalf("agent visible mcp: %+v", vm)
 	}
-	// resource-side read (same join row) → bidirectional
+	// 리소스 쪽 읽기(같은 조인 행) → 양방향
 	ra, _ := d.ResourceAgents("mcp", mid)
 	if len(ra) != 1 || ra[0] != ag.ID {
 		t.Fatalf("resource agents: %+v", ra)
 	}
-	// toggle off
+	// 끈다
 	d.ToggleVisibility(ag.ID, "mcp", mid, false)
 	vm2, _ := d.AgentVisible(ag.ID, "mcp")
 	if len(vm2) != 0 {
 		t.Fatalf("after toggle off: %+v", vm2)
 	}
-	// skill visibility is name-keyed: verify the read, then deleting the skill's
-	// visibility rows (called when a skill is removed) clears it.
+	// 스킬 가시성은 이름 키다. 읽기를 확인한 뒤 스킬의
+	// 가시성 행을 지우면(스킬을 없앨 때 호출) 그게 사라진다.
 	names, _ := d.AgentSkillNames(ag.ID)
 	if len(names) != 1 || names[0] != "t-skill" {
 		t.Fatalf("agent visible skills: %+v", names)

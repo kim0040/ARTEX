@@ -11,8 +11,8 @@ var ErrInterceptSessionDeleted = errors.New("해당 세션 또는 실행 기록�
 
 var ErrInterceptExecutionUnavailable = errors.New("유일하게 연결할 수 있는 원본 도구 호출을 찾지 못했습니다. 기록이 삭제되었거나, 이전 승인에 연결 ID가 저장되지 않았을 수 있습니다")
 
-// InterceptExecution is a navigation target read from original activity rows.
-// It is not model context and never falls back to matching command text.
+// InterceptExecution은 원래 활동 기록에서 읽는 이동 위치다.
+// 모델 맥락이 아니고, 명령 글을 맞춰 대신 찾지도 않는다.
 type InterceptExecution struct {
 	ConversationID *int64     `json:"conversation_id,omitempty"`
 	TaskID         *string    `json:"task_id,omitempty"`
@@ -52,7 +52,7 @@ func (d *DB) GetInterceptExecution(id int64) (*InterceptExecution, error) {
 	} else {
 		return nil, ErrInterceptExecutionUnavailable
 	}
-	// Three matches suffice to detect duplicate IDs without loading a transcript.
+	// 기록 전체를 읽지 않고도 ID가 겹치는지 보려면 세 건이면 충분하다.
 	rows, err := d.Query(query+` AND tool_use_id=$2 AND kind IN ('tool_use','tool_result') ORDER BY id LIMIT 3`, scope, audit.ToolUseID)
 	if err != nil {
 		return nil, err

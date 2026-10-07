@@ -9,8 +9,7 @@ import (
 	"github.com/Autumn-27/norma/harness"
 )
 
-// runTrace retains the latest tool call so an interrupted run can identify the
-// operation that was still in flight.
+// runTrace 는 가장 최근 도구 호출을 남겨, 끊긴 실행이 아직 끝나지 않은 호출을 짚게 합니다.
 type runTrace struct {
 	startedAt time.Time
 	id        string
@@ -44,16 +43,15 @@ var reasonHint = map[harness.TerminalReason]string{
 	harness.ReasonAbortedTools:      "도구 실행 단계에서 실행이 취소되었습니다",
 }
 
-// terminalText renders a terminal event with no final text into a compact summary
-// and a Markdown detail block.
+// terminalText 는 마지막 글이 없는 종료 이벤트를 짧은 요약과 Markdown 상세로 만듭니다.
 //
 // 초보용: 플래너·워커·메인 에이전트가 글 요약 없이 멈추면, 활동 기록에 보이는
 // 한 줄 요약과 마크다운 상세를 만듭니다. 탐색 그래프에 이미 쓴 사실·자산은 그대로입니다.
 func terminalText(ctx context.Context, term *harness.Terminal, tr *runTrace) (string, string) {
 	reason := term.Reason
 	aborted := reason == harness.ReasonAbortedStreaming || reason == harness.ReasonAbortedTools
-	// Prompt may return ctx.Err directly without a terminal event. Preserve the
-	// cancellation cause instead of falling back to an empty/unknown terminal reason.
+	// Prompt 가 종료 이벤트 없이 ctx.Err 를 그대로 돌려줄 수 있습니다.
+	// 빈 이유나 알 수 없는 종료 이유로 떨어지지 않게, 취소 이유를 유지합니다.
 	if reason == "" && ctx.Err() != nil {
 		aborted = true
 	}

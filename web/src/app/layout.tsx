@@ -33,7 +33,7 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
       suppressHydrationWarning
     >
       <head>
-        {/* Applies theme and layout preferences on load to avoid flicker and unnecessary server rerenders. */}
+        {/* 불러올 때 테마와 배치 설정을 적용해 깜빡임과 불필요한 서버 다시 그리기를 막습니다. */}
         <ThemeBootScript />
       </head>
       <body className={`${fontVars} min-h-screen antialiased`}>

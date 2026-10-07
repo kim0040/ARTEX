@@ -22,13 +22,13 @@ export function ThemeSwitcher() {
 
   return (
     <Button size="icon" onClick={cycleTheme} aria-label={`Current theme: ${themeMode}. Click to cycle themes`}>
-      {/* SYSTEM */}
+      {/* 시스템 설정 */}
       <Monitor className="hidden [html[data-theme-mode=system]_&]:block" />
 
-      {/* DARK (resolved) */}
+      {/* 다크 모드(실제로 적용된 값) */}
       <Sun className="hidden dark:block [html[data-theme-mode=system]_&]:hidden" />
 
-      {/* LIGHT (resolved) */}
+      {/* 라이트 모드(실제로 적용된 값) */}
       <Moon className="block dark:hidden [html[data-theme-mode=system]_&]:hidden" />
     </Button>
   );

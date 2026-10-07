@@ -1,5 +1,5 @@
-// TEMPORARY: offline build fallback — uses local Geist fonts instead of Google Fonts.
-// Restore registry.ts.bak after build.
+// 임시: 오프라인 빌드용. 구글 글꼴 대신 로컬 Geist 글꼴을 씁니다.
+// 빌드가 끝나면 registry.ts.bak를 되돌리세요.
 import localFont from "next/font/local";
 import { GeistPixelSquare } from "geist/font/pixel";
 

@@ -8,9 +8,9 @@ import (
 	"github.com/Autumn-27/norma/llm"
 )
 
-// SideQuestionService has no harness, tool executor, transcript writer or model
-// failover chain. Answer is one completion; Respond adds bounded preparation
-// and at most one context-overflow recovery around that completion.
+// SideQuestionService에는 하네스, 도구 실행기, 대화 기록기, 모델 장애 조치
+// 사슬이 없습니다. Answer는 완료 한 번이고, Respond는 그 완료 둘레에 한정된
+// 준비와 맥락 넘침 복구를 최대 한 번 더합니다.
 type SideQuestionService struct{ Provider llm.Provider }
 
 type Answer struct {

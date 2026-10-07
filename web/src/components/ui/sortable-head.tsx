@@ -7,10 +7,10 @@ import { TableHead } from "@/components/ui/table";
 import type { SortDirection } from "@/lib/sort-preference";
 import { cn } from "@/lib/utils";
 
-// SortableHead is a table header cell that toggles a column's sort on click.
-// It renders a neutral up/down glyph when inactive and a directional arrow when
-// its field is the active sort, mirroring the pattern first used on the tasks
-// table so sortable columns look and behave the same across the app.
+// SortableHead는 누르면 그 열의 정렬을 바꾸는 표 머리 칸입니다.
+// 정렬 중이 아니면 위아래 중립 표시를, 그 필드가 정렬 중이면
+// 방향 화살표를 그립니다. 작업 표에서 먼저 쓴 방식과 같아서
+// 정렬되는 열이 앱 전체에서 같게 보이고 같게 동작합니다.
 export function SortableHead<Field extends string>({
   field,
   label,

@@ -5,8 +5,8 @@ import (
 	"testing"
 )
 
-// TestCustomToolCRUD exercises create/list/update/delete of a user-defined tool
-// (system=false) with kind/exec/deferred. Skips when no Postgres is configured.
+// TestCustomToolCRUD는 사용자 정의 도구의 만들기/목록/수정/삭제를 돈다
+// (system=false, kind/exec/deferred). Postgres가 없으면 건너뛴다.
 func TestCustomToolCRUD(t *testing.T) {
 	d, err := Open(testDSN(t))
 	if err != nil {
@@ -15,7 +15,7 @@ func TestCustomToolCRUD(t *testing.T) {
 	defer d.Close()
 
 	key := "ct_test_tool"
-	_ = d.DeleteCustomTool(key) // clean slate
+	_ = d.DeleteCustomTool(key) // 깨끗한 상태에서 시작
 
 	in := &Tool{
 		Key:         key,
@@ -40,7 +40,7 @@ func TestCustomToolCRUD(t *testing.T) {
 		t.Fatalf("unexpected row: %+v", got)
 	}
 
-	// custom tools appear in ListCustomTools, not among system-only.
+	// 사용자 정의 도구는 ListCustomTools에 있고, 시스템 전용 목록에는 없다.
 	customs, err := d.ListCustomTools()
 	if err != nil {
 		t.Fatal(err)
@@ -58,7 +58,7 @@ func TestCustomToolCRUD(t *testing.T) {
 		t.Fatal("created tool not in ListCustomTools")
 	}
 
-	// update: change kind + disable + rebind.
+	// 수정: 종류를 바꾸고, 끄고, 다시 묶는다.
 	in.Kind = "command"
 	in.Exec = json.RawMessage(`{"command":"echo hi"}`)
 	in.Enabled = false
@@ -72,7 +72,7 @@ func TestCustomToolCRUD(t *testing.T) {
 		t.Fatalf("update not applied: %+v", got2)
 	}
 
-	// delete only removes non-system rows.
+	// 삭제는 시스템이 아닌 행만 지운다.
 	if err := d.DeleteCustomTool(key); err != nil {
 		t.Fatalf("delete: %v", err)
 	}

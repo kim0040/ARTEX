@@ -12,13 +12,13 @@ import (
 	"time"
 )
 
-// DBFinding is a row in the standalone findings table. It persists across task
-// deletion unless the caller explicitly requests related finding cleanup.
+// DBFinding은 독립 findings 테이블의 한 줄이다. 작업을 지워도 남는다.
+// 호출자가 관련 발견 정리를 명시적으로 요청할 때만 함께 지운다. 발견은 탐색 그래프 노드와 별도로 UI 목록에 남는다.
 type DBFinding struct {
 	TrafficCount          int
 	EvidenceVersion       int64
 	ReportEvidenceVersion int64
-	TrafficBindings       []FindingTrafficBinding // populated only for export
+	TrafficBindings       []FindingTrafficBinding // 내보낼 때만 채운다
 
 	ID              int64
 	TaskID          *int64
@@ -33,10 +33,10 @@ type DBFinding struct {
 	Status          string
 	Report          string // 상세 보고서(Markdown); GetFinding에서만 채우고, 목록 조회에는 포함하지 않습니다.
 	CreatedAt       time.Time
-	TaskDescription string // populated via LEFT JOIN on tasks
+	TaskDescription string // tasks를 LEFT JOIN해서 채운다
 }
 
-// Finding triage states (findings.status).
+// 발견 분류 상태(findings.status).
 const (
 	FindingPending       = "pending"        // 처리 대기
 	FindingInProgress    = "in_progress"    // 처리 중
@@ -49,7 +49,7 @@ const (
 	FindingRiskAccepted  = "risk_accepted"  // 위험 수용
 )
 
-// ValidFindingStatus reports whether s is a known triage state.
+// ValidFindingStatus는 s가 알려진 분류 상태인지 알려 준다.
 func ValidFindingStatus(s string) bool {
 	switch s {
 	case FindingPending, FindingInProgress, FindingConfirmed, FindingResolved, FindingFixed,
@@ -59,7 +59,7 @@ func ValidFindingStatus(s string) bool {
 	return false
 }
 
-// Finding severity levels (findings.severity).
+// 발견 심각도(findings.severity).
 const (
 	SeverityCritical = "critical" // 심각
 	SeverityHigh     = "high"     // 높음
@@ -67,7 +67,7 @@ const (
 	SeverityLow      = "low"      // 낮음
 )
 
-// ValidSeverity reports whether s is a known severity level.
+// ValidSeverity는 s가 알려진 심각도인지 알려 준다.
 func ValidSeverity(s string) bool {
 	switch s {
 	case SeverityCritical, SeverityHigh, SeverityMedium, SeverityLow:
@@ -76,9 +76,9 @@ func ValidSeverity(s string) bool {
 	return false
 }
 
-// AddFinding inserts a finding into the standalone findings table. taskID and
-// nodeID may be 0 (stored as NULL). name may be "" (frontend falls back to
-// vulnclass). Returns the new finding id.
+// AddFinding은 독립 findings 테이블에 발견을 넣는다. taskID와
+// nodeID는 0일 수 있다(NULL로 저장). name은 ""일 수 있다(프론트는
+// vulnclass로 내려간다). 새 발견 id를 돌려준다.
 func (d *DB) AddFinding(taskID, nodeID int64, vulnclass, name, severity, summary, evidence, worker string, assetIDs []int64) (int64, error) {
 	aidsJSON, _ := json.Marshal(assetIDs)
 	if assetIDs == nil {
@@ -100,14 +100,14 @@ func (d *DB) AddFinding(taskID, nodeID int64, vulnclass, name, severity, summary
 	return id, err
 }
 
-// findingSelectCols is the column list (with task_description join) every finding
-// list query selects, so scanFinding stays in sync across callers.
+// findingSelectCols는 모든 발견 목록 조회가 고르는 열 목록이다(task_description 조인 포함).
+// 그래서 scanFinding이 호출자마다 어긋나지 않는다.
 const findingSelectCols = `f.id, f.task_id, f.node_id, f.vulnclass, COALESCE(f.name, ''), f.severity, f.summary,
 	       f.evidence, f.worker, f.asset_ids, COALESCE(f.status, 'pending'), f.created_at,
 	       COALESCE(t.description, '') AS task_description, f.evidence_version, f.report_evidence_version,
  (SELECT count(*) FROM finding_traffic_bindings b WHERE b.finding_id=f.id)`
 
-// scanFindings materializes rows selected via findingSelectCols.
+// scanFindings는 findingSelectCols로 고른 행을 구조체로 만든다.
 func scanFindings(rows interface {
 	Next() bool
 	Scan(...any) error
@@ -146,16 +146,16 @@ func (d *DB) ListFindings(limit int) ([]*DBFinding, error) {
 	return scanFindings(rows)
 }
 
-// FindingFilter narrows a paginated findings query. Empty-string fields mean "no
-// filter on that column". Sort is "severity" (severity desc, then newest) or
-// anything else (newest first).
+// FindingFilter는 페이지로 나눈 발견 조회를 좁힌다. 빈 문자열 필드는
+// 「그 열은 거르지 않음」이다. Sort가 "severity"면 심각도 내림차순 다음 최신이고,
+// 그 외에는 최신 먼저다.
 type FindingFilter struct {
-	Severity  string // high | medium | low
-	Status    string // pending | false_positive | ignored | resolved
+	Severity  string // high(높음) | medium(중간) | low(낮음)
+	Status    string // pending(대기) | false_positive(오탐) | ignored(무시) | resolved(해결)
 	VulnClass string
 	TaskID    string // 작업 id(문자열 형태; 비었거나 잘못됨 = 작업으로 거르지 않음)
 	Query     string // 이름/유형/요약/증거/보고서 본문의 부분 검색 키워드
-	Sort      string // "severity" | "time"
+	Sort      string // "severity"(심각도) | "time"(시각)
 	// AssetScope는 자산 트리의 노드 key입니다(a:<id> / c:<id> / r:<domain> / __none__). 이 key는 자산 그래프의 노드를 발견 필터에 연결합니다.
 	// 노드 하나를 고르면 그 서브트리 전체가 선택된 것입니다. 비어 있음 = 자산으로 거르지 않음.
 	AssetScope string
@@ -166,14 +166,14 @@ type FindingFilter struct {
 	assetMiss bool    // 선택한 노드가 현재 필터에는 없음 → 결과는 항상 비어 있음
 }
 
-// FindingUnassignedTask is the task filter sentinel for findings whose task is
-// absent. That includes rows created without a task and rows retained after their
-// originating task was deleted (the findings FK is ON DELETE SET NULL).
+// FindingUnassignedTask는 작업이 없는 발견을 거르는 표식이다.
+// 작업 없이 만든 행과, 원래 작업을 지운 뒤 남은 행을 포함한다
+// (findings 외래 키는 ON DELETE SET NULL이다).
 const FindingUnassignedTask = "__unassigned__"
 
-// where builds the WHERE clause (shared by the page and count queries) plus its
-// positional args. All values are parameterized; Query also escapes ILIKE
-// wildcards so user input is always matched literally.
+// where는 WHERE 절(페이지 조회와 개수 조회가 같이 씀)과 위치 인자를 만든다.
+// 값은 모두 매개변수다. Query는 ILIKE 와일드카드도 이스케이프해서
+// 사용자 입력을 항상 글자 그대로 맞춘다.
 func (f FindingFilter) where() (string, []any) {
 	var conds []string
 	var args []any
@@ -231,8 +231,8 @@ func (f FindingFilter) where() (string, []any) {
 	return " WHERE " + strings.Join(conds, " AND "), args
 }
 
-// ListFindingsPage returns one page of findings matching the filter, plus the
-// total count of matching rows (for the frontend pager). page is 1-based.
+// ListFindingsPage는 필터에 맞는 발견 한 페이지와
+// 맞는 행의 전체 개수를 돌려준다(프론트 페이지 번호용). page는 1부터 센다.
 func (d *DB) ListFindingsPage(f FindingFilter, page, pageSize int) ([]*DBFinding, int, error) {
 	if page <= 0 {
 		page = 1
@@ -250,8 +250,8 @@ func (d *DB) ListFindingsPage(f FindingFilter, page, pageSize int) ([]*DBFinding
 	if err := d.QueryRow(`SELECT COUNT(*) FROM findings f LEFT JOIN tasks t ON f.task_id=t.id`+where, args...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
-	// Avoid overflowing (page-1)*pageSize for an arbitrarily large page number.
-	// Once the requested page is beyond the exact count, no data query is needed.
+	// 페이지 번호가 아주 커도 (page-1)*pageSize가 넘치지 않게 한다.
+	// 요청한 페이지가 정확한 개수를 넘으면 데이터 조회는 필요 없다.
 	if total == 0 || page > (total-1)/pageSize+1 {
 		return []*DBFinding{}, total, nil
 	}
@@ -277,9 +277,9 @@ func (d *DB) ListFindingsPage(f FindingFilter, page, pageSize int) ([]*DBFinding
 	return out, total, err
 }
 
-// FindingGroup is one task-level bucket in the global findings view. TaskID is
-// nil for both findings that never had a task and findings retained after task
-// deletion; those records intentionally share one "unassigned/deleted" bucket.
+// FindingGroup은 전역 발견 보기에서 작업 단위 통 하나다. TaskID는
+// 작업이 한 번도 없던 발견과, 작업을 지운 뒤 남은 발견 모두 nil이다.
+// 그 기록은 일부러 「미지정/삭제됨」 통 하나를 같이 쓴다.
 type FindingGroup struct {
 	TaskID          *int64    `json:"task_id"`
 	TaskName        string    `json:"task_name"` // 선택적 작업 이름; 비어 있음=이름 없음
@@ -293,9 +293,9 @@ type FindingGroup struct {
 	LastFoundAt     time.Time `json:"last_found_at"`
 }
 
-// ListFindingGroups returns a page of task groups matching the same filters as
-// ListFindingsPage. The group count and finding count are independent totals so
-// clients can page groups without losing the exact export/selection count.
+// ListFindingGroups는 ListFindingsPage와 같은 필터의 작업 묶음 한 페이지를 돌려준다.
+// 묶음 수와 발견 수는 따로인 합계라, 클라이언트가 묶음을 넘겨도
+// 내보내기·선택의 정확한 개수를 잃지 않는다.
 func (d *DB) ListFindingGroups(f FindingFilter, page, pageSize int) ([]FindingGroup, int, int, error) {
 	if page <= 0 {
 		page = 1
@@ -362,15 +362,14 @@ func (d *DB) ListFindingGroups(f FindingFilter, page, pageSize int) ([]FindingGr
 	return groups, groupTotal, findingTotal, rows.Err()
 }
 
-// ErrFindingOriginUnavailable means a retained finding no longer has a live
-// owning task and finding node from which a follow-up intent can be derived.
+// ErrFindingOriginUnavailable은 남아 있는 발견에, 후속 의도를 만들
+// 살아있는 소유 작업과 발견 노드가 더 이상 없다는 뜻이다.
 var ErrFindingOriginUnavailable = errors.New("발견의 원래 대상을 더 이상 쓸 수 없습니다")
 
-// AddFindingFollowUpIntent atomically creates a priority-10 human intent from a
-// live finding node, copies that finding's asset anchors, records the
-// finding --derived_from--> intent lineage edge, and persists its audit activity.
-// The returned activity is the committed row and can be broadcast as-is without
-// calling AppendActivity again.
+// AddFindingFollowUpIntent는 살아있는 발견 노드에서 우선순위 10인 사람 의도를 한 번에 만든다.
+// 그 발견의 자산 앵커를 복사하고, finding --derived_from--> intent 계보 간선을 남기고,
+// 감사 활동을 저장한다. 돌려주는 활동은 커밋된 행이라
+// AppendActivity를 다시 부르지 않고 그대로 방송할 수 있다.
 func (s *ExplorationStore) AddFindingFollowUpIntent(findingID, findingNodeID int64, description string, audit Activity) (int64, Activity, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -545,8 +544,8 @@ type FindingTaskOption struct {
 	Count       int    `json:"count"`
 }
 
-// FindingStats returns whole-table counts (by severity + pending) and the sorted
-// set of distinct vuln classes.
+// FindingStats는 테이블 전체 개수(심각도별 + 대기)와
+// 서로 다른 취약 분류를 정렬해 돌려준다.
 func (d *DB) FindingStats() (*FindingStats, error) {
 	st := &FindingStats{VulnClasses: []string{}, Tasks: []FindingTaskOption{}}
 	err := d.QueryRow(`SELECT
@@ -627,9 +626,9 @@ func (d *DB) FindingStats() (*FindingStats, error) {
 	return st, nil
 }
 
-// GetFinding returns a single finding row (with task_description joined and the
-// full Markdown report), or nil when no row has that id. Unlike the list queries
-// it also selects `report` — that column is only needed on the detail page.
+// GetFinding은 발견 한 줄을 돌려준다(task_description 조인과
+// 마크다운 보고 전체). 그 id의 행이 없으면 nil이다. 목록 조회와 달리
+// `report`도 고른다. 그 열은 상세 화면에만 필요하다.
 func (d *DB) GetFinding(id int64) (*DBFinding, error) {
 	f := &DBFinding{}
 	var aidsJSON string
@@ -678,9 +677,9 @@ func (d *DB) DeleteFinding(id int64) (n int64, err error) {
 	return
 }
 
-// DeleteFindingsByTask removes all findings rows of a task. The originating
-// exploration finding nodes are cascade-deleted separately when the task's
-// exploration subgraph is dropped. Returns rows deleted.
+// DeleteFindingsByTask는 작업의 발견 행을 모두 지운다. 원래
+// 탐색의 발견 노드는 작업의 탐색 부분 그래프를 버릴 때 따로 연쇄 삭제된다.
+// 지운 행 수를 돌려준다.
 func (d *DB) DeleteFindingsByTask(taskID int64) (int64, error) {
 	res, err := d.Exec(`DELETE FROM findings WHERE task_id=$1`, taskID)
 	if err != nil {
@@ -702,9 +701,9 @@ func (d *DB) SetFindingStatus(id int64, status string) (int64, error) {
 	return res.RowsAffected()
 }
 
-// SetFindingReportByNodeID sets the Markdown report on the standalone finding row
-// whose node_id matches — report_finding returns that node id, so an agent tool
-// can address the finding it just created. Returns rows affected (0 when no row).
+// SetFindingReportByNodeID는 node_id가 맞는 독립 발견 행의 마크다운 보고를 넣는다.
+// report_finding이 그 노드 id를 돌려주므로, 에이전트 도구가
+// 방금 만든 발견을 가리킬 수 있다. 영향 받은 행 수를 돌려준다(행이 없으면 0).
 func (d *DB) SetFindingReportByNodeID(nodeID int64, report string) (int64, error) {
 	return d.SetFindingReportVersionByNodeID(context.Background(), nodeID, report, nil)
 }
@@ -732,8 +731,8 @@ func (d *DB) setFindingCol(id int64, col, jsonKey, val string) (int64, error) {
 	return 1, nil
 }
 
-// SetFindingSeverity updates one finding's severity (+ node payload sync). Returns
-// rows affected (0 when no finding has that id).
+// SetFindingSeverity는 발견 하나의 심각도를 고친다(노드 payload도 같이 맞춘다).
+// 영향 받은 행 수를 돌려준다(그 id의 발견이 없으면 0).
 func (d *DB) SetFindingSeverity(id int64, severity string) (int64, error) {
 	return d.setFindingCol(id, "severity", "severity", severity)
 }
@@ -749,8 +748,8 @@ func (d *DB) SetFindingVulnClass(id int64, vulnclass string) (int64, error) {
 	return d.setFindingCol(id, "vulnclass", "vulnclass", vulnclass)
 }
 
-// FindingMeta is the standalone-row data (id, triage state, anchored assets) the
-// per-task view grafts onto its exploration-node findings.
+// FindingMeta는 독립 행 데이터(id, 분류 상태, 앵커된 자산)다.
+// 작업별 보기가 탐색 노드 발견 위에 이 값을 붙인다.
 type FindingMeta struct {
 	TrafficCount int
 
@@ -759,9 +758,9 @@ type FindingMeta struct {
 	AssetIDs []int64
 }
 
-// FindingMetaByNodeID maps a task's finding node ids to their standalone-row
-// metadata (status + anchored asset ids) via the asset store, so callers holding
-// only an AssetStore (e.g. the agent ToolSet) can reach it without a raw *DB.
+// FindingMetaByNodeID는 작업의 발견 노드 id를 독립 행
+// 메타데이터(상태 + 앵커된 자산 id)로 연결한다. 자산 저장소를 통하므로
+// AssetStore만 가진 호출자(예: 에이전트 ToolSet)가 날 *DB 없이 닿을 수 있다.
 func (a *AssetStore) FindingMetaByNodeID(taskID int64) (map[int64]FindingMeta, error) {
 	return a.db.FindingMetaByNodeID(taskID)
 }

@@ -12,11 +12,10 @@ import (
 	actool "github.com/Autumn-27/norma/tool"
 )
 
-// compactIntents distills intents to {id, summary, state, asset_ids, parents,
-// yields} so the planner sees both the direction and its LINEAGE — parents (the
-// upstream nodes it derived from: facts/intents/findings) and yields (the facts/
-// findings it produced) — without pulling full payloads. parentsOf/yieldsOf are
-// built from the exploration edges in graph_overview.
+// compactIntents 는 의도를 {id, summary, state, asset_ids, parents, yields} 로
+// 줄입니다. 플래너가 방향과 계보를 함께 봅니다. parents 는 상류 노드(사실/의도/발견)이고,
+// yields 는 이 의도가 만든 사실/발견입니다. 전문은 끌어오지 않습니다.
+// parentsOf/yieldsOf 는 graph_overview 의 탐색 그래프 간선으로 만듭니다.
 func compactIntents(ns []*db.Node, parentsOf, yieldsOf map[int64][]int64) []map[string]any {
 	out := make([]map[string]any, 0, len(ns))
 	for _, n := range ns {
@@ -27,9 +26,9 @@ func compactIntents(ns []*db.Node, parentsOf, yieldsOf map[int64][]int64) []map[
 			m["source_task_id"] = n.SourceTaskID
 			m["inherited"] = true
 		}
-		// asset_ids is the structured "which assets this direction covers" signal for
-		// dedup; fall back to legacy payload keys (target_ids plural, then target_id
-		// single) so intents stored before the rename still surface their anchors.
+		// asset_ids 는 "이 방향이 어느 자산을 덮는지"를 담은 중복 제거 신호입니다.
+		// 예전 키(target_ids 복수, 그다음 target_id 하나)로 돌아갑니다. 이름 바꾸기 전에
+		// 저장된 의도도 앵커를 보여 주게 합니다.
 		if tg, ok := p["asset_ids"]; ok && tg != nil {
 			m["asset_ids"] = tg
 		} else if tg, ok := p["target_ids"]; ok && tg != nil {
@@ -48,148 +47,148 @@ func compactIntents(ns []*db.Node, parentsOf, yieldsOf map[int64][]int64) []map[
 	return out
 }
 
-// ToolSet exposes the PG-backed dual graph (asset + exploration) to an LLM agent.
-// One ToolSet is created per planner/worker run; per-run signals live here.
+// ToolSet 은 PG 에 있는 두 그래프(자산 그래프 + 탐색 그래프)를 LLM 에이전트에 엽니다.
+// 플래너/워커 실행마다 ToolSet 이 하나씩 생기고, 그 실행의 신호가 여기 있습니다.
+// 초보: 워커는 의도 하나를 맡고, 플래너만 의도를 만듭니다. 이 구조가 그 도구 묶음입니다.
 type ToolSet struct {
 	findingRecorder FindingRecorder
-	as              *db.AssetStore   // asset store (optional; nil = asset tools not available)
-	cs              *db.CompanyStore // company store (optional)
+	as              *db.AssetStore   // 자산 저장소(선택. nil = 자산 도구 없음)
+	cs              *db.CompanyStore // 회사 저장소(선택)
 	ts              *db.ExplorationStore
 	worker          string
-	taskID          int64 // PG tasks.id; 0 when unknown (tests / orchestrator cross-task reads)
-	// coverageDisabled mirrors tasks.coverage_enabled=false. Stored inverted so the
-	// zero value (all existing ToolSet constructions) means ENABLED — matching the
-	// DB default (true). When true: graphOverviewData drops the coverage block, the
-	// auto-scope hook (insertAssets) is skipped, and add_task_scope/list_untested_assets
-	// are filtered out of the agent's tool list. The scope field stays regardless.
+	taskID          int64 // PG tasks.id. 모르면 0(테스트 / 작업 간 읽기)
+	// coverageDisabled 는 tasks.coverage_enabled=false 를 뒤집어서 담습니다.
+	// 영값(기존 ToolSet 생성 전부)은 켜짐입니다. DB 기본(true)과 같습니다.
+	// true 이면 graphOverviewData 가 커버리지 블록을 빼고, 자동 범위 훅(insertAssets)을
+	// 건너뛰며, add_task_scope/list_untested_assets 를 에이전트 도구 목록에서 뺍니다.
+	// scope 필드는 어느 쪽이든 남습니다.
 	coverageDisabled bool
-	// ownerNode is the exploration node that writes attach to: assets this run
-	// touches get anchored to it as lineage/provenance (NOT visibility — the asset
-	// graph is global and shared). Worker = its claimed intent; planner = begin root.
+	// ownerNode 는 쓰기가 붙는 탐색 그래프 노드입니다. 이번 실행이 건드린 자산은
+	// 계보(출처)로 여기 앵커됩니다. 보이는 범위가 아닙니다. 자산 그래프는 전역으로 공유됩니다.
+	// 워커 = 맡은 의도 하나. 플래너 = 시작 뿌리.
 	ownerNode int64
 	GoalMet   bool
 	Reason    string
 	writes    WriteCounts
-	// killWork, if set, terminates a running work by intent id (engine callback,
-	// wired by the planner). nil = the kill_work tool reports unavailable.
+	// killWork 가 있으면 의도 id 로 돌고 있는 작업을 끊습니다(엔진 콜백,
+	// 플래너가 연결). nil 이면 kill_work 도구가 없다고 알립니다.
 	killWork func(intentID int64) error
-	// steerWork, if set, queues a mid-run course-correction for the work running an
-	// intent id (engine callback, wired by the planner): the worker injects it before
-	// its next tool call and re-plans, without being killed. nil = tool unavailable.
+	// steerWork 가 있으면, 그 의도를 도는 작업에 중간 방향 수정을 넣습니다
+	// (엔진 콜백, 플래너가 연결). 워커는 다음 도구 호출 전에 넣고 다시 계획합니다.
+	// 작업을 죽이지 않습니다. nil 이면 도구가 없습니다.
 	steerWork func(intentID int64, msg string) error
-	// enrich, if set, receives async auto-completion triggers (DNS resolve for a
-	// domain, HTTP probe for a site). nil = no engine enrichment.
+	// enrich 가 있으면 비동기 자동 완성을 받습니다(도메인 DNS, 사이트 HTTP 확인).
+	// nil 이면 엔진 보강이 없습니다.
 	enrich EnrichTrigger
-	// notify, if set, wakes the task's planner after a graph change that should be
-	// re-planned promptly (currently: a new hint). nil = no wake (the hint is still
-	// stored and read on the next round triggered by other events). debounced.
+	// notify 가 있으면, 바로 다시 계획할 그래프 변화 뒤에 그 작업의 플래너를 깨웁니다
+	// (지금: 새 힌트). nil 이면 깨우지 않습니다(힌트는 저장되고, 다른 사건으로
+	// 열린 다음 라운드에서 읽힙니다). 디바운스됩니다.
 	notify func()
-	// notifyFinding, if set, wakes the task's planner when this run reports a finding,
-	// carrying (intentID, summary) so the round can spell out which intent found what.
-	// Wired for workers; nil elsewhere → falls back to notify (bare wake).
+	// notifyFinding 이 있으면, 이번 실행이 발견을 보고할 때 그 작업의 플래너를 깨웁니다.
+	// (intentID, summary)를 실어 어느 의도가 무엇을 찾았는지 적습니다.
+	// 워커에 연결됩니다. 다른 곳은 nil 이라 notify(그냥 깨우기)로 돌아갑니다.
 	notifyFinding func(intentID int64, summary string)
-	// resumeTask, if set, revives the task after a graph change that should make a
-	// stopped task run again (currently: set_goals adds a goal). It flips a terminal/
-	// paused task back to running and (re)starts the engine loops — a plain notify()
-	// can't, because the planner's terminal gate swallows wakes. Wired ONLY for the
-	// main agent (human steering); nil for the goals decomposer and workers.
+	// resumeTask 가 있으면, 멈춘 작업을 다시 돌려야 하는 그래프 변화 뒤에 작업을 살립니다
+	// (지금: set_goals 가 목표를 추가). 끝난/일시정지 작업을 running 으로 되돌리고
+	// 엔진 루프를 (다시) 시작합니다. notify() 만으로는 안 됩니다. 플래너의 종료
+	// 문이 깨우기를 삼키기 때문입니다. 메인 에이전트(사람 조종)에만 연결됩니다.
+	// 목표 분해기와 워커는 nil 입니다.
 	resumeTask func()
-	// notifyGoal, if set, wakes the planner AND records ONE "사람이 목표 N개를 추가했습니다: …" trigger
-	// for a whole set_goals call (batch-aware — one call, one trigger, not one per goal)
-	// so the next round spells out the added goals (instead of the planner having to
-	// spot new open goals in the overview). Wired ONLY for the main agent; nil for the
-	// goals decomposer (round-0 has no running planner to inform) and workers → those
-	// fall back to the bare notify.
+	// notifyGoal 이 있으면 플래너를 깨우고, set_goals 호출 하나에
+	// "사람이 목표 N개를 추가했습니다: …" 트리거를 하나만 남깁니다
+	// (한 호출, 한 트리거. 목표마다 하나씩이 아님). 다음 라운드가 추가된 목표를
+	// 적습니다. 플래너가 개요에서 열린 목표를 스스로 찾지 않아도 됩니다.
+	// 메인 에이전트에만 연결됩니다. 목표 분해기(0라운드에는 돌고 있는 플래너가 없음)와
+	// 워커는 nil 이라 그냥 notify 로 돌아갑니다.
 	notifyGoal func(texts []string)
-	// notifyHint, if set, wakes the planner AND records ONE "사람이 전략 힌트 N개를 추가했습니다: …"
-	// trigger for a whole add_hint call (batch-aware — one call, one trigger) so the next
-	// round is told the round was fired by a new hint and spells the hint out, instead of
-	// the planner having to spot it folded into the graph overview. Wired for the main
-	// agent + cross-task orchestration; nil elsewhere → falls back to the bare notify.
+	// notifyHint 가 있으면 플래너를 깨우고, add_hint 호출 하나에
+	// "사람이 전략 힌트 N개를 추가했습니다: …" 트리거를 하나만 남깁니다
+	// (한 호출, 한 트리거). 다음 라운드는 새 힌트 때문에 열렸다고 듣고 힌트를 적습니다.
+	// 플래너가 개요에 접힌 힌트를 스스로 찾지 않아도 됩니다. 메인 에이전트와
+	// 작업 간 조율에 연결됩니다. 다른 곳은 nil 이라 그냥 notify 로 돌아갑니다.
 	notifyHint func(texts []string)
 }
 
-// SetNotifyGoal wires the goal-add trigger callback (see ToolSet.notifyGoal). Set only
-// by the main-agent chat, so runtime-added goals are announced to the planner by name.
+// SetNotifyGoal 은 목표 추가 트리거 콜백을 연결합니다(ToolSet.notifyGoal).
+// 메인 에이전트 대화만 넣습니다. 실행 중 추가된 목표가 이름으로 플래너에 알려집니다.
 func (t *ToolSet) SetNotifyGoal(fn func([]string)) { t.notifyGoal = fn }
 
-// SetNotifyHint wires the hint-add trigger callback (see ToolSet.notifyHint). Set by
-// the main-agent chat and cross-task orchestration, so a runtime-added hint fires a
-// planner round announced by name instead of a bare wake.
+// SetNotifyHint 는 힌트 추가 트리거 콜백을 연결합니다(ToolSet.notifyHint).
+// 메인 에이전트 대화와 작업 간 조율이 넣습니다. 실행 중 추가된 힌트는
+// 그냥 깨우기 대신, 이름이 적힌 플래너 라운드를 엽니다.
 func (t *ToolSet) SetNotifyHint(fn func([]string)) { t.notifyHint = fn }
 
-// SetResumeTask wires the task-revive callback (see ToolSet.resumeTask). Set only by
-// the main-agent chat, so runtime-added goals can pull a finished task back to running.
+// SetResumeTask 는 작업 되살리기 콜백을 연결합니다(ToolSet.resumeTask).
+// 메인 에이전트 대화만 넣습니다. 실행 중 추가된 목표가 끝난 작업을 다시 돌립니다.
 func (t *ToolSet) SetResumeTask(fn func()) { t.resumeTask = fn }
 
-// SetNotify wires the planner-wake callback (see ToolSet.notify). Set by callers
-// that hold the task handle (main-agent chat, cross-task orchestration).
+// SetNotify 는 플래너 깨우기 콜백을 연결합니다(ToolSet.notify).
+// 작업 손잡이를 가진 쪽이 넣습니다(메인 에이전트 대화, 작업 간 조율).
 func (t *ToolSet) SetNotify(fn func()) { t.notify = fn }
 
-// SetNotifyFinding wires the finding-wake callback (see ToolSet.notifyFinding).
+// SetNotifyFinding 은 발견 깨우기 콜백을 연결합니다(ToolSet.notifyFinding).
 func (t *ToolSet) SetNotifyFinding(fn func(int64, string)) { t.notifyFinding = fn }
 
-// EnrichTrigger is the enrichment engine seen from the tool layer (see package
-// enrich). Kept as an interface here to avoid coupling agent → enrich.
+// EnrichTrigger 는 도구 층에서 보는 보강 엔진입니다(enrich 패키지).
+// agent 가 enrich 에 직접 묶이지 않게 인터페이스로 둡니다.
 type EnrichTrigger interface {
 	ResolveDomain(id int64, host string)
 	ProbeSite(id int64, url string)
 }
 
-// WriteCounts breaks down what a worker persisted this run, by node kind, so the
-// engine can log an accurate "wrote back" summary instead of lumping assets and
-// findings under "facts" (record_fact → Facts, insert_assets → Assets,
-// report_finding → Findings; each element of a batch counts once).
+// WriteCounts 는 워커가 이번 실행에 남긴 노드를 종류별로 셉니다. 엔진이
+// 자산과 발견을 "사실"로 뭉뚱그리지 않고 "되돌려 씀"을 정확히 로그합니다
+// (record_fact 는 Facts, insert_assets 는 Assets, report_finding 은 Findings.
+// 묶음의 원소마다 한 번).
 type WriteCounts struct {
 	Facts    int
 	Assets   int
 	Findings int
 }
 
-// Total is every node persisted this run, regardless of kind — the
-// "explored but persisted nothing" signal (Total == 0).
+// Total 은 종류와 상관없이 이번 실행에 남은 노드 전부입니다.
+// "탐색했는데 아무것도 안 남김" 신호입니다(Total == 0).
 func (w WriteCounts) Total() int { return w.Facts + w.Assets + w.Findings }
 
-// String renders the per-kind breakdown for logs, e.g. "사실1 자산25 발견0".
+// String 은 종류별 개수를 로그용 문자열로 만듭니다. 예: "사실1 자산25 발견0".
 func (w WriteCounts) String() string {
 	return fmt.Sprintf("사실%d 자산%d 발견%d", w.Facts, w.Assets, w.Findings)
 }
 
-// Writes reports what this run wrote back, split by node kind (so the engine can
-// tell "explored but persisted nothing" apart from a completed intent, and log an
-// honest breakdown instead of calling assets/findings "facts").
+// Writes 는 이번 실행이 되돌려 쓴 것을 노드 종류별로 알려 줍니다. 엔진이
+// "탐색했는데 아무것도 안 남김"과 끝난 의도를 구분하고, 자산/발견을
+// "사실"이라고 부르지 않은 채 나눠 로그합니다.
 func (t *ToolSet) Writes() WriteCounts { return t.writes }
 
 func NewToolSet(ts *db.ExplorationStore, worker string) *ToolSet {
 	return &ToolSet{ts: ts, worker: worker}
 }
 
-// SetTaskID sets the PG task id on this ToolSet so that report_finding can
-// dual-write to the standalone findings table (which survives task deletion).
+// SetTaskID 는 이 ToolSet 에 PG 작업 id 를 넣습니다. report_finding 이
+// 작업이 지워져도 남는 발견 표에 한 번 더 쓸 수 있습니다.
 func (t *ToolSet) SetTaskID(id int64) { t.taskID = id }
 
-// SetCoverageEnabled records whether this task has the asset-coverage feature on
-// (default enabled). Passing false makes graphOverviewData omit the coverage block
-// and DropCoverageTools filter the two coverage-only tools out of the agent's tool
-// list. It does NOT stop scope accumulation: insertAssets' auto-scope hook runs
-// either way, because task_scope is the task's range boundary (the filter basis for
-// asset queries), not merely a coverage denominator.
+// SetCoverageEnabled 는 이 작업의 자산 커버리지가 켜져 있는지 기록합니다
+// (기본은 켜짐). false 를 넘기면 graphOverviewData 가 커버리지 블록을 빼고,
+// DropCoverageTools 가 커버리지 전용 도구를 에이전트 도구 목록에서 뺍니다.
+// 범위 누적은 멈추지 않습니다. insertAssets 의 자동 범위 훅은 어느 쪽이든 돕니다.
+// task_scope 는 작업의 범위 경계(자산 조회의 필터 기준)이지, 커버리지 분모만이 아닙니다.
 func (t *ToolSet) SetCoverageEnabled(enabled bool) { t.coverageDisabled = !enabled }
 
-// CoverageDisabled reports whether the coverage feature is off for this task.
+// CoverageDisabled 는 이 작업에서 커버리지 기능이 꺼져 있는지 알려 줍니다.
 func (t *ToolSet) CoverageDisabled() bool { return t.coverageDisabled }
 
-// coverageOnlyTools are the LLM tools that only make sense when asset coverage is
-// on. When the feature is off they are filtered out of the agent's tool list so
-// they neither pollute the prompt nor let the model build a disabled denominator.
-// add_task_scope is deliberately NOT here: task_scope is the task's range boundary
-// (the filter basis for asset queries), not merely a coverage denominator, so the
-// agents that own 범위 정의 keep it either way — in lockstep with insertAssets'
-// auto-scope hook, which also runs regardless of the switch.
+// coverageOnlyTools 는 자산 커버리지가 켜져 있을 때만 의미 있는 LLM 도구입니다.
+// 기능이 꺼지면 에이전트 도구 목록에서 빠져, 프롬프트를 더럽히거나
+// 꺼진 분모를 모델이 만들지 못하게 합니다.
+// add_task_scope 는 일부러 여기 없습니다. task_scope 는 작업의 범위 경계
+// (자산 조회의 필터 기준)이지 커버리지 분모만이 아닙니다. 범위 정의를 맡은
+// 에이전트는 스위치와 상관없이 유지합니다. insertAssets 자동 범위 훅도
+// 스위치와 상관없이 돕니다.
 var coverageOnlyTools = map[string]bool{"list_untested_assets": true}
 
-// DropCoverageTools returns tools with the coverage-only ones removed when this
-// task has the feature disabled; otherwise it returns tools unchanged.
+// DropCoverageTools 는 이 작업에서 기능이 꺼져 있으면 커버리지 전용 도구를 뺀
+// 목록을 돌려줍니다. 켜져 있으면 도구를 그대로 돌려줍니다.
 func (t *ToolSet) DropCoverageTools(tools []actool.CoreTool) []actool.CoreTool {
 	if !t.coverageDisabled {
 		return tools
@@ -204,11 +203,11 @@ func (t *ToolSet) DropCoverageTools(tools []actool.CoreTool) []actool.CoreTool {
 	return out
 }
 
-// Cross-task reuse: exported accessors returning the per-task tool logic bound to
-// THIS ToolSet's store. Host-side orchestration tools build a ToolSet for an
-// arbitrary task, then Call these — so cross-task reads/hint reuse the exact
-// same logic as the in-task tools. (readTool ignores ToolContext, so Call(…,nil)
-// is safe; add_hint is a writeTool but also doesn't deref the context here.)
+// 작업 간 재사용입니다. 이 ToolSet 의 저장소에 묶인 작업별 도구 로직을
+// 바깥으로 엽니다. 호스트 쪽 조율 도구가 임의 작업의 ToolSet 을 만든 뒤
+// 이들을 Call 합니다. 작업 간 읽기/힌트가 작업 안 도구와 같은 로직을 탑니다.
+// (readTool 은 ToolContext 를 무시하므로 Call(…,nil) 이 안전합니다.
+// add_hint 는 writeTool 이지만 여기서 context 를 풀지 않습니다.)
 func (t *ToolSet) GraphOverviewTool() actool.CoreTool      { return t.graphOverview() }
 func (t *ToolSet) ListFindingsTool() actool.CoreTool       { return t.listFindings() }
 func (t *ToolSet) GetWorkerTraceTool() actool.CoreTool     { return t.getWorkerTrace() }
@@ -217,24 +216,24 @@ func (t *ToolSet) SearchWorkerTracesTool() actool.CoreTool { return t.searchAllW
 func (t *ToolSet) NodeDetailTool() actool.CoreTool         { return t.nodeDetail() }
 func (t *ToolSet) AddHintTool() actool.CoreTool            { return t.addHint() }
 
-// SetEnrich wires the async enrichment engine (DNS/HTTP auto-completion).
+// SetEnrich 는 비동기 보강 엔진을 연결합니다(DNS/HTTP 자동 완성).
 func (t *ToolSet) SetEnrich(e EnrichTrigger) { t.enrich = e }
 
-// SetOwnerNode sets the exploration node that writes anchor to (worker: its
-// intent node; planner/main: the begin root). Assets created/referenced while
-// ownerNode is set are anchored to it as lineage (not visibility).
+// SetOwnerNode 는 쓰기가 앵커로 붙는 탐색 그래프 노드를 정합니다
+// (워커: 맡은 의도 노드. 플래너/메인: 시작 뿌리). ownerNode 가 있는 동안
+// 만들거나 가리킨 자산은 계보로 앵커됩니다(보이는 범위가 아님).
 func (t *ToolSet) SetOwnerNode(id int64) { t.ownerNode = id }
 
-// anchorOwner records a lineage edge from this run's owner node to an asset
-// (no-op if unset). Provenance only — the asset graph is global and shared, so
-// this no longer affects which assets a task can read.
+// anchorOwner 는 이번 실행의 주인 노드에서 자산으로 계보 간선을 남깁니다
+// (비어 있으면 아무 일도 없음). 출처만 기록합니다. 자산 그래프는 전역으로
+// 공유되므로, 작업이 어느 자산을 읽는지는 바꾸지 않습니다.
 func (t *ToolSet) anchorOwner(assetID int64) {
 	if t.ts != nil && t.ownerNode > 0 && assetID > 0 {
 		_ = t.ts.Anchor(t.ownerNode, assetID)
 	}
 }
 
-// pid parses an id that may arrive as a JSON number or string ("" / 0 → 0).
+// pid 는 JSON 숫자나 문자열로 온 id 를 읽습니다("" / 0 → 0).
 func pid(raw json.RawMessage) int64 {
 	if len(raw) == 0 {
 		return 0
@@ -251,7 +250,7 @@ func pid(raw json.RawMessage) int64 {
 	return 0
 }
 
-// pidList parses a list of ids (number|string), dropping zeros/invalids.
+// pidList 는 id 목록(숫자|문자열)을 읽고, 0 과 잘못된 값은 버립니다.
 func pidList(raw []json.RawMessage) []int64 {
 	var out []int64
 	for _, r := range raw {
@@ -299,14 +298,14 @@ func writeTool(name, desc string, schema map[string]any, run func(context.Contex
 	})
 }
 
-// readExpTool / writeExpTool build a domain tool whose handler dereferences the
-// task-bound ExplorationStore. Two ToolSets carry a nil store: the catalog's
-// seed-only shell (never called) and the server-level one behind buildDomainReg,
-// which the tools table can bind to ANY agent — including ones that never run
-// inside a task (auto/pentest/reporter/사용자 에이전트/곁길 질문). Refusing there
-// keeps a mis-bound tool a bad tool call; without the guard it was a nil deref,
-// and tool handlers run on the harness's own goroutine, so the panic is out of
-// reach of every recover() in the server and kills the whole process.
+// readExpTool / writeExpTool 은 작업에 묶인 ExplorationStore 를 푸는
+// 도메인 도구를 만듭니다. 저장소가 nil 인 ToolSet 이 둘 있습니다. 카탈로그의
+// 시드 껍데기(호출되지 않음)와 buildDomainReg 뒤의 서버용입니다.
+// 도구 표가 어떤 에이전트에도 묶을 수 있습니다. 작업 안에서 돌지 않는
+// 쪽(auto/pentest/reporter/사용자 에이전트/곁길 질문)도 포함합니다. 거기서 거절하면
+// 잘못 묶인 도구는 나쁜 도구 호출로 끝납니다. 이 검사가 없으면 nil 역참조였고,
+// 도구 핸들러는 하네스 자신의 고루틴에서 돌아, 서버의 recover() 가
+// 패닉을 잡지 못해 프로세스 전체가 죽습니다.
 func (t *ToolSet) readExpTool(name, desc string, schema map[string]any, run func(context.Context, json.RawMessage) (actool.Result, error)) actool.CoreTool {
 	return readTool(name, desc, schema, t.needExploration(name, run))
 }
@@ -315,10 +314,9 @@ func (t *ToolSet) writeExpTool(name, desc string, schema map[string]any, run fun
 	return writeTool(name, desc, schema, t.needExploration(name, run))
 }
 
-// needExploration wraps a handler so it only runs with an exploration store.
-// Tools that degrade more usefully than "unavailable" (report_finding points at
-// add_task_hint, set_goals/set_constraints at the task itself) keep their own
-// bespoke guard instead.
+// needExploration 은 탐색 저장소가 있을 때만 핸들러가 돌게 감쌉니다.
+// "없음"보다 더 쓸모 있게 내려가는 도구(report_finding 은 add_task_hint 를,
+// set_goals/set_constraints 는 작업 자체를 가리킴)는 자기 검사를 그대로 둡니다.
 func (t *ToolSet) needExploration(name string, run func(context.Context, json.RawMessage) (actool.Result, error)) func(context.Context, json.RawMessage) (actool.Result, error) {
 	return func(ctx context.Context, in json.RawMessage) (actool.Result, error) {
 		if t.ts == nil {
@@ -336,7 +334,7 @@ func jsonResult(v any) (actool.Result, error) {
 	return actool.Text(string(b)), nil
 }
 
-// --- read tools (planner + worker) ---
+// --- 읽기 도구 (플래너 + 워커) ---
 
 func (t *ToolSet) graphOverview() actool.CoreTool {
 	return t.readExpTool("graph_overview",
@@ -347,13 +345,14 @@ func (t *ToolSet) graphOverview() actool.CoreTool {
 		})
 }
 
-// graphOverviewData computes the distilled situational snapshot shared by the
-// graph_overview tool and the planner's wake-up prompt (which pre-injects it so
-// the model needn't spend a turn calling the tool — every plan round starts with
-// an empty context and always needs this first).
+// graphOverviewData 는 graph_overview 도구와 플래너 깨어남 프롬프트가
+// 같이 쓰는 상황 스냅샷을 만듭니다. 프롬프트가 미리 넣으므로 모델이
+// 도구 호출에 한 턴을 쓰지 않습니다. 계획 라운드는 빈 맥락에서 시작하고
+// 이것이 항상 먼저 필요합니다.
+// 초보: 탐색 그래프의 의도·사실·발견·힌트와 자산 그래프 요약을 한 장으로 접습니다.
 func (t *ToolSet) graphOverviewData() map[string]any {
 	out := map[string]any{}
-	// goals summary folded in so the planner needn't call list_goals each round.
+	// 목표 요약을 접어 넣습니다. 플래너가 매 라운드 list_goals 를 부르지 않아도 됩니다.
 	goals, _ := t.ts.ListByKind(db.KindGoal, 100)
 	gsum := make([]map[string]any, 0, len(goals))
 	for _, g := range goals {
@@ -362,8 +361,8 @@ func (t *ToolSet) graphOverviewData() map[string]any {
 		gsum = append(gsum, map[string]any{"id": g.ID, "state": g.State, "text": p["text"]})
 	}
 	out["goals"] = gsum
-	// hints: 사람/메인 에이전트가 add_hint 로 그래프에 건 전략 힌트. folded in so the
-	// planner reads them every round when generating intents (안 그러면 쓰기만 하고 읽지 않음).
+	// hints: 사람/메인 에이전트가 add_hint 로 그래프에 건 전략 힌트. 접어 넣어서
+	// 플래너가 의도를 만들 때 매 라운드 읽습니다(안 그러면 쓰기만 하고 읽지 않음).
 	hints, _ := t.ts.ListByKind(db.KindHint, 50)
 	hsum := make([]map[string]any, 0, len(hints))
 	for _, h := range hints {
@@ -376,33 +375,31 @@ func (t *ToolSet) graphOverviewData() map[string]any {
 		hsum = append(hsum, hint)
 	}
 	out["hints"] = hsum
-	// lineage from the exploration edges: an intent's parents (what it
-	// derived_from — possibly several facts combined) and its yields (the
-	// facts/findings it produced). factFrom maps a fact → the intent that
-	// produced it. This is the relationship layer the flat lists lacked.
+	// 탐색 그래프 간선에서 계보를 만듭니다. 의도의 parents(derived_from 상류.
+	// 사실 여러 개가 합쳐질 수 있음)와 yields(이 의도가 만든 사실/발견)입니다.
+	// factFrom 은 사실 → 그 사실을 만든 의도입니다. 납작한 목록에 없던 관계 층입니다.
 	edges, _ := t.ts.Edges(5000)
 	parentsOf := map[int64][]int64{}
 	yieldsOf := map[int64][]int64{}
 	factFrom := map[int64]int64{}
 	for _, e := range edges {
 		switch e.Rel {
-		case db.RelDerivedFrom, db.RelSpawns: // upstream: derived_from (fact/finding/intent→intent) or spawns (origin fact→goal, legacy begin→intent)
+		case db.RelDerivedFrom, db.RelSpawns: // 상류: derived_from(사실/발견/의도→의도) 또는 spawns(origin 사실→목표, 예전 begin→의도)
 			parentsOf[e.To] = append(parentsOf[e.To], e.From)
-		case db.RelYields: // intent --yields--> fact/finding
+		case db.RelYields: // 의도 --yields--> 사실/발견
 			yieldsOf[e.From] = append(yieldsOf[e.From], e.To)
 			factFrom[e.To] = e.From
 		}
 	}
-	// cold-digest §6: members folded into an active digest are shown via cold_digests
-	// (below), not the flat recent_* lists. `covered` maps member id → its digest id.
-	// §6 render-time revival check: a covered member that has become hot again (a new
-	// intent derived from it) must reappear this round — so `hidden` folds a member out
-	// only when it is covered AND still cold.
+	// cold-digest §6: 활성 digest 에 접힌 구성원은 아래 cold_digests 로 보이고,
+	// 납작한 recent_* 목록에는 안 나옵니다. `covered` 는 구성원 id → digest id 입니다.
+	// §6 그릴 때의 되살아남 검사: 덮인 구성원이 다시 hot 이면(새 의도가 거기서 나옴)
+	// 이번 라운드에 다시 나와야 합니다. 그래서 `hidden` 은 덮여 있고 아직 cold 일 때만 접습니다.
 	covered, _ := t.ts.CoveredMembers()
-	// Render-time hot set (ancestor of a live intent / fact under a live intent).
-	// §6 revival check: a covered member that revived (now hot) must NOT stay folded
-	// — hidden() only folds a member out when it is covered AND still cold. Computed
-	// every round (cheap for real graph sizes); nil map degrades safely.
+	// 그릴 때의 hot 집합입니다(살아 있는 의도의 조상 / 살아 있는 의도 아래 사실).
+	// §6 되살아남 검사: 덮인 구성원이 되살아나면(지금 hot) 접힌 채로 두면 안 됩니다.
+	// hidden() 은 덮여 있고 아직 cold 일 때만 접습니다. 매 라운드 계산합니다
+	// (실제 그래프 크기에서는 쌉니다). nil 맵이면 안전하게 내려갑니다.
 	var hotAtRender map[int64]bool
 	if cg, _, err := loadColdGraph(t.ts); err == nil {
 		hotAtRender = cg.hotSet()
@@ -419,7 +416,7 @@ func (t *ToolSet) graphOverviewData() map[string]any {
 			running = append(running, n)
 		case "done", "blocked", "exhausted":
 			if hidden(n.ID) {
-				continue // in a cold_digest and still cold — shown via cold_digests (§6.2)
+				continue // cold_digest 안에 있고 아직 cold — cold_digests 로 보임(§6.2)
 			}
 			recentDone = append(recentDone, n) // 최신이 앞(all 은 id 내림차순). 접힌 것은 뺐고, 출력할 때 최신 N개만 자름
 		}
@@ -437,12 +434,11 @@ func (t *ToolSet) graphOverviewData() map[string]any {
 	} else {
 		out["frontier_open"] = len(fr)
 	}
-	// findings (confirmed vulns) and facts (worker exploration results) are
-	// now distinct node kinds. recent_facts surfaces fact summaries (esp.
-	// negative results) so the planner sees them in one call; full content
-	// via node_detail(id).
+	// 발견(확인된 취약)과 사실(워커 탐색 결과)은 이제 다른 노드 종류입니다.
+	// recent_facts 는 사실 요약을 보여 줍니다(특히 부정 결과). 플래너가
+	// 한 번 호출로 봅니다. 전문은 node_detail(id) 입니다.
 	vulnNodes, _ := t.ts.ListByKind(db.KindFinding, 1000)
-	factNodes, _ := t.ts.ListByKind(db.KindFact, 1000) // newest first
+	factNodes, _ := t.ts.ListByKind(db.KindFact, 1000) // 최신이 앞
 	out["findings_total"] = len(vulnNodes)             // 확인된 발견 총수(목표 판정이 이것을 봄). 상세는 finding_list(최신 한 창)
 	out["facts"] = len(factNodes)                      // 탐색 사실/결론 수(부정 결론 포함)
 	// findings 는 작업에서 가장 값진 산출물입니다. 개요에 최신 한 창을 붙입니다(10개 이하, vulnNodes 는 id 내림차순이라 최신이 앞).
@@ -507,14 +503,12 @@ func (t *ToolSet) graphOverviewData() map[string]any {
 			out["cold_digests_more"] = more // 잘린 더 오래된 digest 의 id. expand_digest(id) 로 펼침
 		}
 	}
-	// the original task (root) so the planner always has it, not just the
-	// decomposed goals.
+	// 원래 작업(뿌리)입니다. 플래너가 쪼갠 목표만이 아니라 이것도 항상 갖게 합니다.
 	if description, goal, err := t.ts.Root(); err == nil {
 		out["task"] = map[string]any{"description": description, "goal": goal}
 	}
-	// Direct source tasks are a live, read-only blackboard view. Keep their
-	// summaries in a separate field so their intents never enter this task's
-	// frontier or get mistaken for locally claimable work.
+	// 직접 원본 작업은 살아 있는 읽기 전용 칠판입니다. 요약을 별도 필드에 두어,
+	// 그 의도가 이 작업의 프론티어에 들어오거나 여기서 맡을 일로 오해되지 않게 합니다.
 	out["related_tasks"] = t.relatedTaskOverviews()
 	// coverage: 대략적인 자산 테스트 커버리지 참고. 범위(task_scope) 안의 자산 중 fact 가 닿은
 	// 비율 + by_type(유형별 총수/테스트됨). 안 본 구체 자산은 에이전트가 필요할 때 list_untested_assets 를 호출해 스스로 판단합니다. 작업 맥락에서만 있습니다.
@@ -569,9 +563,9 @@ const (
 	relatedOverviewMaxDigestsPerSource = 6
 )
 
-// overviewTextBudget bounds inherited prompt text while preserving a fair slice
-// for every direct source. Full evidence remains available through the on-demand
-// read tools, so truncation here does not discard persisted blackboard data.
+// overviewTextBudget 는 물려받은 프롬프트 글의 양을 제한하면서, 직접 원본마다
+// 공정한 몫을 남깁니다. 전문 근거는 필요할 때 읽는 도구에 그대로 있습니다.
+// 여기서 잘라도 저장된 칠판 데이터는 버리지 않습니다.
 type overviewTextBudget struct {
 	remaining int
 	truncated bool
@@ -655,9 +649,10 @@ func recentTerminalIntents(store *db.ExplorationStore, limit int) []*db.Node {
 	return out
 }
 
-// relatedTaskOverviews distills persistent blackboard state from direct source
-// tasks. It intentionally reads each source's local store methods, never its own
-// related sources, so inheritance is one level only.
+// relatedTaskOverviews 는 직접 원본 작업의 칠판 상태를 줄여 보여 줍니다.
+// 일부러 각 원본의 로컬 저장소만 읽고, 그 원본의 원본은 읽지 않습니다.
+// 상속은 한 단계뿐입니다.
+// 초보: 다른 작업의 사실·발견·의도가 이 작업 프론티어에 섞이지 않게, 읽기 전용으로만 붙습니다.
 func (t *ToolSet) relatedTaskOverviews() []map[string]any {
 	sources, err := t.ts.DirectSourceStores()
 	if err != nil {
@@ -670,8 +665,8 @@ func (t *ToolSet) relatedTaskOverviews() []map[string]any {
 	out := make([]map[string]any, 0, len(sources))
 	for _, source := range sources {
 		ts := source.Store
-		// §2 cross-task: render the source task's OWN folded view — fold out the
-		// members it has already folded, and surface its cold_digests read-only.
+		// §2 작업 간: 원본 작업이 스스로 접어 둔 모습을 그립니다. 이미 접힌
+		// 구성원은 빼고, cold_digests 는 읽기 전용으로 보여 줍니다.
 		hidden := hiddenMembersFor(ts)
 		budget := overviewTextBudget{remaining: perSourceTextBudget}
 		item := map[string]any{
@@ -748,7 +743,7 @@ func (t *ToolSet) relatedTaskOverviews() []map[string]any {
 		recentFacts := make([]map[string]any, 0, len(facts))
 		for _, fact := range facts {
 			if hidden(fact.ID) {
-				continue // folded into this source's cold_digests — shown there (§2/§6.2)
+				continue // 이 원본의 cold_digests 에 접힘 — 거기서 보임(§2/§6.2)
 			}
 			m := inheritedMap(compactNode(fact), source.Task.TaskID)
 			m["summary"] = budget.take(m["summary"], 400)
@@ -766,7 +761,7 @@ func (t *ToolSet) relatedTaskOverviews() []map[string]any {
 		item["recent_facts"] = recentFacts
 
 		recentDoneRaw := recentTerminalIntents(ts, relatedOverviewMaxIntentsPerTask)
-		recentDone := recentDoneRaw[:0] // in-place filter: drop this source's folded intents (§2)
+		recentDone := recentDoneRaw[:0] // 제자리 필터: 이 원본의 접힌 의도를 뺍니다(§2)
 		for _, intent := range recentDoneRaw {
 			if hidden(intent.ID) {
 				continue
@@ -801,9 +796,9 @@ func (t *ToolSet) relatedTaskOverviews() []map[string]any {
 			}
 		}
 		item["recent_intent_results"] = intentResults
-		// §2 cross-task: the source task's folded cold region, read-only, newest-member
-		// first & capped like the current task's. Members (and overflow digests) are
-		// resolvable via expand_digest(id)/node_detail(id), which search source tasks.
+		// §2 작업 간: 원본 작업의 접힌 cold 구역입니다. 읽기 전용이고, 최신 구성원이
+		// 앞이며 이 작업과 같이 상한이 있습니다. 구성원(과 넘친 digest)은
+		// expand_digest(id)/node_detail(id) 로 엽니다. 그 도구는 원본 작업도 찾습니다.
 		if cds, more := coldDigestsRecent(ts, relatedOverviewMaxDigestsPerSource); len(cds) > 0 {
 			for _, cd := range cds {
 				cd["inherited"] = true
@@ -869,8 +864,8 @@ func inheritedIntentSummaryState(state string) bool {
 	}
 }
 
-// compactNode distills any exploration node to id + summary + state, dropping the
-// big detail/evidence (fetch that on demand via node_detail).
+// compactNode 는 탐색 노드를 id + summary + state 로 줄입니다.
+// 큰 detail/evidence 는 빼고, 필요할 때 node_detail 로 가져옵니다.
 func compactNode(n *db.Node) map[string]any {
 	var p map[string]any
 	_ = json.Unmarshal(n.Payload, &p)
@@ -881,7 +876,7 @@ func compactNode(n *db.Node) map[string]any {
 	return m
 }
 
-// compactFinding is compactNode plus the vuln-specific vulnclass/severity.
+// compactFinding 은 compactNode 에 취약점용 vulnclass/severity 를 더한 것입니다.
 func compactFinding(n *db.Node) map[string]any {
 	var p map[string]any
 	_ = json.Unmarshal(n.Payload, &p)
@@ -931,9 +926,9 @@ func (t *ToolSet) listFindings() actool.CoreTool {
 		})
 }
 
-// factsPageSize is the default page size for list_facts. Facts pile up on long
-// tasks; returning all of them at once (the old behaviour) could blow up the
-// context, so default to the newest page and let the agent page/filter for more.
+// factsPageSize 는 list_facts 의 기본 페이지 크기입니다. 긴 작업에는 사실이 쌓입니다.
+// 한 번에 전부 돌려주면(예전 동작) 맥락이 터질 수 있어, 기본은 최신 페이지이고
+// 에이전트가 더 보려면 페이지를 넘기거나 거릅니다.
 const factsPageSize = 20
 
 func (t *ToolSet) listFacts() actool.CoreTool {
@@ -973,13 +968,13 @@ func (t *ToolSet) listFacts() actool.CoreTool {
 		})
 }
 
-// factSummaryMax caps a fact summary in list_facts output. Facts carry one-line
-// conclusions, but nothing enforces brevity; a runaway summary must not bloat a
-// whole page. Full text stays available via node_detail(id).
+// factSummaryMax 는 list_facts 출력의 사실 요약 상한입니다. 사실은 한 줄
+// 결론이지만, 길이를 강제하지는 않습니다. 폭주한 요약이 페이지를 부풀리면 안 됩니다.
+// 전문은 node_detail(id) 에 있습니다.
 const factSummaryMax = 160
 
-// compactFact is compactNode with the summary rune-capped for list_facts, so a
-// page of facts stays bounded regardless of how long any single summary grew.
+// compactFact 는 list_facts 용으로 요약 글자 수를 자른 compactNode 입니다.
+// 요약 하나가 아무리 길어도 사실 페이지는 한도를 넘지 않습니다.
 func compactFact(n *db.Node) map[string]any {
 	m := compactNode(n)
 	if s, ok := m["summary"].(string); ok && len([]rune(s)) > factSummaryMax {
@@ -1011,11 +1006,11 @@ func (t *ToolSet) nodeDetail() actool.CoreTool {
 			if err := t.ts.PopulateFindingTrafficIDs([]*db.Node{n}); err != nil {
 				return actool.Errorf(err.Error()), nil
 			}
-			return jsonResult(n) // full payload incl. detail / evidence, plus explicit finding IDs
+			return jsonResult(n) // 전문(detail / evidence)과 명시적 발견 ID 를 포함합니다
 		})
 }
 
-// --- planner write tools ---
+// --- 플래너 쓰기 도구 ---
 
 // intentItem 은 add_intent 일괄/한 건의 탐색 방향 하나입니다.
 type intentItem struct {
@@ -1072,14 +1067,14 @@ func (t *ToolSet) addOneIntent(it intentItem) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	// upstream lineage: link each (validated) fact/finding parent → this intent, so
-	// "multiple facts combine into one new intent" is expressible.
+	// 상류 계보: 확인된 사실/발견 부모마다 이 의도로 잇습니다.
+	// "사실 여러 개가 새 의도 하나로 합쳐짐"을 표현할 수 있습니다.
 	for _, parent := range parents {
 		_ = t.ts.Link(parent, db.RelDerivedFrom, id)
 	}
-	// a top-level intent (no explicit parent) connects to the origin fact, so every
-	// intent still traces back to a fact node — at task start the only fact is the
-	// origin, and the first intents derive from it.
+	// 꼭대기 의도(명시적 부모가 없음)는 origin 사실에 붙습니다. 그래서 모든
+	// 의도가 사실 노드까지 거슬러 올라갑니다. 작업 시작 때 사실은 origin 뿐이고,
+	// 첫 의도들은 거기서 나옵니다.
 	if len(parents) == 0 {
 		if origin, _ := t.ts.OriginFactID(); origin > 0 {
 			_ = t.ts.Link(origin, db.RelDerivedFrom, id)
@@ -1214,7 +1209,7 @@ func (t *ToolSet) goalMet() actool.CoreTool {
 		})
 }
 
-// --- worker write tools ---
+// --- 워커 쓰기 도구 ---
 
 func (t *ToolSet) addFinding() actool.CoreTool {
 	return writeTool("report_finding", "记录确认的漏洞，用 evidence 提供命令输出、日志等可验证证据。任务上下文传当前 intent_id。返回的 finding_id 是独立漏洞记录 ID，finding_node_id 是探索节点 ID（第一行保留该节点编号）。", obj(map[string]any{ // han-allow 업스트림 프롬프트·픽스처
@@ -1238,11 +1233,11 @@ func (t *ToolSet) addFinding() actool.CoreTool {
 		if t.ts == nil {
 			return actool.Errorf("report_finding 에는 작업 맥락이 필요합니다. 플랫폼 대화에서는 add_task_hint 로 해당 작업에 발견을 넘기고, 힌트에 이미 있는 traffic_refs 를 적으세요. 등록은 작업 에이전트가 합니다. 이미 등록된 발견은 bind_finding_traffic 으로 연결할 수 있습니다."), nil
 		}
-		// Auto-binding off: ignore the evidence params instead of rejecting the call.
-		// stripTrafficParameters already removes them from the advertised schema, but
-		// models routinely emit fields anyway — failing here would discard a confirmed
-		// finding over a stray parameter. The success path below reports evidence_status
-		// "not_bound" with the "닫혀 있어, 페이지에서 사람이 연결할 수 있음" note, which is what the caller needs.
+		// 자동 연결이 꺼져 있으면, 호출을 거절하지 않고 증거 파라미터를 무시합니다.
+		// stripTrafficParameters 가 광고된 schema 에서는 이미 뺐지만, 모델은
+		// 그래도 필드를 넣는 일이 많습니다. 여기서 실패하면 엉뚱한 파라미터 때문에 확인된 발견을 버립니다.
+		// 아래 성공 경로는 evidence_status "not_bound" 와
+		// "닫혀 있어, 페이지에서 사람이 연결할 수 있음" 노트를 돌려줍니다. 호출자에게 필요한 내용입니다.
 		if !findingTrafficBindingEnabled() {
 			a.TrafficRefs, a.EvidenceHintID = nil, nil
 		}
@@ -1275,7 +1270,7 @@ func (t *ToolSet) addFinding() actool.CoreTool {
 			t.notify()
 		}
 		t.writes.Findings++
-		// Keep the first line's node-ID contract for existing reporter triggers.
+		// 첫 줄의 노드 ID 약속은 기존 reporter 트리거를 위해 유지합니다.
 		for i := range recorded.Traffic.Bindings {
 			recorded.Traffic.Bindings[i].Snapshot.ReqHead = ""
 			recorded.Traffic.Bindings[i].Snapshot.RespHead = ""
@@ -1297,11 +1292,11 @@ func (t *ToolSet) addFinding() actool.CoreTool {
 	})
 }
 
-// recordFact writes a general exploration RESULT/conclusion (not a vuln, not a
-// new asset) into the EXPLORATION graph, chained to the intent that produced it.
-// This is the home for observations and — importantly — negative results
-// ("port closed", "param not injectable", "no login found"). Such conclusions
-// must NOT be stuffed into the asset graph via upsert_asset.
+// recordFact 는 일반적인 탐색 결과/결론(취약점이 아니고, 새 자산도 아님)을
+// 탐색 그래프에 쓰고, 그것을 만든 의도에 잇습니다.
+// 관찰과, 특히 부정 결과(포트가 닫힘, 파라미터가 주입되지 않음, 로그인을 못 찾음)의
+// 집입니다. 이런 결론을 upsert_asset 으로 자산 그래프에 넣으면 안 됩니다.
+// 초보: 워커가 맡은 의도 하나에서 나온 사실이 여기로 들어갑니다.
 // factItem 은 record_fact 일괄/한 건의 사실 하나입니다.
 type factItem struct {
 	Summary    string            `json:"summary"`
@@ -1338,13 +1333,13 @@ func (t *ToolSet) recordOneFact(it factItem, defaultIntent int64) (int64, error)
 			return 0, fmt.Errorf("intent_id는 이 작업의 의도여야 합니다(연관 작업의 의도는 읽기 전용)")
 		}
 	}
-	// a fact is its OWN node kind (distinct from a vuln finding).
+	// 사실은 자기 노드 종류입니다(취약 발견과 다름).
 	id, err := t.ts.AddNode(db.KindFact, payload, 5, "confirmed", t.worker, pidList(it.AssetIDs))
 	if err != nil {
 		return 0, err
 	}
 	if intent > 0 {
-		_ = t.ts.Link(intent, db.RelYields, id) // chain: intent -> fact
+		_ = t.ts.Link(intent, db.RelYields, id) // 사슬: 의도 -> 사실
 	}
 	t.writes.Facts++
 	return id, nil
@@ -1464,7 +1459,7 @@ func (t *ToolSet) addOneGoal(it goalItem) (int64, error) {
 		return 0, err
 	}
 	if of, _ := t.ts.OriginFactID(); of > 0 && id > 0 {
-		_ = t.ts.Link(of, db.RelSpawns, id) // goals descend from the task root (origin fact)
+		_ = t.ts.Link(of, db.RelSpawns, id) // 목표는 작업 뿌리(origin 사실)에서 내려옵니다
 	}
 	return id, nil
 }
@@ -1541,7 +1536,7 @@ func (t *ToolSet) setGoals() actool.CoreTool {
 
 type constraintItem struct {
 	Text string `json:"text"`
-	Type string `json:"type"` // allow | deny
+	Type string `json:"type"` // allow | deny (허용 | 거부)
 }
 
 // addOneConstraint 는 조작 제약 하나를 task_constraints 에 기록합니다. origin 은 t.worker(없으면 system).
@@ -1672,7 +1667,7 @@ func (t *ToolSet) addHint() actool.CoreTool {
 		})
 }
 
-// killWorkTool lets the planner terminate a single running work (by intent id).
+// killWorkTool 은 플래너가 돌고 있는 작업 하나를 의도 id 로 끊게 합니다.
 func (t *ToolSet) killWorkTool() actool.CoreTool {
 	return t.writeExpTool("kill_work", "终止一条正在运行的意图(work)。用于叫停跑偏/无意义的探索；被终止的意图标记为 stopped，不再自动重领。先用 get_worker_output 看看它在干嘛再决定。", // han-allow 업스트림 프롬프트·픽스처
 		obj(map[string]any{"intent_id": idp("要终止的意图 id（= work 句柄）")}, "intent_id"), // han-allow 업스트림 프롬프트·픽스처
@@ -1699,10 +1694,10 @@ func (t *ToolSet) killWorkTool() actool.CoreTool {
 		})
 }
 
-// steerWorkTool lets the planner inject a mid-run course-correction into a running
-// work WITHOUT killing it: the message reaches the worker before its next tool call,
-// which re-plans its next step (already-gathered context is kept). For in-intent
-// nudges ("X 는 멈추고 Y 에 집중"); if the whole direction is wrong use kill_work + a new intent.
+// steerWorkTool 은 플래너가 돌고 있는 작업에 중간 방향 수정을 넣게 합니다.
+// 작업을 죽이지 않습니다. 메시지는 워커의 다음 도구 호출 전에 도착하고,
+// 워커는 다음 단계를 다시 계획합니다(이미 모은 맥락은 남음). 의도 안의
+// 살짝 밀기("X 는 멈추고 Y 에 집중")용입니다. 방향 전체가 틀리면 kill_work 와 새 의도를 씁니다.
 func (t *ToolSet) steerWorkTool() actool.CoreTool {
 	return t.writeExpTool("steer_work", "给一条正在运行的意图(work)实时注入纠偏指令，不打断它、不丢已有进展：worker 会在下一步动作前收到你的指令并据此调整。用于'别再走 X、聚焦 Y'这类【意图内】纠偏；若方向整个错了应改用 kill_work 再下新意图。建议先用 get_worker_output 看它在干嘛。", // han-allow 업스트림 프롬프트·픽스처
 		obj(map[string]any{
@@ -1736,7 +1731,7 @@ func (t *ToolSet) steerWorkTool() actool.CoreTool {
 		})
 }
 
-// getWorkerOutput returns a work's final (or 중단 시점까지의) conclusion text by intent id.
+// getWorkerOutput 은 의도 id 로 작업의 최종 결론(또는 중단 시점까지의 글)을 돌려줍니다.
 func (t *ToolSet) getWorkerOutput() actool.CoreTool {
 	return t.readExpTool("get_worker_output", "取本任务或直接关联任务某条意图(work)的最终输出结论。关联任务结果带 source_task_id/inherited=true 且只读。正常结束返回其总结；被终止(stopped)/异常的 work 返回其截至中止时的最后输出。", // han-allow 업스트림 프롬프트·픽스처
 		obj(map[string]any{"intent_id": idp("意图 id（= work 句柄）")}, "intent_id"), // han-allow 업스트림 프롬프트·픽스처
@@ -1797,9 +1792,9 @@ func (t *ToolSet) getWorkerOutput() actool.CoreTool {
 		})
 }
 
-// traceSteps renders summary-only trace rows, re-truncating each summary to 100
-// chars — the stored summary is capped at 200 for the UI transcript; the trace
-// tools want it tighter since a whole work's step list is many rows.
+// traceSteps 는 요약만 있는 trace 줄을 그립니다. 요약마다 100자로 다시 자릅니다.
+// 저장된 요약은 화면 대화용으로 200자입니다. trace 도구는 한 작업의 단계가
+// 여러 줄이라 더 짧게 봅니다.
 func traceSteps(acts []db.Activity) []map[string]any {
 	steps := make([]map[string]any, 0, len(acts))
 	for i := range acts {
@@ -1815,9 +1810,10 @@ func traceSteps(acts []db.Activity) []map[string]any {
 	return steps
 }
 
-// getWorkerTrace exposes a work's execution PROCESS (not just its final output):
-// list step summaries, keyword-search within one work, or pull full detail of a
-// few specific steps. Thinking steps are excluded everywhere.
+// getWorkerTrace 는 작업의 실행 과정을 보여 줍니다(최종 출력만이 아님).
+// 단계 요약 목록, 그 작업 안의 키워드 검색, 또는 몇 단계의 전문입니다.
+// 생각 단계는 어디서나 뺍니다.
+// 초보: 워커가 맡은 의도 하나의 발자국입니다. 탐색 그래프의 사실과 별개로, 화면 대화에도 남습니다.
 func (t *ToolSet) getWorkerTrace() actool.CoreTool {
 	return t.readExpTool("get_worker_trace",
 		"查看某条意图(work)的【执行过程】（区别于 get_worker_output 只给最终结论）。三种用法：\n"+ // han-allow 업스트림 프롬프트·픽스처
@@ -1850,13 +1846,12 @@ func (t *ToolSet) getWorkerTrace() actool.CoreTool {
 			if intentNode == nil || intentNode.Kind != db.KindIntent {
 				return actool.Errorf("intent_id가 이 작업이나 직접 연관된 작업의 것이 아닙니다"), nil
 			}
-			// ③ detail drill-down by step ids, thinking excluded by the store.
+			// ③ step id 로 전문을 엽니다. 생각 단계는 저장소가 뺍니다.
 			if len(a.StepIDs) > 0 {
-				// Dedup + drop invalid ids first so garbage/duplicates don't eat into
-				// the per-call cap. detail is returned in full (untruncated), so the
-				// cap bounds one tool result; over the cap we serve the first N and
-				// tell the model exactly which ids were deferred, instead of erroring
-				// and forcing it to re-plan the call.
+				// 중복을 없애고 잘못된 id 를 먼저 버립니다. 쓰레기와 중복이
+				// 호출당 상한을 먹지 않게 합니다. detail 은 자르지 않고 전문입니다.
+				// 그래서 상한이 도구 결과 하나를 묶습니다. 넘치면 앞 N개만 주고
+				// 미룬 id 를 모델에게 정확히 알립니다. 오류를 내서 호출을 다시 계획하게 하지 않습니다.
 				const maxStepIDs = 5
 				var ids []int64
 				seen := make(map[int64]bool)
@@ -1892,8 +1887,8 @@ func (t *ToolSet) getWorkerTrace() actool.CoreTool {
 				}
 				result := map[string]any{"intent_id": id, "steps": steps, "returned_step_ids": ids}
 				if len(omitted) > 0 {
-					// returned_step_ids/omitted_step_ids let the model decide programmatically
-					// whether another call is worth it; the notice states the same in prose.
+					// returned_step_ids/omitted_step_ids 로 모델이 한 번 더 부를지
+					// 프로그램처럼 정합니다. notice 가 같은 말을 글로 적습니다.
 					result["omitted_step_ids"] = omitted
 					result["notice"] = fmt.Sprintf(
 						"한 번에 최대 %d 개 단계의 전체 내용만 가져옵니다. 이번엔 앞 %d 개(%v)를 돌려주었고, 가져오지 않은 %d 개는 %v 입니다. "+
@@ -1905,7 +1900,7 @@ func (t *ToolSet) getWorkerTrace() actool.CoreTool {
 				}
 				return jsonResult(result)
 			}
-			// ①/② summary stream, optionally keyword-filtered; 100-char summaries.
+			// ①/② 요약 흐름입니다. 키워드로 거를 수 있고, 요약은 100자입니다.
 			var acts []db.Activity
 			var err error
 			if strings.TrimSpace(a.Q) != "" {
@@ -1924,9 +1919,9 @@ func (t *ToolSet) getWorkerTrace() actool.CoreTool {
 		})
 }
 
-// searchAllWorkerTraces keyword-searches EVERY work's process in this task — for
-// finding what a worker saw but never wrote back as a fact. Returns only matching
-// summaries (≤100 chars), each tagged with its intent_id for follow-up drill-down.
+// searchAllWorkerTraces 는 이 작업의 모든 작업 과정을 키워드로 찾습니다.
+// 워커가 봤지만 사실로 되돌리지 않은 것을 찾는 용도입니다. 맞는 요약만
+// 돌려줍니다(100자 이하). 각 줄에 intent_id 가 있어 이어서 펼칠 수 있습니다.
 func (t *ToolSet) searchAllWorkerTraces() actool.CoreTool {
 	return t.readExpTool("search_all_worker_traces",
 		"【通常不推荐使用，因为系统中已经给了大部分信息了】在【本任务其他 work 的执行过程】里按关键字(q)检索——用于找回某个 worker 见过、却没写进 fact 的东西（某路径/token/报错等）。"+ // han-allow 업스트림 프롬프트·픽스처
@@ -1970,12 +1965,11 @@ func (t *ToolSet) searchAllWorkerTraces() actool.CoreTool {
 		})
 }
 
-// listWorkerTraces gives a worker (which has no graph_overview and can't see the
-// intent graph) a lightweight index of the works in this task — intent_id +
-// one-line summary + state — so it can DISCOVER which works to inspect via
-// get_worker_trace. Without this a worker only knows intent_ids that come back
-// from search_all_worker_traces hits. Excludes still-open intents (not yet run →
-// no process to inspect).
+// listWorkerTraces 는 워커에게 이 작업의 가벼운 색인을 줍니다. 워커는
+// graph_overview 가 없고 의도 그래프를 못 봅니다. intent_id + 한 줄 요약 +
+// 상태입니다. get_worker_trace 로 볼 작업을 찾게 합니다. 이게 없으면 워커는
+// search_all_worker_traces 가 돌려준 intent_id 만 압니다. 아직 열린 의도는
+// 뺍니다(아직 안 돌았으므로 볼 과정이 없음).
 func (t *ToolSet) listWorkerTraces() actool.CoreTool {
 	return t.readExpTool("list_worker_traces",
 		"【通常不推荐使用，因为系统中已经给了大部分信息了】列出本任务里【已跑过的 work（意图）】索引：intent_id + 一句话方向(summary) + 状态。"+ // han-allow 업스트림 프롬프트·픽스처
@@ -2006,7 +2000,7 @@ func (t *ToolSet) listWorkerTraces() actool.CoreTool {
 					continue
 				}
 				switch n.State {
-				case "running", "done", "exhausted", "blocked", "stopped": // has run → has a process
+				case "running", "done", "exhausted", "blocked", "stopped": // 돈 적 있음 → 과정이 있음
 				default:
 					continue
 				}
@@ -2029,11 +2023,12 @@ func (t *ToolSet) listWorkerTraces() actool.CoreTool {
 		})
 }
 
-// PlannerTools is the read + intent-generation + goal-judgement tool set.
+// PlannerTools 는 읽기 + 의도 만들기 + 목표 판정 도구 묶음입니다.
+// 초보: 의도를 만드는 쪽은 플래너뿐입니다. 워커는 이 묶음을 받지 않습니다.
 func (t *ToolSet) PlannerTools() []actool.CoreTool {
 	return []actool.CoreTool{
 		t.graphOverview(), t.listFindings(), t.listFacts(), t.nodeDetail(),
-		// cold-digest §6.1: restore folded cold nodes (digest body → members → detail).
+		// cold-digest §6.1: 접힌 cold 노드를 되돌립니다(digest 본문 → 구성원 → 상세).
 		t.expandDigest(),
 		t.getWorkerOutput(), t.getWorkerTrace(), t.searchAllWorkerTraces(), t.listGoals(), t.addIntent(), t.proveGoal(), t.goalMet(),
 		t.killWorkTool(), t.steerWorkTool(),

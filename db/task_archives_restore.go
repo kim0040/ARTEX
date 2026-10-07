@@ -12,9 +12,8 @@ import (
 	"time"
 )
 
-// CompleteTaskArchive performs the hot-store compaction only after the external
-// package has been fully written and checksummed. The task/exploration rows remain
-// as minimal ID stubs; all heavyweight task-owned rows move into the package.
+// CompleteTaskArchive는 바깥 패키지를 다 쓰고 체크섬을 확인한 뒤에만 뜨거운 저장소를 압축한다.
+// 작업·탐색 행은 최소 ID 껍데기로 남고, 무거운 작업 소유 행은 모두 패키지로 옮긴다.
 func (d *DB) CompleteTaskArchive(
 	archiveID int64,
 	snapshot *TaskArchiveSnapshot,
@@ -60,7 +59,7 @@ WHERE relation.source_task_id=$1 LIMIT 1`, taskID).Scan(&dependent)
 	if !errors.Is(err, sql.ErrNoRows) {
 		return err
 	}
-	// Prevent task/asset ownership from changing while exclusivity is rechecked.
+	// 독점 여부를 다시 확인하는 동안 작업·자산 소유가 바뀌지 않게 한다.
 	if _, err := tx.Exec(`LOCK TABLE assets, exploration_anchors IN SHARE ROW EXCLUSIVE MODE`); err != nil {
 		return err
 	}
@@ -137,15 +136,15 @@ WHERE id=$1`, archiveID, ArchiveReady, archivePath, sha256, originalSize, compre
 	return tx.Commit()
 }
 
-// RestoreTaskArchive restores PostgreSQL rows from a verified manifest. It is
-// idempotent for accounting/traffic retry scenarios and returns non-fatal
-// warnings for global objects that intentionally are not recreated.
+// RestoreTaskArchive는 확인된 목록에서 PostgreSQL 행을 복원한다.
+// 계량·트래픽을 다시 시도해도 같은 결과다. 일부러 다시 만들지 않는
+// 전역 객체는 치명적이지 않은 경고로 돌려준다.
 func (d *DB) RestoreTaskArchive(archiveID int64, snapshot *TaskArchiveSnapshot, remainingTimeoutSeconds int64) ([]string, error) {
 	return d.restoreTaskArchive(archiveID, snapshot, remainingTimeoutSeconds, nil)
 }
 
-// RestoreTaskArchiveWithLLMRecords restores a v2 package whose heavyweight LLM
-// record history is stored as a sequence of JSON objects outside manifest.json.
+// RestoreTaskArchiveWithLLMRecords는 v2 패키지를 복원한다. 무거운 LLM
+// 기록 이력은 manifest.json 밖의 JSON 객체 나열로 저장돼 있다.
 func (d *DB) RestoreTaskArchiveWithLLMRecords(
 	archiveID int64,
 	snapshot *TaskArchiveSnapshot,
@@ -201,8 +200,8 @@ WHERE archive.id=$1 FOR UPDATE OF archive,task`, archiveID).Scan(&taskID, &expID
 	}
 	warnings = append(warnings, assetWarnings...)
 
-	// The task row exists as an archived stub. Restore its global references only
-	// when the current instance still owns them; never recreate categories/profiles.
+	// 작업 행은 보관된 껍데기로 있다. 전역 참조는
+	// 현재 인스턴스가 아직 소유할 때만 복원한다. 분류와 프로파일은 다시 만들지 않는다.
 	taskRows, err := decodeArchiveRows(snapshot.Tables["tasks"])
 	if err != nil || len(taskRows) != 1 {
 		return nil, fmt.Errorf("restore task row: expected one row: %w", err)
@@ -240,8 +239,8 @@ WHERE archive.id=$1 FOR UPDATE OF archive,task`, archiveID).Scan(&taskID, &expID
 	if err != nil {
 		return nil, err
 	}
-	// Insert graph rows in foreign-key order. The archived stub has no graph rows,
-	// so an ID conflict signals external corruption and must stop the restore.
+	// 그래프 행은 외래 키 순서로 넣는다. 보관된 껍데기에는 그래프 행이 없다.
+	// ID가 충돌하면 바깥 데이터가 깨진 것이라 복원을 멈춰야 한다.
 	for _, table := range []string{"exploration_nodes", "exploration_edges", "exploration_anchors", "task_constraints", "activity"} {
 		if err := insertArchiveRows(tx, table, remappedTables[table]); err != nil {
 			return nil, fmt.Errorf("restore %s: %w", table, err)
@@ -362,8 +361,8 @@ func rowExists(tx *sql.Tx, table string, id int64) bool {
 }
 
 func insertArchiveRows(tx *sql.Tx, table string, raw json.RawMessage) error {
-	// json_populate_recordset inserts NULL for absent columns, bypassing SQL
-	// defaults. Preserve compatibility with v3 archives predating side memory.
+	// json_populate_recordset은 없는 열에 NULL을 넣어 SQL 기본값을 건너뛴다.
+	// 사이드 메모리보다 앞선 v3 보관과도 맞게 둔다.
 	if (table == "side_question_sessions" || table == "side_question_requests") && len(raw) > 0 {
 		var rows []map[string]json.RawMessage
 		if err := json.Unmarshal(raw, &rows); err != nil {
@@ -672,7 +671,7 @@ func restoreInterceptRows(tx *sql.Tx, raw json.RawMessage) error {
 		return err
 	}
 	for _, row := range rows {
-		// Archives predating approval snapshots lack this NOT NULL column.
+		// 승인 스냅샷보다 앞선 보관에는 이 NOT NULL 열이 없다.
 		if source, _ := row["decision_source"].(string); source == "" {
 			source = "unknown"
 			if row["rule_id"] != nil {
@@ -692,7 +691,7 @@ func restoreInterceptRows(tx *sql.Tx, raw json.RawMessage) error {
 				audit["execution_status"] = "not_executed"
 			}
 		} else if audit, ok := row["audit"].(map[string]any); ok && audit["execution_status"] == "awaiting_result" {
-			// An archived run cannot resume its former result callback.
+			// 보관된 실행은 예전 결과 콜백을 이어서 할 수 없다.
 			audit["execution_status"] = "unknown"
 		}
 	}
@@ -717,8 +716,8 @@ func nilIfEmptyString(value string) any {
 	return value
 }
 
-// CompleteTaskArchiveRestore removes compact metadata after every external
-// component has been verified and the package has been consumed.
+// CompleteTaskArchiveRestore는 바깥 구성 요소를 모두 확인하고 패키지를 쓴 뒤에
+// 작은 메타데이터를 지운다.
 func (d *DB) CompleteTaskArchiveRestore(archiveID int64) error {
 	res, err := d.Exec(`DELETE FROM task_archives archive USING tasks task
 WHERE archive.id=$1 AND archive.task_id=task.id AND task.deleted_at IS NULL AND task.archived_at IS NULL`, archiveID)
@@ -732,8 +731,8 @@ WHERE archive.id=$1 AND archive.task_id=task.id AND task.deleted_at IS NULL AND 
 	return nil
 }
 
-// DeleteTaskArchiveStub permanently removes the cold task after its package has
-// been staged for deletion. Dependency protection is rechecked transactionally.
+// DeleteTaskArchiveStub은 패키지를 삭제 대기열에 올린 뒤 차가운 작업을 영구히 지운다.
+// 의존 보호는 트랜잭션 안에서 다시 확인한다.
 func (d *DB) DeleteTaskArchiveStub(archiveID int64) error {
 	tx, err := d.Begin()
 	if err != nil {
@@ -770,8 +769,8 @@ WHERE archive.id=$1 FOR UPDATE OF archive,task`, archiveID).Scan(&taskID, &expID
 	return tx.Commit()
 }
 
-// ArchivedAggregateStats returns compact summaries used by global dashboards so
-// cold data does not disappear from historical totals.
+// ArchivedAggregateStats는 전역 대시보드가 쓰는 작은 요약을 돌려준다.
+// 차가운 데이터가 과거 합계에서 사라지지 않게 한다.
 func (d *DB) ArchivedAggregateStats() ([]json.RawMessage, error) {
 	rows, err := d.Query(`SELECT archive.aggregate_stats
 FROM task_archives archive

@@ -16,8 +16,8 @@ import (
 // 설정을 저장할 때)라서 캐시를 한 층 더 둘 가치가 없다. 차단기 매개변수는 예외다. 실패 경로에서 매번 읽히므로
 // applyRetryPolicy 가 Registry 에 밀어 넣어 저장한다.
 
-// retryPolicy reads the global policy; a nil DB yields the zero policy (all
-// layers on their built-in defaults).
+// retryPolicy는 전역 정책을 읽습니다. DB가 nil이면 영 정책입니다(모든
+// 층이 내장 기본값을 씀).
 func (s *Server) retryPolicy() db.LLMRetryPolicy {
 	if s.m == nil || s.m.pg == nil {
 		return db.LLMRetryPolicy{}
@@ -25,9 +25,9 @@ func (s *Server) retryPolicy() db.LLMRetryPolicy {
 	return s.m.pg.LLMRetryPolicy()
 }
 
-// resolveRetry layers one profile's override on top of the global policy and
-// converts the result into the form agent.Config carries. Rules combine field by
-// field, so a profile that only pins an interval still inherits the global count.
+// resolveRetry는 전역 정책 위에 설정 하나의 덮어쓰기를 얹고
+// agent.Config가 가지는 형태로 바꿉니다. 규칙은 필드마다
+// 합칩니다. 간격만 고정한 설정도 횟수는 전역을 물려받습니다.
 func resolveRetry(o db.RetryOverride, pol db.LLMRetryPolicy) agent.RetryConfig {
 	connect := o.Connect.Or(pol.Connect)
 	empty := o.Empty.Or(pol.Empty)
@@ -41,7 +41,7 @@ func resolveRetry(o db.RetryOverride, pol db.LLMRetryPolicy) agent.RetryConfig {
 	}
 }
 
-// applyProfileRetry fills cfg.Retry for a profile read from the DB.
+// applyProfileRetry는 DB에서 읽은 설정의 cfg.Retry를 채웁니다.
 func (s *Server) applyProfileRetry(cfg *agent.Config, p *db.LLMProfile) {
 	if p == nil {
 		return
@@ -52,9 +52,9 @@ func (s *Server) applyProfileRetry(cfg *agent.Config, p *db.LLMProfile) {
 // 차단기(폴링 냉각)의 기본값이며, llmpool 에 내장된 값과 같다. 여기서는 「사용자가 값을 넣었을」 때만 덮어쓴다.
 // 의도 재실행의 기본값은 engine.go 의 modelErrorRetries / modelErrorRetryBackoff 를 본다.
 
-// applyRetryPolicy pushes the process-wide layers of the policy into the objects
-// that consume them on a hot path: the circuit-breaker registry. Called at
-// startup and whenever the policy is saved.
+// applyRetryPolicy는 정책의 프로세스 전역 층을, 핫 패스에서 그것을 쓰는
+// 대상에 넣습니다. 바로 차단기 레지스트리입니다. 시작 때와
+// 정책을 저장할 때마다 부릅니다.
 func (s *Server) applyRetryPolicy() {
 	pol := s.retryPolicy()
 	if s.llmHealth != nil {
@@ -62,8 +62,8 @@ func (s *Server) applyRetryPolicy() {
 	}
 }
 
-// modelErrorRetryPolicy resolves the intent-level replay knobs (layer ⑤): how
-// many times a model_error work is re-run and how long to back off between runs.
+// modelErrorRetryPolicy는 의도 수준 재생 손잡이(⑤층)를 고릅니다.
+// model_error 일을 몇 번 다시 돌릴지, 사이에 얼마나 쉴지입니다.
 func (e *Engine) modelErrorRetryPolicy() (retries int, backoff time.Duration) {
 	retries, backoff = modelErrorRetries, modelErrorRetryBackoff
 	if e == nil || e.m == nil || e.m.pg == nil {
@@ -79,7 +79,7 @@ func (e *Engine) modelErrorRetryPolicy() (retries int, backoff time.Duration) {
 	return retries, backoff
 }
 
-// emptyTurnNudgeLimit resolves how many empty-turn continuations one work may
+// emptyTurnNudgeLimit은 일 하나가 빈 턴 이어가기를 몇 번까지
 // 주입한다(steerHooks.Stop 참고). 일부러 ②층의 손잡이를 다시 쓴다 —— 「빈 응답
 // 재시도 횟수」: 둘은 같은 일의 두 가지 수단이다. SDK 그 층은 「내용 블록이 하나도 없음」을 맡고, 수단은
 // 같은 요청을 그대로 다시 보내는 것이다. 여기서는 「생각만 있고 본문도 도구도 없음」을 맡으며, 수단은 지시 한 줄을 덧붙여

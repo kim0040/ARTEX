@@ -7,8 +7,8 @@ import (
 	"strings"
 )
 
-// directTaskContextCTE is the current task plus exactly its explicitly related
-// source tasks. It is deliberately non-recursive.
+// directTaskContextCTE는 현재 작업과, 명시적으로 연결한 원본 작업만 담는다.
+// 일부러 재귀하지 않는다. 물려받은 탐색 맥락이 원본을 한 단계만 보게 한다.
 const directTaskContextCTE = `
 context_tasks AS (
   SELECT t.id AS task_id, t.exploration_id
@@ -86,8 +86,8 @@ target AS (
   JOIN context_tasks ctx ON ctx.task_id=ts.task_id
 )`
 
-// ListTaskScopeWithSources returns the current task's scope followed by the
-// scopes of its direct source tasks. TaskScope.TaskID preserves provenance.
+// ListTaskScopeWithSources는 현재 작업의 범위를 먼저, 그다음 직접 원본 작업의 범위를 돌려준다.
+// TaskScope.TaskID로 어느 작업에서 왔는지 남긴다.
 func (s *AssetStore) ListTaskScopeWithSources(taskID int64) ([]TaskScope, error) {
 	rows, err := s.db.Query(`WITH `+directTaskContextCTE+`
 SELECT ts.id, ts.task_id, ts.kind, COALESCE(ts.company_id,0), COALESCE(c.name,''), COALESCE(ts.domain,''),
@@ -115,9 +115,9 @@ ORDER BY CASE WHEN ts.task_id=$1 THEN 0 ELSE 1 END, ts.id`, taskID)
 	return out, rows.Err()
 }
 
-// TaskCoverageWithSources computes one coverage view over the union of the
-// current task and its direct sources: source scopes and anchored assets extend
-// the denominator, while fact anchors count as tested. No row is copied.
+// TaskCoverageWithSources는 현재 작업과 직접 원본의 합집합으로 커버리지 하나를 계산한다.
+// 원본 범위와 앵커된 자산이 분모를 넓히고, 사실 앵커는 테스트된 것으로 센다.
+// 행을 복사하지는 않는다. 자산 그래프의 범위와 탐색 그래프의 사실 앵커를 한 화면에 겹친다.
 func (s *AssetStore) TaskCoverageWithSources(taskID int64) (*Coverage, error) {
 	cov := &Coverage{ByType: []CoverageByType{}}
 	_ = s.db.QueryRow(`WITH `+directTaskContextCTE+`
@@ -149,8 +149,8 @@ FROM target GROUP BY target.type ORDER BY target.type`, taskID)
 	return cov, nil
 }
 
-// ListUntestedAssetsWithSources is the direct-source-aware backlog query used
-// by inherited tasks. Source fact anchors remove assets from the backlog.
+// ListUntestedAssetsWithSources는 물려받은 작업이 쓰는, 직접 원본을 아는 미시험 목록이다.
+// 원본의 사실 앵커가 있는 자산은 목록에서 뺀다.
 func (s *AssetStore) ListUntestedAssetsWithSources(taskID int64, typ string, limit, offset int) ([]CoverageAsset, int, error) {
 	if limit <= 0 {
 		limit = 10
@@ -191,11 +191,9 @@ ORDER BY target.id LIMIT $`+limitPosition+` OFFSET $`+offsetPosition, pageArgs..
 	return out, total, rows.Err()
 }
 
-// HostsByTaskWithSources resolves exact HTTP host candidates from assets that
-// are attached to, anchored by, or in scope for the current task or a direct
-// source. Traffic remains global and is not copied. This read helper must not be
-// used for destructive task cleanup; HostsByTask intentionally retains that
-// narrower, task-owned behavior.
+// HostsByTaskWithSources는 현재 작업이나 직접 원본에 붙었거나, 앵커됐거나, 범위 안인
+// 자산에서 정확한 HTTP 호스트 후보를 고른다. 트래픽은 전역이며 복사하지 않는다.
+// 이 읽기 도우미를 작업을 지우는 정리에 쓰면 안 된다. HostsByTask가 그 좁은, 작업 소유 동작을 일부러 유지한다.
 func (s *AssetStore) HostsByTaskWithSources(taskID int64) ([]string, error) {
 	rows, err := s.db.Query(`WITH `+directTaskContextCTE+`,
 context_assets AS (

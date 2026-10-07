@@ -54,7 +54,7 @@ export function FindingTrafficPanel({
   const [note, setNote] = React.useState("");
   const [busy, setBusy] = React.useState(false);
   const [reload, setReload] = React.useState(0);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: retry token intentionally refreshes this request.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 다시 시도 토큰이 바뀌면 이 요청을 일부러 다시 불러옵니다.
   React.useEffect(() => {
     let active = true;
     setData(null);

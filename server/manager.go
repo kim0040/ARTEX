@@ -23,9 +23,10 @@ import (
 	actool "github.com/Autumn-27/norma/tool"
 )
 
-// Task is one engagement: a description + goal + its own exploration store,
-// sharing the process-wide asset store. ID is the PG task id as a string; ExpID
-// is the exploration the task owns.
+// Task는 작업 하나입니다. 설명과 목표, 자기 탐색 그래프 저장소를 가지고,
+// 프로세스 전역 자산 저장소를 같이 씁니다. ID는 PG 작업 id를 문자열로 둔 것이고, ExpID는
+// 이 작업이 가진 탐색입니다.
+// 초보용: 작업마다 탐색 그래프가 따로 있고, 자산 그래프는 모든 작업이 공유합니다.
 type Task struct {
 	ID           string `json:"id"`
 	ExpID        int64  `json:"exploration_id"`
@@ -39,9 +40,9 @@ type Task struct {
 	CompletedAt  int64  `json:"completed_at,omitempty"` // 종료 상태에 들어간 unix 초; 0=미완료
 	Paused       bool   `json:"paused"`
 	Queued       bool   `json:"queued"` // 동시 실행 상한 때문에 보류되어 빈 자리가 나면 자동 시작을 기다림; true=아직 실행 전
-	// QueuedAt is an internal Unix-nanosecond ordering key. It is deliberately
-	// finer than CreatedAt so several tasks enqueued in the same second retain
-	// their real FIFO order.
+	// QueuedAt은 안의 순서 키로, 유닉스 나노초입니다. 일부러
+	// CreatedAt보다 잘게 두어, 같은 초에 대기열에 넣은 작업 여러 개도
+	// 진짜 FIFO 순서를 유지합니다.
 	QueuedAt           int64   `json:"queued_at,omitempty"`
 	QueueMode          string  `json:"queue_mode,omitempty"`
 	ParentRef          string  `json:"parent_ref,omitempty"`     // 부모 작업 id(오케스트레이션 spawn 기록)
@@ -66,17 +67,17 @@ type Task struct {
 	lifecycleMu          sync.RWMutex
 	llmMu                sync.RWMutex
 
-	// pendingTriggers accumulates the concrete changes (worker done / finding) that
-	// fired planning rounds since the last one consumed them. The debounce coalesces
-	// a burst into one round, so several may pile up before drainTriggers() clears them.
+	// pendingTriggers는 지난 라운드가 꺼낸 뒤 쌓인 구체적 변화를 모읍니다(워커 완료 / 발견).
+	// 그 변화가 계획 라운드를 깨웠습니다. 디바운스가 몰림을
+	// 라운드 하나로 모으므로, drainTriggers()가 비우기 전에 여러 개가 쌓일 수 있습니다.
 	trigMu          sync.Mutex
 	pendingTriggers []agent.TriggerEvent
 }
 
-// taskLifecycleState is an internally consistent view of the mutable task
-// lifecycle and inherited-scope context. Callers must use lifecycleSnapshot and
-// updateLifecycle instead of reading or writing the corresponding Task fields
-// directly after the task has been published by Manager.
+// taskLifecycleState는 바뀌는 작업 수명과 물려받은 범위의, 서로 맞는 모습입니다.
+// 호출자는 lifecycleSnapshot과
+// updateLifecycle을 써야 합니다. Manager가 작업을 공개한 뒤에 대응하는 Task 필드를
+// 직접 읽거나 쓰면 안 됩니다.
 type taskLifecycleState struct {
 	Name          string
 	PinnedAt      int64
@@ -191,8 +192,8 @@ func (t *Task) setLLMState(profileID, activeID *int64, profileIDs []int64, revis
 	return true
 }
 
-// DeleteTaskOptions controls cleanup of data stored outside the task's own
-// exploration graph. All options default to false for backward compatibility.
+// DeleteTaskOptions는 작업 자신의 탐색 그래프 밖에 있는 데이터 정리를 고릅니다.
+// 모든 옵션의 기본은 false입니다. 예전 동작과 맞추려고요.
 type DeleteTaskOptions struct {
 	DeleteAssets     bool `json:"delete_assets"`
 	DeleteTraffic    bool `json:"delete_traffic"`
@@ -201,7 +202,7 @@ type DeleteTaskOptions struct {
 	DeleteLLMRecords bool `json:"delete_llm_records"`
 }
 
-// DeleteTaskResult makes destructive cleanup auditable to API callers.
+// DeleteTaskResult는 지우는 정리를 API 호출자가 감사할 수 있게 합니다.
 type DeleteTaskResult struct {
 	Deleted           string `json:"deleted"`
 	AssetsDeleted     int64  `json:"assets_deleted"`
@@ -213,20 +214,21 @@ type DeleteTaskResult struct {
 	CleanupWarning    string `json:"cleanup_warning,omitempty"`
 }
 
-// Manager owns the PostgreSQL data source (asset graph + every task's exploration
-// graph + config) and the in-memory set of task handles.
+// Manager는 PostgreSQL 데이터 원본(자산 그래프, 작업마다의 탐색
+// 그래프, 설정)과 메모리 속 작업 손잡이 묶음을 가집니다.
+// 초보용: 자산 그래프와 작업마다의 탐색 그래프, 그리고 메모리 속 작업 목록의 주인이 여기입니다.
 type Manager struct {
 	dir         string
 	pg          *pgdb.DB
 	assets      *pgdb.AssetStore
-	traffic     *traffic.Traffic       // process-wide recording proxy (may be nil)
-	enrich      *enrich.Engine         // engine-side asset auto-completion (DNS/HTTP)
-	interceptor *intercept.Interceptor // user-configured tool-call interception rules
+	traffic     *traffic.Traffic       // 프로세스 전역 기록 프록시(없을 수 있음)
+	enrich      *enrich.Engine         // 엔진 쪽 자산 자동 완성(DNS/HTTP)
+	interceptor *intercept.Interceptor // 사용자가 정한 도구 호출 가로채기 규칙
 
-	companyMu sync.Mutex // serializes task/company-scope commits with live handle registration
-	// taskStateMu preserves commit order between PostgreSQL lifecycle writes and
-	// their in-memory mirrors. lifecycleMu makes snapshots race-free, but without
-	// this outer write lock an older request could commit first and publish last.
+	companyMu sync.Mutex // 작업과 기업 범위 확정을, 살아 있는 손잡이 등록과 순서를 맞춥니다
+	// taskStateMu는 PostgreSQL 수명 쓰기와
+	// 메모리 속 거울의 확정 순서를 지킵니다. lifecycleMu는 스냅샷의 경주를 없애지만, 이
+	// 바깥 쓰기 잠금이 없으면 더 옛 요청이 먼저 확정하고 나중에 공개할 수 있습니다.
 	taskStateMu sync.Mutex
 	mu          sync.RWMutex
 	tasks       map[string]*Task
@@ -240,14 +242,14 @@ type Manager struct {
 	braveKey         string
 	tavilyKey        string
 	webSearchProxy   string
-	// globalProxy is the egress proxy all target traffic routes through
-	// (http/https/socks5, optional user:pass). Empty = direct. When traffic
-	// capture is on it becomes the MITM's upstream; when capture is off it is
-	// injected into agent bash env / WebFetch directly. See ProxyAddr.
+	// globalProxy는 목표 트래픽이 모두 지나는 출구 프록시입니다
+	// (http/https/socks5, user:pass는 선택). 비어 있으면 직접 연결입니다. 트래픽
+	// 캡처가 켜지면 MITM의 상위가 되고, 캡처가 꺼지면
+	// 에이전트 bash 환경이나 WebFetch에 직접 넣습니다. ProxyAddr를 보세요.
 	globalProxy string
 }
 
-// Settings keys the UI toggles at runtime.
+// 화면이 실행 중에 켜고 끄는 설정 키입니다.
 const (
 	settingTrafficCapture      = "traffic_capture"
 	settingAgentTrafficBinding = "agent_traffic_binding"
@@ -256,9 +258,9 @@ const (
 	settingBraveKey            = "brave_search_api_key"
 	settingTavilyKey           = "tavily_search_api_key"
 	settingWebSearchProxy      = "web_search_proxy"
-	// settingGlobalProxy is the global egress proxy for all target traffic
-	// (http/https/socks5). Empty = direct. Distinct from web_search_proxy (which
-	// only routes the search backend) and the per-profile LLM proxy.
+	// settingGlobalProxy는 목표 트래픽 전체의 전역 출구 프록시입니다
+	// (http/https/socks5). 비어 있으면 직접 연결입니다. web_search_proxy와는 다릅니다(그것은
+	// 검색 백엔드만 보냅니다). 설정별 LLM 프록시와도 다릅니다.
 	settingGlobalProxy = "global_proxy"
 	settingWorkers     = "workers"
 	settingLLMRecord   = "llm_record"
@@ -275,20 +277,20 @@ const (
 	// agent(플래너(의도만 생성)/워커(의도 하나를 실행한 뒤 정지)/메인 에이전트/대화)의 컨텍스트 압축을 noa가 맡고, 내장 compaction을 대체한다.
 	// run마다 한 번 읽으며, 전환은 이후에 시작하는 run에만 영향을 준다.
 	settingNoaCompaction = "noa_compaction"
-	// defaultWebSearchBackend is used when web search is on but no backend was picked.
+	// defaultWebSearchBackend는 웹 검색은 켜졌는데 백엔드를 고르지 않았을 때 씁니다.
 	defaultWebSearchBackend = "ddgs"
-	// deepSeekWebSearchBackend borrows the active LLM profile instead of its own
-	// key, so it only works on an anthropic-format profile pointed at DeepSeek.
+	// deepSeekWebSearchBackend는 자기 키 대신 활성 LLM 설정을 빌립니다.
+	// 그래서 DeepSeek를 가리키는 anthropic 형식 설정에서만 됩니다.
 	deepSeekWebSearchBackend = "deepseek"
-	// defaultWorkers is the concurrent work-agent count when the setting is unset.
+	// defaultWorkers는 설정이 없을 때 동시에 도는 워커 수입니다.
 	defaultWorkers = 3
-	// defaultConcurrencyLimit is the simultaneous-running-task cap when the feature
-	// is enabled but no explicit limit was saved.
+	// defaultConcurrencyLimit은 기능을 켰는데 명시적 상한을 저장하지 않았을 때의
+	// 동시 실행 작업 상한입니다.
 	defaultConcurrencyLimit = 5
 )
 
-// ConcurrencyLimit returns whether the simultaneous-running-task cap is enabled and
-// its limit (default 5 when enabled but unset). limit is always >=1 when enabled.
+// ConcurrencyLimit은 동시 실행 작업 상한이 켜져 있는지와
+// 그 상한을 돌려줍니다(켰는데 없으면 기본 5). 켜져 있으면 limit은 항상 1 이상입니다.
 func (m *Manager) ConcurrencyLimit() (enabled bool, limit int) {
 	on, _, _ := m.pg.GetSetting(settingConcurrencyOn)
 	if strings.TrimSpace(on) != "true" {
@@ -303,7 +305,7 @@ func (m *Manager) ConcurrencyLimit() (enabled bool, limit int) {
 	return true, limit
 }
 
-// SetConcurrency persists the running-task concurrency cap. limit<1 is clamped to 1.
+// SetConcurrency는 실행 중 작업 동시성 상한을 저장합니다. limit이 1 미만이면 1로 올립니다.
 func (m *Manager) SetConcurrency(enabled bool, limit int) error {
 	if limit < 1 {
 		limit = defaultConcurrencyLimit
@@ -314,8 +316,8 @@ func (m *Manager) SetConcurrency(enabled bool, limit int) error {
 	return m.pg.SetSetting(settingConcurrencyOn, strconv.FormatBool(enabled))
 }
 
-// Workers returns the configured concurrent work-agent count (default 3). Read
-// per-task at engine.Run, so a change applies to tasks started afterwards.
+// Workers는 설정된 동시 워커 수를 돌려줍니다(기본 3). 엔진 Run이
+// 작업마다 읽으므로, 바꾼 값은 그 뒤에 시작한 작업에 적용됩니다.
 func (m *Manager) Workers() int {
 	v, ok, err := m.pg.GetSetting(settingWorkers)
 	if err != nil || !ok {
@@ -328,7 +330,7 @@ func (m *Manager) Workers() int {
 	return n
 }
 
-// SetWorkers persists the concurrent work-agent count. Values <=0 are rejected.
+// SetWorkers는 동시 워커 수를 저장합니다. 0 이하는 거절합니다.
 func (m *Manager) SetWorkers(n int) error {
 	if n <= 0 {
 		return fmt.Errorf("workers는 0보다 커야 합니다")
@@ -336,18 +338,19 @@ func (m *Manager) SetWorkers(n int) error {
 	return m.pg.SetSetting(settingWorkers, strconv.Itoa(n))
 }
 
-// Enrich returns the asset auto-completion engine (may be nil if init failed).
+// Enrich는 자산 자동 완성 엔진을 돌려줍니다(초기화가 실패하면 nil일 수 있음).
 func (m *Manager) Enrich() *enrich.Engine { return m.enrich }
 
-// NewManager connects to PostgreSQL and, if proxyAddr is non-empty, starts the
-// traffic-recording proxy. PostgreSQL is required (it is the single data source).
+// NewManager는 PostgreSQL에 연결하고, proxyAddr가 비어 있지 않으면
+// 트래픽 기록 프록시를 시작합니다. PostgreSQL은 필수입니다(유일한 데이터 원본).
+// 초보용: 자산 그래프와 탐색 그래프가 있는 DB에 붙고, 주소가 있으면 기록 프록시를 켭니다.
 func NewManager(dir, proxyAddr string) (*Manager, error) {
-	// Resolve the data dir to an ABSOLUTE path up front. Every data path derives
-	// from it — notably the MITM CA cert, whose path is injected into worker shells
-	// (SSL_CERT_FILE/CURL_CA_BUNDLE) and read by WebFetch. A relative path (the
-	// default is "./data" under `go run`) only resolves when the current working
-	// directory happens to match, so curl/WebFetch in a different CWD fail to load
-	// the CA → TLS to the proxy breaks (curl 000 / EOF). Absolute makes it CWD-proof.
+	// 데이터 디렉터리를 처음부터 절대 경로로 풉니다. 모든 데이터 경로가
+	// 여기서 나옵니다. 특히 MITM CA 인증서는 워커 셸에 경로가 들어가고
+	// (SSL_CERT_FILE/CURL_CA_BUNDLE) WebFetch가 읽습니다. 상대 경로(기본은
+	// `go run` 아래의 ./data)는 현재 작업 디렉터리가 맞을 때만 풀립니다. 그래서 다른
+	// 디렉터리의 curl이나 WebFetch는 CA를 못 읽습니다. 프록시로 가는 TLS가 깨집니다(curl 000 / EOF).
+	// 절대 경로면 작업 디렉터리와 무관합니다.
 	if abs, err := filepath.Abs(dir); err == nil {
 		dir = abs
 	}
@@ -387,8 +390,8 @@ func NewManager(dir, proxyAddr string) (*Manager, error) {
 				if taskErr != nil {
 					return false, taskErr
 				}
-				// Archived/permanently deleted tasks are hidden from GetTask. A
-				// restored task is visible and needs the staged traffic put back.
+				// 보관됐거나 영원히 지운 작업은 GetTask에서 숨깁니다.
+				// 복원된 작업은 보이고, 잠시 치워 둔 트래픽을 되돌려야 합니다.
 				return task == nil, nil
 			})
 			if err != nil {
@@ -407,12 +410,12 @@ func NewManager(dir, proxyAddr string) (*Manager, error) {
 			}()
 		}
 	}
-	// Asset auto-completion engine (§5): HTTP probes routed through the recording
-	// proxy (via m.ProxyAddr, which honors the traffic-capture toggle).
+	// 자산 자동 완성 엔진(§5)입니다. HTTP 프로브는 기록
+	// 프록시를 통합니다(m.ProxyAddr. 트래픽 캡처 스위치를 따름).
 	m.trafficOn = pg.GetBool(settingTrafficCapture, false)
 	// LLM 기록 스위치(기본 꺼짐). 기록기는 호출할 때마다 이 플래그를 읽는다.
 	m.llmRecOn = pg.GetBool(settingLLMRecord, false)
-	// Load persisted web-search config (default: off, ddgs).
+	// 저장된 웹 검색 설정을 읽습니다(기본: 꺼짐, ddgs).
 	m.webSearchOn = pg.GetBool(settingWebSearchOn, false)
 	if v, ok, _ := pg.GetSetting(settingWebSearchBackend); ok && v != "" {
 		m.webSearchBackend = v
@@ -428,9 +431,9 @@ func NewManager(dir, proxyAddr string) (*Manager, error) {
 	if v, ok, _ := pg.GetSetting(settingWebSearchProxy); ok {
 		m.webSearchProxy = v
 	}
-	// Global egress proxy (default: direct). When capture is on, feed it to the
-	// MITM as its upstream so recorded traffic exits through it; when capture is
-	// off, ProxyAddr hands it to agents directly (bash env / WebFetch).
+	// 전역 출구 프록시입니다(기본: 직접 연결). 캡처가 켜지면 MITM의
+	// 상위로 넣어, 기록된 트래픽이 그쪽으로 나갑니다. 캡처가
+	// 꺼지면 ProxyAddr가 에이전트에 직접 넘깁니다(bash 환경 / WebFetch).
 	if v, ok, _ := pg.GetSetting(settingGlobalProxy); ok {
 		m.globalProxy = strings.TrimSpace(v)
 	}
@@ -440,22 +443,22 @@ func NewManager(dir, proxyAddr string) (*Manager, error) {
 		}
 	}
 	m.enrich = enrich.New(m.assets, m.ProxyAddr, 4)
-	// Reconcile the seeded browser MCP with the persisted capture state, so a
-	// restart with capture already on keeps Playwright routed through the proxy.
+	// 심어 둔 브라우저 MCP를 저장된 캡처 상태와 맞춥니다. 그래서
+	// 캡처가 이미 켜진 채 재시작해도 Playwright가 프록시를 탑니다.
 	m.syncBrowserMCPProxy()
 	return m, nil
 }
 
-// TrafficEnabled reports whether traffic capture is on (default off). When off,
-// no proxy/traffic tools/prompt are injected into agents (nothing is recorded).
+// TrafficEnabled는 트래픽 캡처가 켜져 있는지 알립니다(기본 꺼짐). 꺼지면
+// 에이전트에 프록시, 트래픽 도구, 프롬프트를 넣지 않습니다(아무것도 기록하지 않음).
 func (m *Manager) TrafficEnabled() bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.trafficOn
 }
 
-// SetTrafficEnabled persists and applies the traffic-capture toggle. Callers must
-// rebuild the agents (applyLLM) afterwards so the new proxy/tools/prompt take hold.
+// SetTrafficEnabled는 트래픽 캡처 스위치를 저장하고 적용합니다. 호출자는 그 뒤
+// 에이전트를 다시 만들어야 합니다(applyLLM). 새 프록시, 도구, 프롬프트가 먹게 하려고요.
 func (m *Manager) SetTrafficEnabled(on bool) error {
 	if err := m.pg.SetBool(settingTrafficCapture, on); err != nil {
 		return err
@@ -463,25 +466,25 @@ func (m *Manager) SetTrafficEnabled(on bool) error {
 	m.mu.Lock()
 	m.trafficOn = on
 	m.mu.Unlock()
-	// Inject (on) or strip (off) the recording proxy + CA on the browser MCP so
-	// Playwright routes through the MITM. Must run after the flag flip above, since
-	// ProxyAddr/ProxyCACert honor it. putSettings rebuilds agents next (applyLLM),
-	// which re-spawns the MCP with the new args/env.
+	// 브라우저 MCP에 기록 프록시와 CA를 넣거나(켬) 뺍니다(끔). 그래서
+	// Playwright가 MITM을 탑니다. 위 플래그를 뒤집은 뒤에 돌려야 합니다.
+	// ProxyAddr와 ProxyCACert가 그 플래그를 따르기 때문입니다. putSettings가 다음에 에이전트를 다시 만들고(applyLLM),
+	// 그 과정에서 MCP를 새 인자/환경으로 다시 띄웁니다.
 	m.syncBrowserMCPProxy()
 	return nil
 }
 
-// LLMRecordEnabled reports whether LLM request/response recording is on
+// LLMRecordEnabled는 LLM 요청/응답 기록이 켜져 있는지 알립니다
 // (기본 꺼짐; settings.llm_record). The recorder consults this per call, so the
-// toggle takes effect immediately without rebuilding agents.
+// 토글은 에이전트를 다시 만들지 않고 바로 적용됩니다.
 func (m *Manager) LLMRecordEnabled() bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.llmRecOn
 }
 
-// SetLLMRecordEnabled persists and applies the LLM-record toggle. Effective at
-// once — no applyLLM needed, since the recorder reads the flag on every call.
+// SetLLMRecordEnabled는 LLM 기록 스위치를 저장하고 적용합니다. 바로
+// 먹습니다. applyLLM은 필요 없습니다. 기록기가 호출마다 플래그를 읽기 때문입니다.
 func (m *Manager) SetLLMRecordEnabled(on bool) error {
 	if err := m.pg.SetBool(settingLLMRecord, on); err != nil {
 		return err
@@ -492,22 +495,22 @@ func (m *Manager) SetLLMRecordEnabled(on bool) error {
 	return nil
 }
 
-// NoaCompactionEnabled reports whether the experimental noa context-compression
+// NoaCompactionEnabled는 실험용 noa 맥락 압축이 켜져 있는지 알립니다.
 // mechanism is on (기본 꺼짐; settings.noa_compaction). Read per agent run via the
-// injected resolver, so a toggle takes effect on the next run without rebuild.
+// 주입된 결정 함수가 에이전트 실행마다 읽으므로, 토글은 다시 만들지 않고 다음 실행부터 적용됩니다.
 func (m *Manager) NoaCompactionEnabled() bool {
 	return m.pg.GetBool(settingNoaCompaction, false)
 }
 
-// SetNoaCompaction persists the noa toggle. Effective on the next agent run —
-// the resolver reads it per run, so no rebuild is needed.
+// SetNoaCompaction은 noa 스위치를 저장합니다. 다음 에이전트 실행부터 먹습니다.
+// 결정 함수가 실행마다 읽으므로, 다시 만들 필요가 없습니다.
 func (m *Manager) SetNoaCompaction(on bool) error {
 	return m.pg.SetBool(settingNoaCompaction, on)
 }
 
 // LLMPoolEnabled reports whether LLM failover ("풀링") is on (기본 꺼짐;
-// settings.llm_pool_enabled). Read when the provider chain is built (applyLLM),
-// so a change requires a rebuild — putSettings does that.
+// settings.llm_pool_enabled). 제공자 사슬을 만들 때 읽습니다(applyLLM).
+// 그래서 바꾸면 다시 만들어야 합니다. putSettings가 그렇게 합니다.
 func (m *Manager) LLMPoolEnabled() bool {
 	if m.pg == nil {
 		return false
@@ -515,11 +518,11 @@ func (m *Manager) LLMPoolEnabled() bool {
 	return m.pg.GetBool(settingLLMPoolOn, false)
 }
 
-// SetLLMPoolEnabled persists the failover toggle. Callers rebuild agents
-// (applyLLM) afterwards so it takes effect.
+// SetLLMPoolEnabled는 장애 조치 스위치를 저장합니다. 호출자는 그 뒤 에이전트를 다시 만듭니다
+// (applyLLM). 그때 먹습니다.
 func (m *Manager) SetLLMPoolEnabled(on bool) error { return m.pg.SetBool(settingLLMPoolOn, on) }
 
-// LLMPoolBindFallback reports whether an agent/task that is BOUND to a specific
+// LLMPoolBindFallback은 특정 설정에 묶인 에이전트나 작업이, 그 설정이 실패해도 사슬로 물러설지 알립니다.
 // profile still falls back to the chain when that profile fails (기본 꺼짐: 바인딩되면
 // 독점, 실패하면 곧 실패). Only meaningful while LLMPoolEnabled.
 func (m *Manager) LLMPoolBindFallback() bool {
@@ -529,15 +532,15 @@ func (m *Manager) LLMPoolBindFallback() bool {
 	return m.pg.GetBool(settingLLMPoolBindFallback, false)
 }
 
-// SetLLMPoolBindFallback persists the bound-profile fallback toggle. Callers
-// rebuild agents (applyLLM) afterwards.
+// SetLLMPoolBindFallback은 묶인 설정의 폴백 스위치를 저장합니다. 호출자는
+// 그 뒤 에이전트를 다시 만듭니다(applyLLM).
 func (m *Manager) SetLLMPoolBindFallback(on bool) error {
 	return m.pg.SetBool(settingLLMPoolBindFallback, on)
 }
 
-// WebSearch returns the current web-search config: whether it is enabled, the
-// backend ("ddgs" | "brave-free" | "tavily"), the Brave API key, the Tavily API
-// key (each empty unless set), and the dedicated egress proxy (empty = direct).
+// WebSearch는 현재 웹 검색 설정을 돌려줍니다. 켜짐 여부,
+// 백엔드(ddgs | brave-free | tavily), Brave API 키, Tavily API
+// 키(설정된 것만 값이 있음), 전용 출구 프록시(비어 있으면 직접 연결)입니다.
 func (m *Manager) WebSearch() (on bool, backend, braveKey, tavilyKey, proxy string) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -548,9 +551,9 @@ func (m *Manager) WebSearch() (on bool, backend, braveKey, tavilyKey, proxy stri
 	return m.webSearchOn, backend, m.braveKey, m.tavilyKey, m.webSearchProxy
 }
 
-// WebSearchOpts returns the config as the agent-package struct the server pushes
-// into each agent. Disabled when off, or when a keyed backend is selected without
-// its key (so a half-configured backend never silently drops the tool at session build).
+// WebSearchOpts는 그 설정을 에이전트 패키지 구조체로 돌려줍니다. 서버가 각
+// 에이전트에 넣습니다. 꺼져 있거나, 키가 필요한 백엔드를 골랐는데
+// 키가 없으면 비활성입니다. 반만 설정된 백엔드가 세션을 만들 때 도구를 조용히 빼지 않게 하려고요.
 func (m *Manager) WebSearchOpts() agent.WebSearchOpts {
 	on, backend, braveKey, tavilyKey, proxy := m.WebSearch()
 	if on && backend == "brave-free" && strings.TrimSpace(braveKey) == "" {
@@ -566,13 +569,13 @@ func (m *Manager) WebSearchOpts() agent.WebSearchOpts {
 	return o
 }
 
-// deepSeekSearchCreds resolves the credentials the "deepseek" search backend
-// borrows from the active LLM profile (it has no key of its own). Whether that
-// profile can actually drive server-side search — DeepSeek exposes it only on
-// the Anthropic-format endpoint — is deliberately NOT validated here: the UI
-// states the requirement and the user decides. A profile that can't serve it
+// deepSeekSearchCreds는 deepseek 검색 백엔드가 빌리는 자격 증명을 찾습니다.
+// 활성 LLM 설정에서 빌립니다(자기 키는 없음). 그
+// 설정이 서버 쪽 검색을 실제로 돌릴 수 있는지는 여기서 일부러 검사하지 않습니다. DeepSeek는
+// Anthropic 형식 끝점에서만 그것을 엽니다. 화면이
+// 요구를 적고 사용자가 정합니다.
 // simply fails at search time (or at the settings page's 테스트 button), which is
-// the same feedback every other backend gives for a bad key.
+// 다른 백엔드가 나쁜 키에 주는 것과 같은 반응입니다.
 func (m *Manager) deepSeekSearchCreds() (baseURL, apiKey, model string) {
 	p, err := m.pg.ActiveProfile()
 	if err != nil || p == nil {
@@ -581,10 +584,10 @@ func (m *Manager) deepSeekSearchCreds() (baseURL, apiKey, model string) {
 	return p.BaseURL, p.APIKey, p.Model
 }
 
-// SetWebSearch persists and applies the web-search settings. braveKey, tavilyKey, and
-// proxy are each left untouched when nil (so toggling the switch doesn't wipe a saved
-// key/proxy; pass a pointer to "" to clear). Callers must rebuild agents (applyLLM)
-// afterwards so the settings take effect.
+// SetWebSearch는 웹 검색 설정을 저장하고 적용합니다. braveKey, tavilyKey,
+// proxy는 nil이면 각각 그대로 둡니다(스위치를 켠다고 저장한
+// 키나 프록시를 지우지 않음. 빈 문자열 포인터를 넘기면 지움). 호출자는 그 뒤 에이전트를 다시 만들어야 합니다(applyLLM).
+// 설정이 먹게 하려고요.
 func (m *Manager) SetWebSearch(on bool, backend string, braveKey, tavilyKey, proxy *string) error {
 	backend = strings.TrimSpace(backend)
 	if backend == "" {
@@ -628,15 +631,15 @@ func (m *Manager) SetWebSearch(on bool, backend string, braveKey, tavilyKey, pro
 	return nil
 }
 
-// browserMCPName is the seeded Playwright MCP whose proxy args + CA env are kept
-// in sync with the traffic-capture toggle.
+// browserMCPName은 심어 둔 Playwright MCP입니다. 프록시 인자와 CA 환경을
+// 트래픽 캡처 스위치와 맞춰 둡니다.
 const browserMCPName = "browser"
 
-// syncBrowserMCPProxy reconciles the seeded browser MCP's proxy args + CA env with
-// the current traffic-capture state: capture on → route Playwright through the
-// recording proxy (--proxy-server) and trust its MITM CA (NODE_EXTRA_CA_CERTS);
-// capture off → strip both. Idempotent, and a no-op if the user deleted/renamed the
-// MCP. Must be called WITHOUT m.mu held (ProxyAddr/ProxyCACert take the lock).
+// syncBrowserMCPProxy는 심어 둔 브라우저 MCP의 프록시 인자와 CA 환경을
+// 현재 트래픽 캡처 상태와 맞춥니다. 캡처가 켜지면 Playwright를
+// 기록 프록시로 보내고(--proxy-server) 그 MITM CA를 믿게 합니다(NODE_EXTRA_CA_CERTS).
+// 캡처가 꺼지면 둘 다 뺍니다. 여러 번 불러도 같고, 사용자가 MCP를 지우거나 이름을 바꾸면
+// 아무 일도 안 합니다. m.mu를 잡지 않은 채 불러야 합니다(ProxyAddr/ProxyCACert가 잠금을 잡음).
 func (m *Manager) syncBrowserMCPProxy() {
 	servers, err := m.pg.ListMCP()
 	if err != nil {
@@ -651,11 +654,11 @@ func (m *Manager) syncBrowserMCPProxy() {
 		}
 	}
 	if srv == nil {
-		return // user removed/renamed it — leave it alone
+		return // 사용자가 지우거나 이름을 바꿨습니다. 그대로 둡니다.
 	}
 
-	proxy := m.ProxyAddr()  // "" when capture off
-	cert := m.ProxyCACert() // "" when capture off
+	proxy := m.ProxyAddr()  // 캡처가 꺼지면 빈 문자열
+	cert := m.ProxyCACert() // 캡처가 꺼지면 빈 문자열
 
 	args := stripProxyArgs(decodeStrSlice(srv.Args))
 	env := decodeStrMap(srv.Env)
@@ -679,15 +682,15 @@ func (m *Manager) syncBrowserMCPProxy() {
 	}
 }
 
-// stripProxyArgs removes any --proxy-server/--proxy-bypass flags (both "--flag val"
-// and "--flag=val" forms) so they can be re-added cleanly from current state,
-// without mutating the input slice.
+// stripProxyArgs는 --proxy-server/--proxy-bypass 플래그를 뺍니다("--flag val"과
+// "--flag=val" 둘 다). 현재 상태에서 깨끗이 다시 넣으려고요.
+// 입력 슬라이스는 바꾸지 않습니다.
 func stripProxyArgs(args []string) []string {
 	out := make([]string, 0, len(args))
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		if a == "--proxy-server" || a == "--proxy-bypass" {
-			i++ // skip the following value too
+			i++ // 다음 값도 건너뜁니다.
 			continue
 		}
 		if strings.HasPrefix(a, "--proxy-server=") || strings.HasPrefix(a, "--proxy-bypass=") {
@@ -722,10 +725,10 @@ func encodeJSON(v any) json.RawMessage {
 	return b
 }
 
-// HostTools are runtime host-provided tools added to EVERY agent's base list (via
-// ToolAugment); the tools table then filters them per-agent binding. Currently the
-// traffic tools, gated by the global capture switch: empty when capture is off, so
-// no agent gets traffic_search/traffic_get regardless of binding.
+// HostTools는 실행 중 host가 주는 도구입니다. 모든 에이전트의 기본 목록에 넣습니다
+// (ToolAugment). 그다음 tools 표가 에이전트별 바인딩으로 거릅니다. 지금은
+// 트래픽 도구이고, 전역 캡처 스위치로 막습니다. 캡처가 꺼지면 비어서,
+// 바인딩과 관계없이 어떤 에이전트도 traffic_search/traffic_get을 못 받습니다.
 func (m *Manager) HostTools() []actool.CoreTool {
 	if m.traffic == nil || !m.TrafficEnabled() {
 		return nil
@@ -737,14 +740,14 @@ func (m *Manager) Assets() *pgdb.AssetStore  { return m.assets }
 func (m *Manager) PG() *pgdb.DB              { return m.pg }
 func (m *Manager) Traffic() *traffic.Traffic { return m.traffic }
 
-// ProxyAddr returns the egress proxy address agents route target traffic through:
-//   - capture ON  → the recording MITM proxy (which itself exits via the global
-//     proxy when one is set); agents also get its CA (see ProxyCACert).
-//   - capture OFF → the global egress proxy directly (empty CA — real target
-//     certs), or "" when no global proxy is set (direct, no recording).
+// ProxyAddr는 에이전트가 목표 트래픽을 보내는 출구 프록시 주소를 돌려줍니다.
+//   - 캡처 켜짐 → 기록 MITM 프록시(전역 프록시가 있으면 그쪽으로
+//     나감). 에이전트는 그 CA도 받습니다(ProxyCACert를 보세요).
+//   - 캡처 꺼짐 → 전역 출구 프록시 자체(CA는 비움. 진짜 목표
+//     인증서). 전역 프록시가 없으면 빈 문자열(직접 연결, 기록 없음).
 //
-// So the global proxy takes effect in both modes: at the MITM's upstream when
-// capturing, in the agent's own bash env / WebFetch when not.
+// 그래서 전역 프록시는 두 모드에서 모두 먹습니다. 캡처 중에는 MITM의 상위로,
+// 캡처가 아니면 에이전트 자신의 bash 환경이나 WebFetch로 들어갑니다.
 func (m *Manager) ProxyAddr() string {
 	if m.traffic != nil && m.TrafficEnabled() {
 		return m.traffic.ProxyAddr()
@@ -754,11 +757,11 @@ func (m *Manager) ProxyAddr() string {
 	return m.globalProxy
 }
 
-// ProxyCACert returns the CA cert path agents must trust to verify HTTPS through
-// the egress proxy. Non-empty ONLY when traffic capture is on (the MITM re-signs
-// certs): the global proxy used directly (capture off) is a plain forwarder that
-// preserves real target certs, so no custom CA is needed there. Its emptiness is
-// also the worker's "recording off" signal (see workerSystem).
+// ProxyCACert는 에이전트가 출구 프록시의 HTTPS를 확인하려면 믿어야 하는 CA 인증서 경로를 돌려줍니다.
+// 트래픽 캡처가 켜져 있을 때만 비어 있지 않습니다(MITM이 인증서를 다시 서명).
+// 캡처가 꺼진 채 직접 쓰는 전역 프록시는 그냥 전달이라
+// 진짜 목표 인증서를 유지합니다. 거기서는 전용 CA가 필요 없습니다. 이 값이 비어 있는 것은
+// 워커에게 "기록 꺼짐" 신호이기도 합니다(workerSystem을 보세요).
 func (m *Manager) ProxyCACert() string {
 	if m.traffic == nil || !m.TrafficEnabled() {
 		return ""
@@ -766,17 +769,17 @@ func (m *Manager) ProxyCACert() string {
 	return m.traffic.CACertPath()
 }
 
-// GlobalProxy returns the configured global egress proxy URL (empty = direct).
+// GlobalProxy는 설정된 전역 출구 프록시 URL을 돌려줍니다(비어 있으면 직접 연결).
 func (m *Manager) GlobalProxy() string {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.globalProxy
 }
 
-// SetGlobalProxy validates, persists and applies the global egress proxy
-// (http/https/socks5, optional user:pass; empty = direct). It updates the MITM's
-// upstream immediately; callers must rebuild agents (applyLLM) afterwards so the
-// capture-off path (bash env / WebFetch) picks up the change too.
+// SetGlobalProxy는 전역 출구 프록시를 검사하고, 저장하고, 적용합니다
+// (http/https/socks5, user:pass는 선택. 비어 있으면 직접 연결). MITM의
+// 상위는 바로 바꿉니다. 호출자는 그 뒤 에이전트를 다시 만들어야 합니다(applyLLM).
+// 캡처가 꺼진 경로(bash 환경 / WebFetch)도 변화를 받게 하려고요.
 func (m *Manager) SetGlobalProxy(raw string) error {
 	raw = strings.TrimSpace(raw)
 	if raw != "" {
@@ -795,7 +798,7 @@ func (m *Manager) SetGlobalProxy(raw string) error {
 			return err
 		}
 	}
-	// Keep the browser MCP's egress in sync with the new global proxy too.
+	// 브라우저 MCP의 출구도 새 전역 프록시와 맞춥니다.
 	m.syncBrowserMCPProxy()
 	return nil
 }
@@ -809,11 +812,11 @@ func (m *Manager) Close() error {
 	return m.pg.Close()
 }
 
-// isTerminalStatus reports whether a task status is terminal (done/failed/timeout).
-// Package-local shim over db.IsTerminal so all server files share one definition.
+// isTerminalStatus는 작업 상태가 끝났는지 알립니다(done/failed/timeout).
+// db.IsTerminal을 감싼 패키지 안 함수입니다. 서버 파일이 정의를 하나로 같이 씁니다.
 func isTerminalStatus(status string) bool { return pgdb.IsTerminal(status) }
 
-// unixOrZero returns t's unix seconds, or 0 when the time is nil.
+// unixOrZero는 t의 유닉스 초를 돌려줍니다. 시각이 nil이면 0입니다.
 func unixOrZero(t *time.Time) int64 {
 	if t == nil {
 		return 0
@@ -850,8 +853,8 @@ func taskFromPG(pt *pgdb.Task, store *pgdb.ExplorationStore, ic *intercept.Inter
 	}
 }
 
-// UpdateTaskMetadata changes list-only task metadata without interrupting any
-// planner, main-agent, or worker call.
+// UpdateTaskMetadata는 목록에만 쓰는 작업 메타데이터를 바꿉니다. 플래너,
+// 메인 에이전트, 워커 호출은 끊지 않습니다.
 func (m *Manager) UpdateTaskMetadata(taskID string, patch pgdb.TaskPatch) (*Task, error) {
 	m.taskStateMu.Lock()
 	defer m.taskStateMu.Unlock()
@@ -876,7 +879,7 @@ func (m *Manager) UpdateTaskMetadata(taskID string, patch pgdb.TaskPatch) (*Task
 	return task, nil
 }
 
-// CreateTask creates a task + its exploration and makes it active.
+// CreateTask는 작업과 그 탐색을 만들고 활성으로 둡니다.
 // timeoutSeconds 는 작업 단위의 벽시계 시간 예산이다 (0 = 시간 제한 없음).
 func (m *Manager) CreateTask(description, goal string, llmProfileID *int64, timeoutSeconds, planHeartbeatSeconds int) (*Task, error) {
 	var ids []int64
@@ -905,8 +908,8 @@ func (m *Manager) CreateTaskWithOptions(description, goal string, opts pgdb.Task
 	return t, nil
 }
 
-// RenameTaskCategory persists a category name and refreshes every live task DTO
-// that references it. taskStateMu keeps this ordered with task reassignment.
+// RenameTaskCategory는 분류 이름을 저장하고, 그것을 가리키는 살아 있는 작업 DTO를
+// 모두 고칩니다. taskStateMu가 작업 재배치와 순서를 맞춥니다.
 func (m *Manager) RenameTaskCategory(id int64, name string) (*pgdb.TaskCategory, error) {
 	m.taskStateMu.Lock()
 	defer m.taskStateMu.Unlock()
@@ -926,7 +929,7 @@ func (m *Manager) RenameTaskCategory(id int64, name string) (*pgdb.TaskCategory,
 	return category, nil
 }
 
-// DeleteTaskCategory moves all affected live tasks to the uncategorized bucket.
+// DeleteTaskCategory는 영향받는 살아 있는 작업을 모두 미분류로 옮깁니다.
 func (m *Manager) DeleteTaskCategory(id int64) (bool, error) {
 	m.taskStateMu.Lock()
 	defer m.taskStateMu.Unlock()
@@ -947,7 +950,7 @@ func (m *Manager) DeleteTaskCategory(id int64) (bool, error) {
 	return true, nil
 }
 
-// SetTaskCategory updates one live task without interrupting its runtime.
+// SetTaskCategory는 살아 있는 작업 하나의 분류를 바꿉니다. 실행은 끊지 않습니다.
 func (m *Manager) SetTaskCategory(taskID string, categoryID *int64) (*pgdb.TaskCategory, error) {
 	m.taskStateMu.Lock()
 	defer m.taskStateMu.Unlock()
@@ -974,10 +977,10 @@ func (m *Manager) SetTaskCategory(taskID string, categoryID *int64) (*pgdb.TaskC
 	return category, nil
 }
 
-// SetTasksCategory applies one category change to several tasks at once. The
-// database write and the in-memory refresh share taskStateMu, so a concurrent
-// single-task update cannot interleave and leave a live DTO stale. The returned
-// set holds the ids that were actually moved; callers report the rest as gone.
+// SetTasksCategory는 분류 변경 하나를 작업 여러 개에 한 번에 적용합니다.
+// DB 쓰기와 메모리 속 갱신이 taskStateMu를 같이 잡으므로, 동시에 온
+// 작업 하나 변경이 끼어들어 살아 있는 DTO를 낡게 두지 않습니다. 돌려주는
+// 집합은 실제로 옮긴 id입니다. 나머지는 없어진 것으로 호출자가 알립니다.
 func (m *Manager) SetTasksCategory(taskIDs []string, categoryID *int64) (map[string]bool, *pgdb.TaskCategory, error) {
 	m.taskStateMu.Lock()
 	defer m.taskStateMu.Unlock()
@@ -1017,10 +1020,10 @@ func (m *Manager) SetTasksCategory(taskIDs []string, categoryID *int64) (map[str
 	return updated, category, nil
 }
 
-// DeleteCompanyWithAssets keeps the database cascade and live task handles in
-// one manager-level critical section. This closes the gap where a task could
-// commit its company scope immediately before registration and miss the
-// post-delete in-memory sweep.
+// DeleteCompanyWithAssets는 DB 연쇄 삭제와 살아 있는 작업 손잡이를
+// 매니저 수준의 한 임계 구역에 둡니다. 작업이 등록 직전에
+// 기업 범위를 확정하고, 삭제 뒤 메모리 청소를
+// 놓치는 틈을 닫습니다.
 func (m *Manager) DeleteCompanyWithAssets(id int64, deleteAssets bool) (int64, error) {
 	m.companyMu.Lock()
 	defer m.companyMu.Unlock()
@@ -1044,8 +1047,8 @@ func (m *Manager) DeleteCompanyWithAssets(id int64, deleteAssets bool) (int64, e
 	return assetsDeleted, nil
 }
 
-// ReplaceTaskLLMProfiles resets a task's ordered provider chain and mirrors the
-// committed state onto the live task handle. Terminal tasks are editable too —
+// ReplaceTaskLLMProfiles는 작업의 순서 있는 제공자 사슬을 다시 정하고, 확정된
+// 상태를 살아 있는 작업 손잡이에 비춥니다. 끝난 작업도 고칠 수 있습니다 —
 // 작업이 끝난 뒤에도 그들의 메인 에이전트 대화는 체인 위에서 계속 이어진다.
 func (m *Manager) ReplaceTaskLLMProfiles(id string, profileIDs []int64, activeProfileID int64) (int64, error) {
 	n, err := strconv.ParseInt(id, 10, 64)
@@ -1081,7 +1084,7 @@ func (m *Manager) ReplaceTaskLLMProfiles(id string, profileIDs []int64, activePr
 	return 0, nil
 }
 
-// LoadExisting rebuilds in-memory task handles from the PG task registry.
+// LoadExisting은 PG 작업 목록에서 메모리 속 작업 손잡이를 다시 만듭니다.
 func (m *Manager) LoadExisting() []*Task {
 	pts, err := m.pg.ListTasks()
 	if err != nil {
@@ -1117,7 +1120,7 @@ func (m *Manager) LoadExisting() []*Task {
 	return loaded
 }
 
-// SetTaskPaused persists a task's paused state.
+// SetTaskPaused는 작업의 일시정지 상태를 저장합니다.
 func (m *Manager) SetTaskPaused(id string, paused bool) error {
 	m.taskStateMu.Lock()
 	defer m.taskStateMu.Unlock()
@@ -1138,14 +1141,15 @@ func (m *Manager) SetTaskPaused(id string, paused bool) error {
 	return nil
 }
 
-// ApplyTaskAdmission atomically commits the lifecycle fields controlled by the
-// concurrency scheduler. Keeping status, paused and queue metadata in one UPDATE
-// prevents a failed resume from leaving a task half-revived (for example running
-// but still user-paused, or dequeued without an Engine start).
+// ApplyTaskAdmission은 동시성 스케줄러가 다루는 수명 필드를 원자적으로 확정합니다.
+// 상태, 일시정지, 대기열 메타데이터를 UPDATE 하나에 두어,
+// 실패한 재개가 작업을 반만 살리지 않게 합니다(예를 들어 실행 중인데
+// 여전히 사용자 일시정지, 또는 대기열에서 뺐는데 엔진은 안 시작).
 //
-// preservePosition applies only when the row is already queued. A repeated
-// admission keeps its FIFO timestamp; a task that was explicitly paused and is
-// now re-queued receives a fresh tail position.
+// preservePosition은 그 행이 이미 대기 중일 때만 적용됩니다. 같은
+// 입장을 반복하면 FIFO 시각을 유지합니다. 명시적으로 일시정지했다가
+// 다시 대기열에 넣는 작업은 새 꼬리 위치를 받습니다.
+// 초보용: 동시에 몇 작업을 돌릴지 정하는 스케줄러가, 상태와 대기열을 한 번에 확정합니다.
 func (m *Manager) ApplyTaskAdmission(id, expectedStatus, status string, queued bool, mode string, preservePosition bool) error {
 	m.taskStateMu.Lock()
 	defer m.taskStateMu.Unlock()
@@ -1228,10 +1232,10 @@ func (m *Manager) ApplyTaskAdmission(id, expectedStatus, status string, queued b
 	return nil
 }
 
-// ApplyTaskPause atomically removes a task from the admission queue and records
-// the user pause. queue_mode is intentionally retained so resuming a never-run
-// bootstrap task still performs goal decomposition, but the next enqueue receives
-// a new queued_at timestamp and therefore moves to the FIFO tail.
+// ApplyTaskPause는 작업을 입장 대기열에서 원자적으로 빼고
+// 사용자 일시정지를 기록합니다. queue_mode는 일부러 남깁니다. 한 번도 안 돈
+// 부트스트랩 작업을 재개해도 목표 분해를 하게 하려고요. 다만 다음 대기열 넣기는
+// 새 queued_at 시각을 받아 FIFO 꼬리로 갑니다.
 func (m *Manager) ApplyTaskPause(id string) error {
 	m.taskStateMu.Lock()
 	defer m.taskStateMu.Unlock()
@@ -1264,7 +1268,7 @@ func (m *Manager) ApplyTaskPause(id string) error {
 	return nil
 }
 
-// EnqueueTask persists the concurrency hold and syncs the in-memory handle.
+// EnqueueTask는 동시성 보류를 저장하고 메모리 속 손잡이를 맞춥니다.
 func (m *Manager) EnqueueTask(id, mode string) error {
 	m.taskStateMu.Lock()
 	defer m.taskStateMu.Unlock()
@@ -1304,8 +1308,8 @@ func (m *Manager) EnqueueTask(id, mode string) error {
 	return nil
 }
 
-// DequeueTask removes the concurrency hold. clearMode=false is used when a user
-// pauses a queued task so a later resume still knows whether bootstrap is needed.
+// DequeueTask는 동시성 보류를 뺍니다. clearMode=false는 사용자가
+// 대기 중인 작업을 일시정지할 때 씁니다. 나중 재개가 부트스트랩이 필요한지 알게 하려고요.
 func (m *Manager) DequeueTask(id string, clearMode bool) error {
 	m.taskStateMu.Lock()
 	defer m.taskStateMu.Unlock()
@@ -1330,7 +1334,7 @@ func (m *Manager) DequeueTask(id string, clearMode bool) error {
 	return nil
 }
 
-// TaskStatus returns a task's current in-memory status (empty if unknown).
+// TaskStatus는 작업의 현재 메모리 속 상태를 돌려줍니다(모르면 빈 문자열).
 func (m *Manager) TaskStatus(id string) string {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -1340,7 +1344,7 @@ func (m *Manager) TaskStatus(id string) string {
 	return ""
 }
 
-// StampTaskFirstRun stamps first_run_at + deadline_at on the first real run (idempotent
+// StampTaskFirstRun은 첫 진짜 실행 때 first_run_at과 deadline_at을 찍습니다(한 번만, 이미
 // DB에) 있고, 라이브 핸들의 deadline_at 에 그대로 비춘다. deadline 의 unix 시각을 반환한다 (0 = 제한 없음).
 func (m *Manager) StampTaskFirstRun(id string) (int64, error) {
 	m.taskStateMu.Lock()
@@ -1376,9 +1380,9 @@ func (m *Manager) StampTaskFirstRun(id string) (int64, error) {
 	return dlUnix, nil
 }
 
-// SetTaskStatusGuarded sets a TERMINAL status only if the task isn't already terminal
-// (resolves the completed↔timeout race — first terminal writer wins). Reflects the
-// won status on the live handle. won=false means another terminal already stuck.
+// SetTaskStatusGuarded는 작업이 이미 끝나지 않았을 때만 종료 상태를 넣습니다
+// (완료와 시간 초과의 경주를 풉니다. 먼저 종료를 쓴 쪽이 이김). 이긴
+// 상태를 살아 있는 손잡이에 비춥니다. won=false면 다른 종료가 이미 붙었습니다.
 func (m *Manager) SetTaskStatusGuarded(id, status string) (won bool, err error) {
 	m.taskStateMu.Lock()
 	defer m.taskStateMu.Unlock()
@@ -1403,8 +1407,8 @@ func (m *Manager) SetTaskStatusGuarded(id, status string) (won bool, err error) 
 	return true, nil
 }
 
-// SetTaskStatus persists a task's lifecycle status (e.g. "done") and reflects it
-// on the in-memory handle so the derived DTO status shows it without a reload.
+// SetTaskStatus는 작업의 수명 상태를 저장합니다(예: done). 그리고
+// 메모리 속 손잡이에 비춰, 다시 읽지 않아도 파생 DTO 상태에 나오게 합니다.
 func (m *Manager) SetTaskStatus(id, status string) error {
 	m.taskStateMu.Lock()
 	defer m.taskStateMu.Unlock()
@@ -1419,8 +1423,8 @@ func (m *Manager) SetTaskStatus(id, status string) error {
 	if t := m.tasks[id]; t != nil {
 		t.updateLifecycle(func(state *taskLifecycleState) {
 			state.Status = status
-			// Mirror the DB's completed_at stamp on the live handle so the DTO shows
-			// the finish time without a reload (terminal -> stamp once; else clear).
+			// DB의 completed_at 도장을 살아 있는 손잡이에도 비춥니다. 그래서 DTO가
+			// 다시 읽지 않고 끝난 시각을 보여 줍니다(종료면 한 번 찍고, 아니면 지움).
 			if pgdb.IsTerminal(status) {
 				if state.CompletedAt == 0 {
 					state.CompletedAt = time.Now().Unix()
@@ -1434,11 +1438,12 @@ func (m *Manager) SetTaskStatus(id, status string) error {
 	return nil
 }
 
-// DeleteTask removes a task and optionally its related global data. Traffic has
-// no task-id column, so related exchanges are resolved by exact hosts from the
-// task's asset rows. Files are staged before the database operation; traffic is
-// staged while PostgreSQL excludes asset/anchor writers. Both are restored on a
-// database failure and purged only after its commit.
+// DeleteTask는 작업과, 고르면 관련된 전역 데이터도 지웁니다. 트래픽에는
+// 작업 id 열이 없어서, 관련된 교환은 그 작업의 자산 행에 있는 호스트를
+// 정확히 맞춰 찾습니다. 파일은 DB 작업 전에 치워 둡니다. 트래픽은
+// PostgreSQL이 자산/앵커 쓰는 쪽을 막는 동안 치워 둡니다. 둘 다 DB
+// 실패 때 되돌리고, 확정된 뒤에만 없앱니다.
+// 초보용: 탐색 그래프의 작업을 지울 때, 파일과 기록 트래픽은 확정 뒤에만 없애고 실패하면 되돌립니다.
 func (m *Manager) DeleteTask(id string, opts DeleteTaskOptions) (DeleteTaskResult, error) {
 	result := DeleteTaskResult{Deleted: id}
 	n, err := strconv.ParseInt(id, 10, 64)
@@ -1490,10 +1495,10 @@ func (m *Manager) DeleteTask(id string, opts DeleteTaskOptions) (DeleteTaskResul
 	result.FindingsDeleted = dbResult.FindingsDeleted
 	result.LLMRecordsDeleted = dbResult.LLMRecordsDeleted
 
-	// PostgreSQL is now authoritative: finalize the staged external deletion and
-	// forget the live task even if a final purge reports an error. Such errors are
-	// typed so the HTTP layer can still tear down the task runtime instead of
-	// incorrectly reviving a task whose database row is already gone.
+	// 이제 PostgreSQL이 기준입니다. 치워 둔 바깥 삭제를 끝내고,
+	// 마지막 제거가 오류를 내도 살아 있는 작업은 잊습니다. 그런 오류는
+	// 형이 있어서, HTTP 층이 작업 런타임을 내릴 수 있습니다.
+	// DB 행이 이미 없는 작업을 잘못 되살리지 않으려고요.
 	var finalizeErrs []error
 	if trafficStage != nil {
 		if err := trafficStage.Commit(); err != nil {
@@ -1512,8 +1517,8 @@ func (m *Manager) DeleteTask(id string, opts DeleteTaskOptions) (DeleteTaskResul
 	return result, nil
 }
 
-// taskDeleteCommittedError means PostgreSQL deletion succeeded but purging one
-// of the recoverable staging directories failed. The task must stay deleted.
+// taskDeleteCommittedError는 PostgreSQL 삭제는 됐는데, 되돌릴 수 있는
+// 임시 디렉터리 중 하나를 없애는 데 실패한 경우입니다. 작업은 지운 채로 둬야 합니다.
 type taskDeleteCommittedError struct{ err error }
 
 func (e *taskDeleteCommittedError) Error() string {
@@ -1524,8 +1529,8 @@ func (e *taskDeleteCommittedError) Unwrap() error { return e.err }
 
 func rollbackTaskDelete(cause error, trafficStage *traffic.HostDeleteStage, fileStage *taskFileDeleteStage) error {
 	errs := []error{cause}
-	// Reverse the preparation order. Both restorations are attempted even if the
-	// first one fails, and errors.Join preserves the original PostgreSQL error.
+	// 준비 순서를 거꾸로 합니다. 첫 복원이 실패해도 둘 다 시도하고,
+	// errors.Join이 원래 PostgreSQL 오류를 유지합니다.
 	if trafficStage != nil {
 		if err := trafficStage.Rollback(); err != nil {
 			errs = append(errs, fmt.Errorf("restore traffic after task delete failure: %w", err))
@@ -1575,9 +1580,9 @@ type taskFileDeleteStage struct {
 	done     bool
 }
 
-// stageTaskFiles atomically renames the task workspace and owned transcripts to
-// a same-filesystem staging directory. The trailing dash in the transcript
-// prefix is significant: exploration 12 must not match exploration 123.
+// stageTaskFiles는 그 작업의 작업 공간과 그 탐색의 대화 기록을 같은 파일시스템의
+// 임시 디렉터리로 원자적으로 바꿉니다. 대화 기록
+// 접두사 끝의 대시는 중요합니다. 탐색 12가 탐색 123과 겹치면 안 됩니다.
 func stageTaskFiles(dataDir, taskID string, explorationID int64) (*taskFileDeleteStage, error) {
 	stage := &taskFileDeleteStage{}
 	var targets []string
@@ -1672,7 +1677,7 @@ func (s *taskFileDeleteStage) rollback() error {
 	return errors.Join(errs...)
 }
 
-// deleteTaskFiles retains the standalone helper contract used by focused tests.
+// deleteTaskFiles는 좁은 테스트가 쓰는, 따로 선 도우미의 약속을 유지합니다.
 func deleteTaskFiles(dataDir, taskID string, explorationID int64) (bool, error) {
 	stage, err := stageTaskFiles(dataDir, taskID, explorationID)
 	if err != nil {
@@ -1692,7 +1697,7 @@ func (m *Manager) Task(id string) (*Task, bool) {
 	return t, ok
 }
 
-// ActiveTask returns the currently active task (or nil).
+// ActiveTask는 지금 활성인 작업을 돌려줍니다(없으면 nil).
 func (m *Manager) ActiveTask() *Task {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -1702,7 +1707,7 @@ func (m *Manager) ActiveTask() *Task {
 	return m.tasks[m.active]
 }
 
-// SetActive switches the active task. Returns false if the id is unknown.
+// SetActive는 활성 작업을 바꿉니다. id를 모르면 false입니다.
 func (m *Manager) SetActive(id string) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -1746,8 +1751,9 @@ func (m *Manager) List() []*Task {
 	return out
 }
 
-// Notify signals that the asset/exploration graph changed (debounced consumer
-// wakes the planner). Non-blocking.
+// Notify는 자산 그래프나 탐색 그래프가 바뀌었다고 알립니다(모아서 받는 쪽이
+// 플래너를 깨움). 막지 않습니다.
+// 초보용: 그래프가 바뀌면 플래너 루프에 다음 계획 라운드 신호를 보냅니다.
 func (t *Task) Notify() {
 	select {
 	case t.notify <- struct{}{}:
@@ -1755,10 +1761,10 @@ func (t *Task) Notify() {
 	}
 }
 
-// NotifyDone is Notify plus a hint: a worker just finished intentID and that is
-// what triggered this wake-up. The planner reads the accumulated triggers next
-// round so it can spell out which intent finished (+ its output). Events pile up
-// (debounce) until the round drains them via drainTriggers.
+// NotifyDone은 Notify에 힌트를 더합니다. 워커가 intentID를 막 끝냈고, 그것이
+// 이번 깨움의 이유입니다. 플래너는 다음 라운드에서 쌓인 트리거를 읽어
+// 어떤 의도가 끝났는지(그리고 그 출력)를 말할 수 있습니다. 이벤트는
+// 라운드가 drainTriggers로 비울 때까지 쌓입니다(디바운스).
 func (t *Task) NotifyDone(intentID int64) {
 	if intentID > 0 {
 		t.trigMu.Lock()
@@ -1768,8 +1774,8 @@ func (t *Task) NotifyDone(intentID int64) {
 	t.Notify()
 }
 
-// NotifyFinding records that a worker reported a finding on intentID (summary),
-// then wakes the planner — so the round spells out which intent found what.
+// NotifyFinding은 워커가 intentID에서 발견을 보고했음을 기록하고(요약),
+// 플래너를 깨웁니다. 그래서 라운드가 어떤 의도가 무엇을 찾았는지 말합니다.
 func (t *Task) NotifyFinding(intentID int64, summary string) {
 	t.trigMu.Lock()
 	t.pendingTriggers = append(t.pendingTriggers, agent.TriggerEvent{Kind: "finding", IntentID: intentID, Detail: summary})
@@ -1777,12 +1783,12 @@ func (t *Task) NotifyFinding(intentID int64, summary string) {
 	t.Notify()
 }
 
-// NotifyGoal records that one OR MORE goals were added in a single set_goals call —
-// by the human via the main agent — then wakes the planner, so the next round spells
+// NotifyGoal은 set_goals 호출 한 번으로 목표가 하나 이상 추가됐음을 기록합니다.
+// 사람이 메인 에이전트를 통해 넣었습니다. 그다음 플래너를 깨워, 다음 라운드가 다음을 말하게 합니다.
 // "사람이 목표 N개를 추가했다: …"를 출력한다. 플래너가 새로 열린 목표를
 // 개요에서 스스로 찾게 하는 대신이다. 호출 한 번 → 트리거 이벤트 하나 (set_goals 의 한 번 배치는 한 건으로 치고, 건마다 화면을 도배하지 않는다).
-// The event survives an early-returning terminal round (drain happens after the gate),
-// so a set_goals that revives a done task still surfaces it once the task is running.
+// 이 이벤트는 일찍 돌아오는 종료 라운드에서도 남습니다(비우기는 문 뒤에서 일어남).
+// 그래서 끝난 작업을 되살리는 set_goals도, 작업이 다시 돌면 한 번은 드러납니다.
 func (t *Task) NotifyGoal(texts []string) {
 	if len(texts) == 0 {
 		return
@@ -1793,11 +1799,11 @@ func (t *Task) NotifyGoal(texts []string) {
 	t.Notify()
 }
 
-// NotifyHint records that one OR MORE hints were added in a single add_hint call —
-// by the human via the main agent, or by cross-task orchestration — then wakes the
+// NotifyHint는 add_hint 호출 한 번으로 힌트가 하나 이상 추가됐음을 기록합니다.
+// 사람이 메인 에이전트를 통하거나, 작업 사이 오케스트레이션이 넣습니다. 그다음
 // 플래너에 알리므로, 다음 라운드는 "사람이 전략 힌트 N개를 추가했다: …"라는 안내를 받고 그것들을 본다
-// directly instead of having to spot the new hint folded into the graph overview.
-// One call → one trigger event (a batched add_hint counts as one, not one per hint).
+// 탐색 그래프 개요에 접힌 새 힌트를 스스로 찾지 않고 바로 봅니다.
+// 호출 한 번이 트리거 이벤트 하나입니다(묶인 add_hint는 힌트마다 하나가 아니라 한 건).
 func (t *Task) NotifyHint(texts []string) {
 	if len(texts) == 0 {
 		return
@@ -1809,8 +1815,8 @@ func (t *Task) NotifyHint(texts []string) {
 }
 
 // NotifyGoalDeleted 는 사람이 목표를 삭제했음을 기록하고(개요의 목표 관리를 통해), 그런 다음
-// wakes the planner so the next round spells out which goal was removed. The event
-// survives an early-returning terminal round (drain happens after the gate).
+// 플래너를 깨워, 다음 라운드가 어떤 목표가 빠졌는지 말하게 합니다. 이 이벤트는
+// 일찍 돌아오는 종료 라운드에서도 남습니다(비우기는 문 뒤에서 일어남).
 func (t *Task) NotifyGoalDeleted(text string) {
 	text = strings.TrimSpace(text)
 	if text == "" {
@@ -1823,8 +1829,8 @@ func (t *Task) NotifyGoalDeleted(text string) {
 }
 
 // NotifyGoalEdited 는 사람이 목표를 수정했음을 기록하고(개요의 목표 관리를 통해), 그런 다음 깨운다
-// the planner so the next round spells out the old→new change. The event survives an
-// early-returning terminal round (drain happens after the gate).
+// 플래너를, 다음 라운드가 옛 글에서 새 글로의 변화를 말하게 합니다. 이 이벤트는
+// 일찍 돌아오는 종료 라운드에서도 남습니다(비우기는 문 뒤에서 일어남).
 func (t *Task) NotifyGoalEdited(oldText, newText string) {
 	oldText, newText = strings.TrimSpace(oldText), strings.TrimSpace(newText)
 	if newText == "" {
@@ -1837,10 +1843,10 @@ func (t *Task) NotifyGoalEdited(oldText, newText string) {
 }
 
 // NotifyCancelled 는 사람이 intentID 를 삭제했음을 기록하고(reason = 삭제 이유), 그런 다음
-// wakes the planner so the next round spells out which intent was removed and why.
-// summary is the intent's text captured before deletion — needed for hard delete,
-// where the node is gone by the time the planner reads the trigger. Applies to both
-// soft (state='deleted') and hard (physical cascade) delete.
+// 플래너를 깨워, 다음 라운드가 어떤 의도가 왜 빠졌는지 말하게 합니다.
+// summary는 삭제 전에 잡아 둔 의도의 글입니다. 완전 삭제에 필요합니다.
+// 플래너가 트리거를 읽을 때쯤 노드는 이미 없기 때문입니다. 둘 다에 적용됩니다.
+// 소프트 삭제(state가 deleted)와 하드 삭제(물리 연쇄)입니다.
 func (t *Task) NotifyCancelled(intentID int64, summary, reason string) {
 	if intentID > 0 {
 		t.trigMu.Lock()
@@ -1850,7 +1856,7 @@ func (t *Task) NotifyCancelled(intentID int64, summary, reason string) {
 	t.Notify()
 }
 
-// drainTriggers returns and clears the trigger events accumulated since the last round.
+// drainTriggers는 지난 라운드 이후 쌓인 트리거 이벤트를 돌려주고 비웁니다.
 func (t *Task) drainTriggers() []agent.TriggerEvent {
 	t.trigMu.Lock()
 	defer t.trigMu.Unlock()

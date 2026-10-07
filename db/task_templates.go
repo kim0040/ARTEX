@@ -23,8 +23,8 @@ var (
 	ErrTaskTemplateNotFound     = errors.New("작업 템플릿을 찾을 수 없습니다")
 )
 
-// TaskTemplate is a reusable task preset (description/goal + optional category
-// and task-level intercept/allow rules).
+// TaskTemplate은 다시 쓸 수 있는 작업 프리셋이다. 설명·목표와, 선택인 분류,
+// 작업 단위 가로채기/허용 규칙을 담는다.
 type TaskTemplate struct {
 	ID             int64                    `json:"id"`
 	Name           string                   `json:"name"`
@@ -37,7 +37,7 @@ type TaskTemplate struct {
 	UpdatedAt      time.Time                `json:"updated_at"`
 }
 
-// TaskTemplateInput is the create/update payload after normalization.
+// TaskTemplateInput은 정규화한 뒤의 생성·수정 본문이다.
 type TaskTemplateInput struct {
 	Name           string
 	Description    string
@@ -46,9 +46,9 @@ type TaskTemplateInput struct {
 	InterceptRules []TaskInterceptRuleInput
 }
 
-// TaskTemplatePatch changes only fields flagged as set. Name/Description/Goal use
-// non-nil pointers; CategoryID/InterceptRules use explicit Set flags (so a nil
-// CategoryID can mean "clear" when SetCategoryID is true).
+// TaskTemplatePatch는 설정됐다고 표시된 필드만 고친다. Name/Description/Goal은
+// nil이 아닌 포인터를 쓴다. CategoryID/InterceptRules는 Set 표시를 따로 둔다
+// (SetCategoryID가 true이면 CategoryID가 nil이어도 「지우기」가 된다).
 type TaskTemplatePatch struct {
 	Name              *string
 	Description       *string
@@ -79,8 +79,8 @@ func scanTaskTemplate(row interface{ Scan(...any) error }) (TaskTemplate, error)
 	return t, nil
 }
 
-// marshalTemplateRules serializes a template's rule snapshot to JSONB text,
-// always producing a JSON array (never null).
+// marshalTemplateRules는 템플릿의 규칙 스냅샷을 JSONB 글로 바꾼다.
+// 항상 JSON 배열을 만들고, null은 만들지 않는다.
 func marshalTemplateRules(rules []TaskInterceptRuleInput) ([]byte, error) {
 	if rules == nil {
 		rules = []TaskInterceptRuleInput{}
@@ -88,10 +88,10 @@ func marshalTemplateRules(rules []TaskInterceptRuleInput) ([]byte, error) {
 	return json.Marshal(rules)
 }
 
-// taskTemplateName normalizes display whitespace while preserving the user's case.
+// taskTemplateName은 보이는 공백을 정규화하고, 사용자가 쓴 대소문자는 남긴다.
 func taskTemplateName(name string) string { return strings.Join(strings.Fields(name), " ") }
 
-// taskTemplateNKey is the case-insensitive identity used by the unique index.
+// taskTemplateNKey는 고유 인덱스가 쓰는, 대소문자를 가리지 않는 식별자다.
 func taskTemplateNKey(name string) string { return strings.ToLower(taskTemplateName(name)) }
 
 func normalizeTaskTemplateInput(in TaskTemplateInput) (TaskTemplateInput, string, error) {
@@ -160,7 +160,7 @@ func taskTemplateUniqueViolation(err error) bool {
 	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }
 
-// CreateTaskTemplate inserts one globally reusable preset.
+// CreateTaskTemplate은 전역으로 다시 쓸 수 있는 프리셋 하나를 넣는다.
 func (d *DB) CreateTaskTemplate(in TaskTemplateInput) (*TaskTemplate, error) {
 	in, nkey, err := normalizeTaskTemplateInput(in)
 	if err != nil {
@@ -184,7 +184,7 @@ RETURNING `+taskTemplateCols, in.Name, nkey, in.Description, in.Goal, in.Categor
 	return &t, nil
 }
 
-// ListTaskTemplates returns the most recently maintained templates first.
+// ListTaskTemplates는 최근에 손본 템플릿부터 돌려준다.
 func (d *DB) ListTaskTemplates() ([]*TaskTemplate, error) {
 	rows, err := d.Query(`SELECT ` + taskTemplateCols + ` FROM task_templates ORDER BY updated_at DESC, id DESC`)
 	if err != nil {
@@ -202,7 +202,7 @@ func (d *DB) ListTaskTemplates() ([]*TaskTemplate, error) {
 	return out, rows.Err()
 }
 
-// GetTaskTemplate returns nil when id does not exist.
+// GetTaskTemplate은 id가 없으면 nil을 돌려준다.
 func (d *DB) GetTaskTemplate(id int64) (*TaskTemplate, error) {
 	t, err := scanTaskTemplate(d.QueryRow(`SELECT `+taskTemplateCols+` FROM task_templates WHERE id=$1`, id))
 	if err == sql.ErrNoRows {
@@ -214,7 +214,7 @@ func (d *DB) GetTaskTemplate(id int64) (*TaskTemplate, error) {
 	return &t, nil
 }
 
-// UpdateTaskTemplate replaces the editable fields of one preset.
+// UpdateTaskTemplate은 프리셋 하나에서 고칠 수 있는 필드를 바꾼다.
 func (d *DB) UpdateTaskTemplate(id int64, in TaskTemplateInput) (*TaskTemplate, error) {
 	in, _, err := normalizeTaskTemplateInput(in)
 	if err != nil {
@@ -225,9 +225,8 @@ func (d *DB) UpdateTaskTemplate(id int64, in TaskTemplateInput) (*TaskTemplate, 
 	})
 }
 
-// PatchTaskTemplate atomically changes only the supplied fields. Keeping the
-// merge in one UPDATE prevents concurrent disjoint PATCH requests from losing
-// each other's changes.
+// PatchTaskTemplate은 준 필드만 한 번에 고친다. 합치기를 UPDATE 하나에 두어,
+// 서로 다른 필드를 동시에 PATCH해도 한쪽 변경이 사라지지 않게 한다.
 func (d *DB) PatchTaskTemplate(id int64, patch TaskTemplatePatch) (*TaskTemplate, error) {
 	patch, nkey, err := normalizeTaskTemplatePatch(patch)
 	if err != nil {
@@ -265,7 +264,7 @@ RETURNING `+taskTemplateCols,
 	return &t, nil
 }
 
-// DeleteTaskTemplate deletes one preset and reports whether it existed.
+// DeleteTaskTemplate은 프리셋 하나를 지우고, 원래 있었는지를 알려 준다.
 func (d *DB) DeleteTaskTemplate(id int64) (bool, error) {
 	result, err := d.Exec(`DELETE FROM task_templates WHERE id=$1`, id)
 	if err != nil {

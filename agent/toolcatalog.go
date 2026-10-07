@@ -99,17 +99,18 @@ func BuiltinToolSeeds() []ToolSeed {
 	return out
 }
 
-// ToolResolve, if set, post-processes an agent's fully-assembled tool list against
-// the DB tools table: it drops tools not bound to this agent (or globally disabled)
-// and wraps the rest so the model sees the DB-overridden description/schema and
-// 기본 인자가 주입됩니다. Tools with no matching DB row (MCP/skill/host tools like
-// traffic) pass through untouched. nil = tools unchanged. Wired in server/assembly.go.
+// ToolResolve 가 설정되면, 이미 조립된 도구 목록을 DB tools 표와 맞춰 후처리합니다.
+// 이 에이전트에 묶이지 않았거나 전역으로 꺼진 도구는 빼고, 나머지는 감싸서
+// 모델이 DB 에서 덮어쓴 설명/schema 와 기본 인자를 보게 합니다.
+// DB 행이 없는 도구(MCP/skill/호스트 도구, 예: 기록 프록시의 traffic)는 그대로 통과합니다.
+// nil 이면 도구를 바꾸지 않습니다. server/assembly.go 에서 연결합니다.
+// 초보: 웹에서 고친 도구 문구가 플래너, 워커, 메인 에이전트가 실제로 쓰는 목록에 여기서 반영됩니다.
 var ToolResolve func(ctx context.Context, agentKey string, tools []actool.CoreTool) []actool.CoreTool
 
-// DecorateTool wraps t so Description()/InputSchema() report the DB overrides and
-// Call() injects scalar parameter defaults (from schema's "default" props) whenever
-// the model omitted them. Name/Prompt/permission/scheduler flags delegate to t, so
-// the tool's identity and handler are unchanged. Empty desc/schema fall back to t's.
+// DecorateTool 은 t 를 감싸 Description()/InputSchema() 가 DB 덮어쓰기를 보고하게 하고,
+// 모델이 빠뜨린 스칼라 인자에는 schema 의 "default" 를 Call() 이 넣게 합니다.
+// Name/Prompt/권한/스케줄러 플래그는 t 에 맡기므로 도구의 정체와 handler 는 그대로입니다.
+// desc 나 schema 가 비면 t 의 값으로 돌아갑니다.
 func DecorateTool(t actool.CoreTool, desc string, schema map[string]any) actool.CoreTool {
 	if desc == "" {
 		desc = t.Description()
@@ -120,9 +121,9 @@ func DecorateTool(t actool.CoreTool, desc string, schema map[string]any) actool.
 	return &overriddenTool{CoreTool: t, desc: desc, schema: schema}
 }
 
-// overriddenTool is a CoreTool decorator: it embeds the original (so all behavioral
-// methods — Prompt/IsReadOnly/IsConcurrencySafe/CheckPermissions/Name — delegate)
-// and overrides only the model-facing description/schema plus default injection.
+// overriddenTool 은 CoreTool 장식자입니다. 원본을 품어 동작 메서드
+// (Prompt/IsReadOnly/IsConcurrencySafe/CheckPermissions/Name)는 원본에 맡기고,
+// 모델이 보는 설명/schema 와 기본값 주입만 바꿉니다.
 type overriddenTool struct {
 	actool.CoreTool
 	desc   string
@@ -136,9 +137,9 @@ func (o *overriddenTool) Call(ctx context.Context, in json.RawMessage, tc *actoo
 	return o.CoreTool.Call(ctx, injectDefaults(in, o.schema), tc)
 }
 
-// injectDefaults fills scalar parameter defaults declared in the (possibly edited)
-// schema into the input JSON whenever the model omitted the field or left it empty/
-// null. Structure (names/types/required) is untouched — only 기본값 are merged in.
+// injectDefaults 는 (고쳐졌을 수도 있는) schema 에 적힌 스칼라 인자 기본값을,
+// 모델이 그 필드를 빼먹었거나 빈 값/null 로 둔 입력 JSON 에 채웁니다.
+// 구조(이름/타입/required)는 그대로 두고 기본값만 합칩니다.
 func injectDefaults(in json.RawMessage, schema map[string]any) json.RawMessage {
 	defs := scalarDefaults(schema)
 	if len(defs) == 0 {
@@ -147,7 +148,7 @@ func injectDefaults(in json.RawMessage, schema map[string]any) json.RawMessage {
 	m := map[string]json.RawMessage{}
 	if len(in) > 0 {
 		if err := json.Unmarshal(in, &m); err != nil {
-			return in // non-object input: don't touch it
+			return in // 객체가 아닌 입력은 건드리지 않습니다
 		}
 	}
 	changed := false
@@ -167,9 +168,9 @@ func injectDefaults(in json.RawMessage, schema map[string]any) json.RawMessage {
 	return b
 }
 
-// scalarDefaults extracts properties[k]["default"] for scalar params (string/
-// integer/number/boolean). Array/object defaults are skipped: merging them is
-// ambiguous and not worth the surprise.
+// scalarDefaults 는 스칼라 인자(string/integer/number/boolean)의
+// properties[k]["default"] 만 꺼냅니다. 배열이나 객체 기본값은 합치는 기준이
+// 애매해서 건너뜁니다.
 func scalarDefaults(schema map[string]any) map[string]json.RawMessage {
 	props, _ := schema["properties"].(map[string]any)
 	if len(props) == 0 {

@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// TestMgmtAPI exercises the PostgreSQL-backed management API through the real mux.
+// TestMgmtAPI는 실제 mux로 PostgreSQL 관리 API를 시험합니다.
 func TestMgmtAPI(t *testing.T) {
 	m, err := NewManager(t.TempDir(), "")
 	if err != nil {
@@ -42,7 +42,7 @@ func TestMgmtAPI(t *testing.T) {
 		return rec.Code, out
 	}
 
-	// agents list — must include at least the seeded builtins
+	// 에이전트 목록 — 심어 둔 내장 에이전트가 최소 하나는 있어야 합니다.
 	code, out := do("GET", "/api/agents", nil)
 	if code != 200 {
 		t.Fatalf("GET agents: %d", code)
@@ -51,19 +51,19 @@ func TestMgmtAPI(t *testing.T) {
 		t.Fatalf("want >=5 agents (seeded builtins), got %d", len(ags))
 	}
 
-	// invalid template var → 400 (catalog whitelist)
+	// 잘못된 템플릿 변수 → 400 (카탈로그 허용 목록)
 	code, out = do("PUT", "/api/agents/planner/prompt", map[string]string{"template": "hi {{.Nope}}"})
 	if code != 400 {
 		t.Fatalf("bad var should be 400, got %d (%v)", code, out)
 	}
 
-	// valid template using seeded catalog vars → 200
+	// 심어 둔 카탈로그 변수를 쓰는 올바른 템플릿 → 200
 	code, _ = do("PUT", "/api/agents/planner/prompt", map[string]string{"template": "당신은 플래너(의도만 생성)입니다. 목표: {{.Goal}}, 요약 {{.AssetSummary}}"})
 	if code != 200 {
 		t.Fatalf("valid prompt save: %d", code)
 	}
 
-	// preview renders with catalog examples
+	// 미리보기는 카탈로그 예시로 그립니다.
 	code, out = do("POST", "/api/agents/planner/prompt/preview", map[string]any{})
 	if code != 200 {
 		t.Fatalf("preview: %d", code)
@@ -72,8 +72,8 @@ func TestMgmtAPI(t *testing.T) {
 		t.Fatalf("preview did not substitute: %q", out["rendered"])
 	}
 
-	// mcp create → visible to planner → resource-side sees planner → delete clears it
-	// Remove any leftover from prior run to keep the test idempotent.
+	// mcp를 만들면 플래너에게 보이고, 자원 쪽에서 플래너가 보이고, 지우면 사라집니다.
+	// 이전 실행의 찌꺼기를 지워 테스트를 여러 번 해도 같게 합니다.
 	m.pg.Exec(`DELETE FROM mcp_servers WHERE name = 't-itest'`)
 	code, out = do("POST", "/api/mcp", map[string]any{"name": "t-itest", "transport": "stdio", "command": "x", "enabled": true})
 	if code != 200 {
@@ -94,7 +94,7 @@ func TestMgmtAPI(t *testing.T) {
 		t.Fatalf("resource-side should list planner, got %v", out["agents"])
 	}
 
-	// cleanup
+	// 정리
 	do("DELETE", "/api/mcp/"+itoaTest(mid), nil)
 	m.pg.Exec(`DELETE FROM agent_prompts WHERE agent_id=$1`, ag.ID)
 	m.pg.Exec(`UPDATE agents SET current_prompt_id=NULL WHERE id=$1`, ag.ID)

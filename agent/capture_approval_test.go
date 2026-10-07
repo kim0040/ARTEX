@@ -14,8 +14,8 @@ import (
 	"github.com/Autumn-27/norma/tool"
 )
 
-// Exercise the actual SDK event -> hook -> execution -> result path. No real
-// model or command is used; the probe tool only returns a fixed string.
+// 실제 SDK 경로를 탑니다. 사건 → 훅 → 실행 → 결과입니다. 진짜 모델이나
+// 명령은 쓰지 않습니다. 탐색 도구는 고정 문자열만 돌려줍니다.
 func TestCaptureApprovalLifecycle(t *testing.T) {
 	dsn, _, err := db.DSN()
 	if err != nil {
@@ -118,8 +118,8 @@ func TestCaptureApprovalLifecycle(t *testing.T) {
 			}
 			wantUserMessage := "record this review"
 			if initialAction == "allow" {
-				// Routine automatic allows keep decision/execution metadata but
-				// intentionally omit the bulky replay context from the audit row.
+				// 일상적인 자동 허용은 결정/실행 메타데이터는 남기고,
+				// 무거운 재생 맥락은 감사 행에서 일부러 뺍니다.
 				wantUserMessage = ""
 			}
 			if detail.Status != tc.status || detail.DecisionSource != "model" || a == nil || a.ExecutionStatus != tc.execution || a.ToolUseID != "probe-call" || a.UserMessage != wantUserMessage || a.InitialAction != initialAction || a.ModelFallback != (tc.action == "invalid") || a.ProfileID != 7 {

@@ -66,7 +66,7 @@ func (s *Server) addGoal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if of, _ := t.Store.OriginFactID(); of > 0 && id > 0 {
-		_ = t.Store.Link(of, db.RelSpawns, id) // goal descends from the task root (origin fact)
+		_ = t.Store.Link(of, db.RelSpawns, id) // 목표는 작업 루트(출발 사실) 아래에 매달립니다
 	}
 	t.NotifyGoal([]string{text}) // 「사람이 목표를 추가했다:…」를 적어 트리거하고 플래너(의도만 생성)를 깨운다
 	s.reviveTask(t)              // 완료되었거나 일시정지된 작업을 실행 상태로 끌어와 계속 돌린다

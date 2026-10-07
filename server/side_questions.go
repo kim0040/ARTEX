@@ -31,7 +31,7 @@ type sideRun struct {
 }
 type sideQuestionState struct {
 	mu           sync.Mutex
-	commands     sync.Mutex // short admission / clear operations only, never inference
+	commands     sync.Mutex // 짧은 등록·해제만 합니다. 이 잠금 안에서는 추론하지 않습니다.
 	pending      map[string]sidequestion.Snapshot
 	latest       map[string]sidequestion.Snapshot
 	seen         map[string][2]int64
@@ -145,8 +145,9 @@ func (s *Server) cancelSideWhere(match func(sidequestion.Parent) bool) []<-chan 
 	return done
 }
 
-// Called after the task admission barrier closes and the main loops drain.
-// Wait for final answer/usage writes before taking the archive snapshot.
+// 작업 입장 장벽이 닫히고 메인 루프가 빠진 뒤에 부릅니다.
+// 보관 스냅샷을 뜨기 전에, 마지막 답과 사용량 기록이 끝날 때까지 기다립니다.
+// 초보용: 엔진이 작업을 멈춘 뒤 보관하기 전에, 사이드 질문의 마지막 기록을 기다립니다.
 func (s *Server) drainTaskSideQuestions(ctx context.Context, taskID string) error {
 	if s.side == nil {
 		return nil
@@ -163,7 +164,7 @@ func (s *Server) drainTaskSideQuestions(ctx context.Context, taskID string) erro
 		}
 	}
 	s.flushSideSnapshots()
-	// A failed flush must not silently leave the latest checkpoint out of archive.
+	// flush가 실패하면, 최신 체크포인트를 조용히 보관에서 빼 두면 안 됩니다.
 	s.side.mu.Lock()
 	defer s.side.mu.Unlock()
 	for _, snap := range s.side.pending {
@@ -190,7 +191,7 @@ func (s *Server) sideProvider(model sidequestion.Model) (llm.Provider, error) {
 	var cfg agent.Config
 	var ok bool
 	if model.ProfileID > 0 {
-		// Validate the persisted reference even if a previous provider is cached.
+		// 프로바이더를 전에 캐시했더라도, 저장된 참조가 아직 맞는지 확인합니다.
 		current, exists := s.loadProfileConfig(model.ProfileID)
 		if !exists || sideModel(current, model.ProfileID, model.Name).Identity != model.Identity {
 			return nil, errors.New("모델 설정이 삭제되었거나 바뀌었습니다. 메인 에이전트를 한 번 실행해 컨텍스트를 갱신하세요")
@@ -432,8 +433,8 @@ func (s *Server) runSide(ctx context.Context, cancel context.CancelFunc, e sideq
 	if parent.TaskID > 0 {
 		ctx = llmrec.WithTaskID(ctx, strconv.FormatInt(parent.TaskID, 10))
 	}
-	// Deletions can race between request insertion and registration. Observe the
-	// persisted lifecycle even while a provider is blocked without emitting text.
+	// 요청을 넣은 뒤 등록하기 전에 삭제가 끼어들 수 있습니다. 프로바이더가 막혀
+	// 글을 내지 못하는 동안에도, 저장된 생명주기를 살펴봅니다.
 	go func() {
 		tick := time.NewTicker(500 * time.Millisecond)
 		defer tick.Stop()

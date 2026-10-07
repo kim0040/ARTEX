@@ -29,12 +29,12 @@ import (
 	"github.com/Autumn-27/norma/skill"
 )
 
-// validSkillName checks the agentskills.io name constraints, widened so a skill can
-// also be named in Chinese (or any other script): ASCII must stay lowercase
-// alphanumeric + hyphens, while non-ASCII letters/digits are accepted as-is.
-// 1-64 runes, must start with a letter, no leading/trailing/consecutive hyphens.
-// The name doubles as a directory name under skillDir, so nothing that could carry a
-// path (separators, dots, spaces, control characters) is allowed through.
+// validSkillName은 agentskills.io 이름 규칙을 검사합니다. 스킬 이름을
+// 중국어(또는 다른 글자)로도 지을 수 있게 넓혔습니다. ASCII는 소문자
+// 영숫자와 하이픈만 되고, ASCII가 아닌 글자와 숫자는 그대로 받습니다.
+// 1–64룬이고, 글자로 시작해야 하며, 앞이나 뒤나 연속된 하이픈은 안 됩니다.
+// 이름은 skillDir 아래 디렉터리 이름이기도 해서, 경로를 실을 수 있는 것은
+// (구분자, 점, 공백, 제어 문자) 통과하지 못합니다.
 func validSkillName(name string) bool {
 	if name == "" || !utf8.ValidString(name) {
 		return false
@@ -60,11 +60,11 @@ func validSkillName(name string) bool {
 	return !strings.Contains(name, "--")
 }
 
-// reAgentKey mirrors the agents.key DB check: lowercase letter start, then
-// lowercase letters / digits / underscores.
+// reAgentKey는 agents.key DB 검사와 같습니다. 소문자로 시작하고, 그 뒤는
+// 소문자, 숫자, 밑줄입니다.
 var reAgentKey = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 
-// pgReady returns the PG handle, or writes 503 and returns nil if unavailable.
+// pg는 PG 손잡이를 돌려줍니다. 쓸 수 없으면 503을 쓰고 nil을 돌려줍니다.
 func (s *Server) pg(w http.ResponseWriter) *db.DB {
 	if s.m.pg == nil {
 		writeErr(w, 503, "관리 백엔드 데이터 소스(PostgreSQL)가 연결되지 않았습니다")
@@ -80,7 +80,7 @@ func pathInt(r *http.Request, name string) (int64, bool) {
 
 func decode(r *http.Request, v any) error { return json.NewDecoder(r.Body).Decode(v) }
 
-// ---------- tasks (delete) ----------
+// ---------- 작업(삭제) ----------
 
 const taskDeleteDrainTimeout = 10 * time.Second
 
@@ -92,9 +92,10 @@ func canonicalTaskID(raw string) (string, bool) {
 	return strconv.FormatInt(n, 10), true
 }
 
-// beginTaskDelete serializes the delete barrier with pause, resume, admission,
-// and FIFO reconciliation. Every lifecycle path rechecks deleting after taking
-// concMu, so none can commit a contradictory state once this returns.
+// beginTaskDelete는 삭제 장벽을 일시정지, 재개, 입장,
+// FIFO 맞추기와 순서를 맞춥니다. 모든 수명 경로는 concMu를 잡은 뒤 deleting을 다시 봅니다.
+// 그래서 이 함수가 돌아온 뒤에는 아무도 반대 상태를 확정할 수 없습니다.
+// 초보용: 작업을 지우는 동안 엔진의 재개나 입장이 반대 상태를 확정하지 못하게 막습니다.
 func (s *Server) beginTaskDelete(taskID string) bool {
 	s.concMu.Lock()
 	defer s.concMu.Unlock()
@@ -104,10 +105,11 @@ func (s *Server) beginTaskDelete(taskID string) bool {
 	return s.engine.BeginDelete(taskID)
 }
 
-// abortTaskDelete restores the execution barrier from the committed task row,
-// not from the in-memory state observed before deletion began. Keeping the task
-// paused on an unreadable row is conservative: a later explicit resume can
-// safely recover it without allowing work to escape an uncertain delete.
+// abortTaskDelete는 실행 장벽을, 삭제를 시작하기 전 메모리가 아니라
+// 확정된 작업 행에서 되돌립니다. 행을 못 읽으면 일시정지로 두는 편이
+// 안전합니다. 나중의 명시적 재개가 불확실한 삭제에서 실행이 새지 않게
+// 하고도 그 작업을 되돌릴 수 있습니다.
+// 초보용: 삭제가 실패하면 저장된 작업 행을 기준으로 실행 장벽을 되돌립니다.
 func (s *Server) abortTaskDelete(taskID string) {
 	s.concMu.Lock()
 	defer s.concMu.Unlock()
@@ -122,8 +124,8 @@ func (s *Server) abortTaskDelete(taskID string) {
 				log.Printf("[task-delete] task %s 영속 상태 읽기 실패, 메모리 상태로 장벽을 복구합니다: %v", taskID, getErr)
 			}
 		} else if getErr == nil {
-			// The request targeted a task that does not exist. Do not retain a
-			// synthetic pause entry after releasing its temporary delete barrier.
+			// 요청이 없는 작업을 가리켰습니다. 임시 삭제 장벽을 놓은 뒤에
+			// 가짜 일시정지 항목을 남기지 않습니다.
 			keepPaused = false
 		}
 	}
@@ -152,8 +154,8 @@ func (s *Server) pgDeleteTask(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	// Main-agent runs use a separate context from planner/workers. Cancel it, then
-	// wait until both execution domains have returned before removing transcripts.
+	// 메인 에이전트 실행은 플래너/워커와 다른 컨텍스트를 씁니다. 그것을 취소한 뒤,
+	// 두 실행 영역이 돌아오기를 기다리고 나서 대화 기록을 지웁니다.
 	s.cancelTaskChat(id, agent.AbortTaskDeleted)
 	drainCtx, cancelDrain := context.WithTimeout(r.Context(), taskDeleteDrainTimeout)
 	defer cancelDrain()
@@ -170,8 +172,8 @@ func (s *Server) pgDeleteTask(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		var committed *taskDeleteCommittedError
 		if errors.As(err, &committed) {
-			// PostgreSQL is already gone. Complete runtime teardown and return the
-			// auditable counts together with the post-commit cleanup warning.
+			// PostgreSQL에서는 이미 없습니다. 런타임 해체를 끝내고,
+			// 감사할 수 있는 개수와 확정 뒤 정리 경고를 같이 돌려줍니다.
 			s.engine.StopTask(id)
 			s.taskAgentMu.Lock()
 			delete(s.taskAgents, id)
@@ -183,9 +185,9 @@ func (s *Server) pgDeleteTask(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 500, err.Error())
 		return
 	}
-	// Manager has removed the task from the registry, so no new API operation can
-	// resolve it. Now stop and join every task-owned Engine goroutine and clear its
-	// lifecycle maps before releasing the delete barrier.
+	// Manager가 목록에서 작업을 뺐으므로, 새 API 조작은
+	// 그 작업을 찾을 수 없습니다. 이제 그 작업에 속한 Engine 고루틴을 모두 멈추고 합류한 뒤,
+	// 수명 맵을 비우고 삭제 장벽을 놓습니다.
 	s.engine.StopTask(id)
 	s.taskAgentMu.Lock()
 	delete(s.taskAgents, id)
@@ -217,7 +219,7 @@ func (s *Server) waitTaskQuiescent(ctx context.Context, taskID string) error {
 	}
 }
 
-// ---------- agents ----------
+// ---------- 에이전트 ----------
 
 func (s *Server) pgListAgents(w http.ResponseWriter, r *http.Request) {
 	pg := s.pg(w)
@@ -230,7 +232,7 @@ func (s *Server) pgListAgents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	dtos := agentDTOs(ags)
-	// overlay per-agent binding counts (mcp/skill by id, tools by key) — best-effort.
+	// 에이전트별 바인딩 수를 겹쳐 그립니다(mcp/skill은 id, tools는 key). 실패해도 목록은 계속됩니다.
 	if mcp, skill, tools, err := pg.AgentBindingCounts(); err == nil {
 		for i := range dtos {
 			dtos[i].McpCount = mcp[ags[i].ID]
@@ -241,8 +243,8 @@ func (s *Server) pgListAgents(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"agents": dtos})
 }
 
-// pgCreateAgent creates a CUSTOM conversational agent (builtin=false, role
-// 'assistant') and seeds it a starter prompt so its editor isn't blank.
+// pgCreateAgent는 사용자 정의 대화 에이전트를 만듭니다(builtin=false, role은
+// assistant). 시작 프롬프트를 심어 편집기가 비지 않게 합니다.
 func (s *Server) pgCreateAgent(w http.ResponseWriter, r *http.Request) {
 	pg := s.pg(w)
 	if pg == nil {
@@ -271,14 +273,14 @@ func (s *Server) pgCreateAgent(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 500, err.Error())
 		return
 	}
-	// starter prompt so the editor shows something editable from the start.
+	// 시작 프롬프트입니다. 편집기가 처음부터 고칠 글을 보여 주게 합니다.
 	if err := pg.SeedPromptIfEmpty(a.ID, agent.DefaultAssistantPrompt); err != nil {
 		log.Printf("[agents] seed starter prompt for %s 실패: %v", a.Key, err)
 	}
 	writeJSON(w, 200, agentDTO(a))
 }
 
-// pgUpdateAgent updates a custom agent's name/description (built-in agents rejected).
+// pgUpdateAgent는 사용자 정의 에이전트의 이름/설명을 고칩니다(내장 에이전트는 거절).
 func (s *Server) pgUpdateAgent(w http.ResponseWriter, r *http.Request) {
 	pg, a, ok := s.agentByKey(w, r)
 	if !ok {
@@ -305,8 +307,8 @@ func (s *Server) pgUpdateAgent(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"ok": true})
 }
 
-// pgDeleteAgent removes a custom agent (built-in rejected). Prompts/vars/visibility
-// cascade via FK; tool-binding cleanup is best-effort.
+// pgDeleteAgent는 사용자 정의 에이전트를 지웁니다(내장은 거절). 프롬프트/변수/보이기는
+// FK로 같이 지워집니다. 도구 바인딩 정리는 실패해도 삭제는 계속됩니다.
 func (s *Server) pgDeleteAgent(w http.ResponseWriter, r *http.Request) {
 	pg, a, ok := s.agentByKey(w, r)
 	if !ok {
@@ -346,16 +348,16 @@ func (s *Server) agentByKey(w http.ResponseWriter, r *http.Request) (*db.DB, *db
 	return pg, a, true
 }
 
-// pgSaveAgentConfig updates an agent's runtime config (currently max_turns) and
-// re-applies the live LLM so the change takes effect immediately.
+// pgSaveAgentConfig는 에이전트의 실행 설정을 고칩니다(지금은 max_turns). 그리고
+// 살아 있는 LLM을 다시 적용해 변경이 바로 먹게 합니다.
 func (s *Server) pgSaveAgentConfig(w http.ResponseWriter, r *http.Request) {
 	pg, a, ok := s.agentByKey(w, r)
 	if !ok {
 		return
 	}
-	// All fields optional (pointers) so a partial patch (e.g. the triggers tab sending
-	// only trigger_* fields) leaves the untouched settings alone instead of resetting
-	// max_turns/run_seconds to 0.
+	// 모든 필드는 선택입니다(포인터). 그래서 일부만 고치는 요청(예: 트리거 탭이
+	// trigger_* 필드만 보냄)은 안 건드린 설정을 그대로 둡니다.
+	// max_turns나 run_seconds를 0으로 되돌리지 않습니다.
 	var req struct {
 		MaxTurns         *int  `json:"max_turns"`
 		RunSeconds       *int  `json:"run_seconds"`
@@ -441,15 +443,15 @@ func (s *Server) pgSaveAgentConfig(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	// an agent's LLM binding change also invalidates pinned-task / per-profile caches
-	// so their next round re-resolves each agent's bound model.
+	// 에이전트의 LLM 바인딩이 바뀌면 고정된 작업과 설정별 캐시도 무효가 됩니다.
+	// 그래서 다음 라운드가 각 에이전트에 묶인 모델을 다시 찾습니다.
 	if profileChanged {
 		s.invalidateProfileAgents()
 	}
-	// Task bundles capture operational Agent settings (turn/time budgets, tools,
-	// web search). Rebuild them even when no global profile is configured.
+	// 작업 묶음은 운용용 에이전트 설정을 담습니다(턴/시간 예산, 도구,
+	// 웹 검색). 전역 설정이 없어도 다시 만듭니다.
 	s.invalidateTaskAgents()
-	// rebuild the live agents so the new max_turns/run_seconds/binding apply without a restart.
+	// 살아 있는 에이전트를 다시 만듭니다. 새 max_turns, run_seconds, 바인딩이 재시작 없이 먹게 합니다.
 	s.cfgMu.Lock()
 	cfg, on := s.llmCfg, s.llmOn
 	s.cfgMu.Unlock()
@@ -532,7 +534,7 @@ func (s *Server) pgSavePrompt(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"version": ver})
 }
 
-// pgResetPrompt restores an agent's prompt body to the in-code built-in default
+// pgResetPrompt는 에이전트 프롬프트 본문을 코드 안 내장 기본값으로 되돌립니다
 // (구간 [A]). 내장 에이전트만 코드 기본값이 있고, 커스텀 에이전트는 없다.
 func (s *Server) pgResetPrompt(w http.ResponseWriter, r *http.Request) {
 	pg, a, ok := s.agentByKey(w, r)
@@ -552,14 +554,14 @@ func (s *Server) pgResetPrompt(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"version": ver})
 }
 
-// pgSaveWrapup stores an agent's wrap-up (settlement) prompt — the text injected on
-// timeout / step-exhaustion. Empty body clears the override → built-in default.
+// pgSaveWrapup은 에이전트의 마무리(정산) 프롬프트를 저장합니다. 시간 초과나
+// 단계 소진 때 넣는 글입니다. 본문이 비면 덮어쓰기를 지워 내장 기본값을 씁니다.
 func (s *Server) pgSaveWrapup(w http.ResponseWriter, r *http.Request) {
 	pg, a, ok := s.agentByKey(w, r)
 	if !ok {
 		return
 	}
-	// MaxTurns is optional (pointer): omit to leave the stored turn budget untouched.
+	// MaxTurns는 선택입니다(포인터). 빼면 저장된 턴 예산을 그대로 둡니다.
 	var body struct {
 		Prompt   string `json:"prompt"`
 		MaxTurns *int   `json:"max_turns"`
@@ -585,8 +587,8 @@ func (s *Server) pgSaveWrapup(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"ok": true})
 }
 
-// pgResetWrapup clears an agent's wrap-up prompt override so the code built-in
-// default is used again.
+// pgResetWrapup은 에이전트의 마무리 프롬프트 덮어쓰기를 지워, 코드 내장
+// 기본값을 다시 쓰게 합니다.
 func (s *Server) pgResetWrapup(w http.ResponseWriter, r *http.Request) {
 	pg, a, ok := s.agentByKey(w, r)
 	if !ok {
@@ -607,8 +609,8 @@ func (s *Server) pgResetWrapup(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// pgSaveTaskTimeoutWrapup stores an agent's TASK-TIMEOUT wrap-up prompt + turn budget
-// (worker/planner only). Empty prompt / 0 turns clear the override → built-in default.
+// pgSaveTaskTimeoutWrapup은 에이전트의 작업 시간 초과 마무리 프롬프트와 턴 예산을 저장합니다
+// (워커/플래너만). 프롬프트가 비거나 턴이 0이면 덮어쓰기를 지워 내장 기본값을 씁니다.
 func (s *Server) pgSaveTaskTimeoutWrapup(w http.ResponseWriter, r *http.Request) {
 	pg, a, ok := s.agentByKey(w, r)
 	if !ok {
@@ -636,7 +638,7 @@ func (s *Server) pgSaveTaskTimeoutWrapup(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, 200, map[string]any{"ok": true})
 }
 
-// pgResetTaskTimeoutWrapup clears the task-timeout wrap-up override → built-in default.
+// pgResetTaskTimeoutWrapup은 작업 시간 초과 마무리 덮어쓰기를 지워 내장 기본값으로 돌립니다.
 func (s *Server) pgResetTaskTimeoutWrapup(w http.ResponseWriter, r *http.Request) {
 	pg, a, ok := s.agentByKey(w, r)
 	if !ok {
@@ -753,8 +755,8 @@ func (s *Server) pgListTools(w http.ResponseWriter, r *http.Request) {
 	if ts == nil {
 		ts = []*db.Tool{}
 	}
-	// Usage is best-effort decoration. Runtime tool resolution keeps using the plain
-	// catalog query, so agent assembly never pays for this aggregate.
+	// 사용 횟수는 되면 좋은 꾸밈입니다. 실행 중 도구 결정은 평범한
+	// 목록 조회를 그대로 쓰므로, 에이전트 조립이 이 집계 비용을 내지 않습니다.
 	counts, countErr := pg.ToolUsageCounts()
 	if countErr != nil {
 		log.Printf("[tools] 호출 통계 읽기 실패: %v", countErr)
@@ -766,10 +768,10 @@ func (s *Server) pgListTools(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"tools": ts})
 }
 
-// pgUpdateTool saves the page-editable fields of a built-in tool: description,
-// parameter schema (structure is expected unchanged — only per-param description/
-// default move), agent binding, and enabled. key is taken from the path and never
-// changes (it is welded to the Go handler).
+// pgUpdateTool은 내장 도구에서 화면이 고칠 수 있는 필드를 저장합니다. 설명,
+// 매개변수 스키마(구조는 그대로 두고, 매개변수별 설명과
+// 기본값만 움직임), 에이전트 바인딩, 사용 여부입니다. key는 경로에서 오고
+// 절대 안 바뀝니다(Go 처리기에 붙어 있음).
 func (s *Server) pgUpdateTool(w http.ResponseWriter, r *http.Request) {
 	pg := s.pg(w)
 	if pg == nil {
@@ -803,9 +805,9 @@ func (s *Server) pgUpdateTool(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"ok": true})
 }
 
-// pgResetTool overwrites a tool row with its code-defined defaults (description,
+// pgResetTool은 도구 행을 코드가 정한 기본값으로 덮습니다(설명,
 // schema, agent binding) 그리고 그것을 다시 켠다. 명시적인 "기본값 복원" 동작인데, 왜냐하면
-// startup seeding is first-insert-only and never overwrites edits.
+// 시작 때 심기는 처음 한 번만 넣고 고친 내용을 덮지 않기 때문입니다.
 func (s *Server) pgResetTool(w http.ResponseWriter, r *http.Request) {
 	pg := s.pg(w)
 	if pg == nil {
@@ -825,7 +827,7 @@ func (s *Server) pgResetTool(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]any{"ok": true})
 		return
 	}
-	// orchestration/platform tools (auto agent) — default-bind to "auto".
+	// 오케스트레이션/플랫폼 도구(auto 에이전트). 기본으로 auto에 묶습니다.
 	autoAgents, _ := json.Marshal([]string{"auto"})
 	for _, t := range append(s.orchestrationTools(), s.platformTools()...) {
 		if t.Name() != key {
@@ -876,9 +878,9 @@ func (s *Server) pgSaveMCP(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 500, err.Error())
 		return
 	}
-	// On initial add, auto-discover + cache the tool list so the UI shows it right
-	// away (bounded so a slow/broken server can't hang the request). Skipped on
-	// plain updates (e.g. enable toggles) to avoid re-spawning the server each time.
+	// 처음 추가할 때 도구 목록을 자동으로 찾아 캐시합니다. 화면이 바로
+	// 보게 하려고요(느리거나 깨진 서버가 요청을 붙잡지 않게 시간을 จำกัด). 평범한
+	// 갱신(예: 사용 스위치)에서는 건너뛰어, 매번 서버를 다시 띄우지 않습니다.
 	if isNew && m.Enabled {
 		m.ID = id
 		ctx, cancel := context.WithTimeout(r.Context(), 45*time.Second)
@@ -903,8 +905,8 @@ func (s *Server) pgDeleteMCP(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"deleted": id})
 }
 
-// pgRefreshMCP re-discovers one MCP's tools on demand and re-caches them, so a
-// config change or an earlier discovery failure can be fixed without a restart.
+// pgRefreshMCP는 MCP 하나의 도구를 요청 때 다시 찾아 캐시합니다. 그래서
+// 설정 변경이나 앞선 찾기 실패를 재시작 없이 고칠 수 있습니다.
 func (s *Server) pgRefreshMCP(w http.ResponseWriter, r *http.Request) {
 	pg := s.pg(w)
 	if pg == nil {
@@ -937,7 +939,7 @@ func (s *Server) pgRefreshMCP(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"tools": tools})
 }
 
-// pgMCPTools returns one MCP's cached tools (name + description) for the detail UI.
+// pgMCPTools는 MCP 하나의 캐시된 도구(이름과 설명)를 상세 화면에 돌려줍니다.
 func (s *Server) pgMCPTools(w http.ResponseWriter, r *http.Request) {
 	pg := s.pg(w)
 	if pg == nil {
@@ -964,8 +966,8 @@ type skillFileNode struct {
 	Compatibility string   `json:"compatibility,omitempty"`
 	MCPs          []string `json:"mcps,omitempty"`
 	Files         []string `json:"files"`
-	// Usage ledger (db/skill_usage.go). Calls is 0 and LastUsed nil for a skill that
-	// was never invoked — the ledger only has rows for skills agents actually loaded.
+	// 사용 장부입니다(db/skill_usage.go). 한 번도 안 부른 스킬은 Calls가 0이고 LastUsed가 nil입니다.
+	// 장부에는 에이전트가 실제로 불러온 스킬 행만 있습니다.
 	Calls    int        `json:"calls"`
 	Tasks    int        `json:"tasks"`
 	Agents   []string   `json:"usage_agents"`
@@ -988,8 +990,8 @@ func (s *Server) fsListSkills(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 500, err.Error())
 		return
 	}
-	// Usage is best-effort decoration: a ledger read failure leaves the counts at
-	// zero rather than failing the skill list itself.
+	// 사용 횟수는 되면 좋은 꾸밈입니다. 장부 읽기가 실패하면 횟수를
+	// 0으로 두고, 스킬 목록 자체는 실패시키지 않습니다.
 	statBySkill := map[string]db.SkillStat{}
 	if s.m.pg != nil {
 		stats, err := s.m.pg.SkillStats()
@@ -1025,7 +1027,7 @@ func (s *Server) fsListSkills(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"skills": nodes})
 }
 
-// fsSkillUsage returns one skill's recent invocations, newest first (detail panel).
+// fsSkillUsage는 스킬 하나의 최근 호출을 최신순으로 돌려줍니다(상세 패널).
 func (s *Server) fsSkillUsage(w http.ResponseWriter, r *http.Request) {
 	pg := s.pg(w)
 	if pg == nil {
@@ -1045,8 +1047,8 @@ func (s *Server) fsSkillUsage(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"calls": calls})
 }
 
-// fsMissingSkills lists skill names agents asked for that do not exist — the gap
-// list, i.e. which procedures are worth writing next.
+// fsMissingSkills는 에이전트가 찾았지만 없는 스킬 이름을 나열합니다. 빈칸
+// 목록입니다. 다음에 어떤 절차를 쓸 가치가 있는지입니다.
 func (s *Server) fsMissingSkills(w http.ResponseWriter, r *http.Request) {
 	pg := s.pg(w)
 	if pg == nil {
@@ -1061,7 +1063,7 @@ func (s *Server) fsMissingSkills(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"missing": missing})
 }
 
-// cleanStrs trims each string and drops empties.
+// cleanStrs는 각 문자열의 공백을 자르고 빈 값을 버립니다.
 func cleanStrs(in []string) []string {
 	out := make([]string, 0, len(in))
 	for _, s := range in {
@@ -1075,11 +1077,11 @@ func cleanStrs(in []string) []string {
 func (s *Server) fsCreateSkill(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Name          string   `json:"name"`
-		Description   string   `json:"description"`   // required per agentskills.io spec
-		License       string   `json:"license"`       // optional
-		Compatibility string   `json:"compatibility"` // optional
-		MCPs          []string `json:"mcps"`          // optional; MCP servers this skill unlocks
-		Instructions  string   `json:"instructions"`  // optional; scaffolded if empty
+		Description   string   `json:"description"`   // agentskills.io 규격상 필수
+		License       string   `json:"license"`       // 선택
+		Compatibility string   `json:"compatibility"` // 선택
+		MCPs          []string `json:"mcps"`          // 선택. 이 스킬이 불러오면 열리는 MCP 서버
+		Instructions  string   `json:"instructions"`  // 선택. 비어 있으면 뼈대를 만듦
 	}
 	if err := decode(r, &body); err != nil {
 		writeErr(w, 400, err.Error())
@@ -1102,10 +1104,10 @@ func (s *Server) fsCreateSkill(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 500, err.Error())
 		return
 	}
-	// Build a spec-compliant SKILL.md (agentskills.io format):
-	//   YAML frontmatter: name (required), description (required),
-	//                     license, compatibility (optional)
-	//   Markdown body:    step-by-step instructions
+	// 규격에 맞는 SKILL.md를 만듭니다(agentskills.io 형식).
+	//   YAML 프론트매터: name(필수), description(필수),
+	//                     license, compatibility(선택)
+	//   Markdown 본문:    단계별 안내
 	var sb strings.Builder
 	sb.WriteString("---\n")
 	fmt.Fprintf(&sb, "name: %s\n", body.Name)
@@ -1116,7 +1118,7 @@ func (s *Server) fsCreateSkill(w http.ResponseWriter, r *http.Request) {
 	if body.Compatibility != "" {
 		fmt.Fprintf(&sb, "compatibility: %s\n", body.Compatibility)
 	}
-	// mcps: MCP servers this skill unlocks on load (skill-gated deferred tools).
+	// mcps: 이 스킬을 불러오면 열리는 MCP 서버(스킬로 막힌 지연 도구).
 	if mcps := cleanStrs(body.MCPs); len(mcps) > 0 {
 		fmt.Fprintf(&sb, "mcps: %s\n", strings.Join(mcps, ", "))
 	}
@@ -1124,7 +1126,7 @@ func (s *Server) fsCreateSkill(w http.ResponseWriter, r *http.Request) {
 	if strings.TrimSpace(body.Instructions) != "" {
 		sb.WriteString(body.Instructions)
 	} else {
-		// scaffold a minimal Markdown body so the file is immediately useful
+		// 바로 쓸 수 있게 최소한의 Markdown 본문 뼈대를 만듭니다.
 		fmt.Fprintf(&sb, "## %s\n\n", body.Name)
 		sb.WriteString("<!-- Describe step-by-step instructions in Markdown. -->\n\n")
 		sb.WriteString("1. \n2. \n3. \n")
@@ -1137,11 +1139,11 @@ func (s *Server) fsCreateSkill(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 201, map[string]any{"name": body.Name})
 }
 
-// fsUpdateSkillMeta rewrites the SKILL.md frontmatter fields that are safe to
-// change without touching the instruction body: mcps, license, compatibility,
-// description. Only fields present in the request body are updated; omitted
-// fields are left as-is (the whole frontmatter is reconstructed from the
-// parsed values, so the write is a clean replace, not a line-patch).
+// fsUpdateSkillMeta는 SKILL.md 프론트매터에서 본문을 건드리지 않고 고쳐도 되는
+// 필드를 다시 씁니다. mcps, license, compatibility,
+// description입니다. 요청 본문에 있는 필드만 고칩니다. 빠진
+// 필드는 그대로 둡니다(프론트매터 전체를 파싱한 값으로 다시 만들므로,
+// 쓰기는 줄 단위 수정이 아니라 깨끗한 교체입니다).
 func (s *Server) fsUpdateSkillMeta(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	if !validSkillName(name) {
@@ -1176,9 +1178,9 @@ func (s *Server) fsUpdateSkillMeta(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"ok": true})
 }
 
-// rewriteSkillFrontmatter parses the SKILL.md YAML frontmatter and replaces the
-// fields given as non-nil pointers. The instruction body (after the closing ---) is
-// preserved verbatim. Returns an error if the file has no recognisable frontmatter.
+// rewriteSkillFrontmatter는 SKILL.md의 YAML 프론트매터를 파싱하고,
+// nil이 아닌 포인터로 준 필드를 바꿉니다. 안내 본문(닫는 --- 뒤)은
+// 그대로 둡니다. 알아볼 프론트매터가 없으면 오류를 돌려줍니다.
 func rewriteSkillFrontmatter(content []byte, mcps *[]string, description, license, compatibility *string) ([]byte, error) {
 	lines := strings.Split(string(content), "\n")
 	if len(lines) < 2 || strings.TrimSpace(lines[0]) != "---" {
@@ -1194,17 +1196,17 @@ func rewriteSkillFrontmatter(content []byte, mcps *[]string, description, licens
 	if fmEnd < 0 {
 		return nil, fmt.Errorf("SKILL.md frontmatter is not closed")
 	}
-	// Collect existing key → value from frontmatter (preserve unknown keys)
+	// 프론트매터의 기존 키와 값을 모읍니다(모르는 키는 유지).
 	type kv struct{ k, v string }
 	var pairs []kv
 	for _, l := range lines[1:fmEnd] {
 		if idx := strings.IndexByte(l, ':'); idx >= 0 {
 			pairs = append(pairs, kv{strings.TrimSpace(l[:idx]), strings.TrimSpace(l[idx+1:])})
 		} else if strings.TrimSpace(l) != "" {
-			pairs = append(pairs, kv{"", l}) // preserve non-key lines verbatim
+			pairs = append(pairs, kv{"", l}) // 키가 아닌 줄은 그대로 둡니다.
 		}
 	}
-	// Apply updates (nil pointer = no change)
+	// 갱신을 적용합니다(nil 포인터면 변경 없음).
 	applyStr := func(key string, val *string) {
 		if val == nil {
 			return
@@ -1222,7 +1224,7 @@ func rewriteSkillFrontmatter(content []byte, mcps *[]string, description, licens
 	applyStr("compatibility", compatibility)
 	if mcps != nil {
 		cleaned := cleanStrs(*mcps)
-		// Remove existing mcps line
+		// 기존 mcps 줄을 뺍니다.
 		filtered := pairs[:0]
 		for _, p := range pairs {
 			if p.k != "mcps" {
@@ -1234,7 +1236,7 @@ func rewriteSkillFrontmatter(content []byte, mcps *[]string, description, licens
 			pairs = append(pairs, kv{"mcps", strings.Join(cleaned, ", ")})
 		}
 	}
-	// Reconstruct
+	// 다시 조립합니다.
 	var sb strings.Builder
 	sb.WriteString("---\n")
 	for _, p := range pairs {
@@ -1246,23 +1248,23 @@ func rewriteSkillFrontmatter(content []byte, mcps *[]string, description, licens
 		sb.WriteByte('\n')
 	}
 	sb.WriteString("---\n")
-	// Body (lines after closing ---)
+	// 본문(닫는 --- 다음 줄)
 	if fmEnd+1 < len(lines) {
 		sb.WriteString(strings.Join(lines[fmEnd+1:], "\n"))
 	}
 	return []byte(sb.String()), nil
 }
 
-// zip-upload safety caps (defeat zip bombs / runaway archives).
+// zip 올리기 안전 상한입니다(zip 폭탄이나 폭주하는 아카이브를 막음).
 const (
-	maxSkillZipBytes   = 20 << 20  // 20MB compressed request body
-	maxSkillTotalBytes = 100 << 20 // 100MB total uncompressed
-	maxSkillFileBytes  = 20 << 20  // 20MB per extracted file
-	maxSkillEntries    = 4000      // max files in the archive
+	maxSkillZipBytes   = 20 << 20  // 압축된 요청 본문 20MB
+	maxSkillTotalBytes = 100 << 20 // 압축을 푼 전체 100MB
+	maxSkillFileBytes  = 20 << 20  // 푼 파일 하나당 20MB
+	maxSkillEntries    = 4000      // 아카이브 안 파일 수 상한
 )
 
-// skillNameFromFrontmatter extracts the `name:` value from a SKILL.md's YAML
-// frontmatter (the block between the first two `---` lines). "" if absent.
+// skillNameFromFrontmatter는 SKILL.md의 YAML
+// 프론트매터(처음 두 `---` 사이)에서 name 값을 꺼냅니다. 없으면 빈 문자열입니다.
 func skillNameFromFrontmatter(md []byte) string {
 	lines := strings.Split(string(md), "\n")
 	inFM := false
@@ -1273,7 +1275,7 @@ func skillNameFromFrontmatter(md []byte) string {
 				inFM = true
 				continue
 			}
-			break // end of frontmatter
+			break // 프론트매터의 끝
 		}
 		if inFM && strings.HasPrefix(t, "name:") {
 			v := strings.TrimSpace(strings.TrimPrefix(t, "name:"))
@@ -1283,12 +1285,12 @@ func skillNameFromFrontmatter(md []byte) string {
 	return ""
 }
 
-// fsUploadSkill installs a skill from an uploaded .zip. The archive must contain a
-// SKILL.md (at the root or under a single top-level dir); the skill name is taken
-// from that file's `name:` frontmatter (falling back to the top dir / zip name).
-// Zip-slip is defeated by validating every entry path with skillRelPath, and a set
-// of size/count caps guard against zip bombs. POST ?overwrite=true replaces an
-// existing skill of the same name.
+// fsUploadSkill은 올린 .zip으로 스킬을 설치합니다. 아카이브에는
+// SKILL.md가 있어야 합니다(루트 또는 맨 위 디렉터리 하나 아래). 스킬 이름은
+// 그 파일의 name 프론트매터에서 가져옵니다(없으면 맨 위 디렉터리나 zip 이름).
+// Zip-slip은 모든 항목 경로를 skillRelPath로 검사해 막습니다. 크기와 개수
+// 상한이 zip 폭탄을 막습니다. POST ?overwrite=true면 같은 이름의
+// 기존 스킬을 바꿉니다.
 func (s *Server) fsUploadSkill(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxSkillZipBytes)
 	file, hdr, err := r.FormFile("file")
@@ -1314,7 +1316,7 @@ func (s *Server) fsUploadSkill(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// locate the shallowest SKILL.md → its directory is the skill root inside the zip.
+	// 가장 얕은 SKILL.md를 찾습니다. 그 디렉터리가 zip 안 스킬 루트입니다.
 	var skillMD *skillZipEntry
 	for i := range entriesAll {
 		e := &entriesAll[i]
@@ -1329,13 +1331,13 @@ func (s *Server) fsUploadSkill(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, "압축 파일에서 SKILL.md를 찾지 못했습니다")
 		return
 	}
-	root := path.Dir(skillMD.name) // "." when SKILL.md is at the zip root
+	root := path.Dir(skillMD.name) // SKILL.md가 zip 루트면 "."
 	prefix := ""
 	if root != "." {
 		prefix = root + "/"
 	}
 
-	// derive + validate the skill name from the SKILL.md frontmatter.
+	// SKILL.md 프론트매터에서 스킬 이름을 만들고 검사합니다.
 	md, err := readZipEntry(skillMD.f)
 	if err != nil {
 		writeErr(w, 400, "SKILL.md 읽기 실패: "+err.Error())
@@ -1362,21 +1364,21 @@ func (s *Server) fsUploadSkill(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// extract into a temp dir first, then atomically swap in — a bad entry aborts
-	// the whole upload without leaving a half-written skill.
+	// 먼저 임시 디렉터리에 푼 뒤 원자적으로 바꿉니다. 나쁜 항목이 있으면
+	// 올리기 전체를 멈추고, 반만 쓴 스킬을 남기지 않습니다.
 	_ = os.MkdirAll(s.skillDir, 0o755)
 	tmp, err := os.MkdirTemp(s.skillDir, ".upload-*")
 	if err != nil {
 		writeErr(w, 500, err.Error())
 		return
 	}
-	defer os.RemoveAll(tmp) // no-op after a successful rename
+	defer os.RemoveAll(tmp) // 이름 바꾸기가 성공하면 아무 일도 안 함
 
 	var total int64
 	entries := 0
 	for _, e := range entriesAll {
 		f := e.f
-		// only files under the skill root; skip anything outside it.
+		// 스킬 루트 아래 파일만. 그 밖은 건너뜁니다.
 		if prefix != "" && !strings.HasPrefix(e.name, prefix) {
 			continue
 		}
@@ -1441,8 +1443,8 @@ func (s *Server) fsUploadSkill(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 201, map[string]any{"name": name, "files": entries})
 }
 
-// readZipEntry reads a single entry's bytes (capped). Takes the *zip.File rather than
-// a name because zr.Open rejects names that aren't valid UTF-8 (GBK-named archives).
+// readZipEntry는 항목 하나의 바이트를 읽습니다(상한이 있음). 이름 대신 *zip.File을 받습니다.
+// zr.Open은 올바른 UTF-8이 아닌 이름을 거절하기 때문입니다(GBK 이름 아카이브).
 func readZipEntry(f *zip.File) ([]byte, error) {
 	rc, err := f.Open()
 	if err != nil {
@@ -1473,22 +1475,22 @@ func (s *Server) fsDeleteSkill(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"deleted": name})
 }
 
-// skillPathBlocked lists the ASCII characters a skill-relative path may not contain.
-// '\' is a Windows separator; '%' keeps double-URL-encoding tricks from surviving
-// (Go's net/http URL-decodes PathValue once — %2F→/ %2e→. — so an attacker sending
-// %252e%252e arrives here as the literal "%2e%2e" and is rejected on the '%'); '#'
-// and '?' would truncate the path when it travels back through a URL; the rest are
-// reserved on Windows filesystems.
+// skillPathBlocked는 스킬 상대 경로에 있으면 안 되는 ASCII 문자입니다.
+// 백슬래시는 윈도우 구분자입니다. %는 두 번 URL 인코딩한 속임수가 남지 않게 합니다
+// (Go의 net/http PathValue는 한 번만 URL 디코딩합니다. %2F는 /, %2e는 .가 됩니다. 그래서 공격자가
+// %252e%252e를 보내면 여기에는 글자 그대로 %2e%2e가 도착하고, %에서 거절됩니다). #와
+// ?는 경로가 다시 URL을 탈 때 경로를 잘라 버립니다. 나머지는
+// 윈도우 파일시스템에서 예약된 문자입니다.
 const skillPathBlocked = `\%#?*:"<>|`
 
-// skillPathRune reports whether r may appear in a client-supplied skill path.
+// skillPathRune은 r이 클라이언트가 준 스킬 경로에 나와도 되는지 알립니다.
 // ASCII 허용 목록이 아니라 유니코드 차단 목록이라서 한글(그리고 어떤
-// other script) file names work, while everything that makes path validation hard is
-// still refused: control/format characters, look-alike whitespace, separators.
+// 다른 글자) 파일 이름도 됩니다. 경로 검사를 어렵게 하는 것은
+// 여전히 거절합니다. 제어 문자, 형식 문자, 비슷해 보이는 공백, 구분자입니다.
 func skillPathRune(r rune) bool {
 	switch {
 	case r < 0x20, r == 0x7f, r == utf8.RuneError:
-		return false // NUL & control characters, invalid UTF-8
+		return false // NUL과 제어 문자, 잘못된 UTF-8
 	case strings.ContainsRune(skillPathBlocked, r):
 		return false
 	case unicode.Is(unicode.Cf, r), unicode.Is(unicode.Co, r), unicode.Is(unicode.Cs, r):
@@ -1499,16 +1501,16 @@ func skillPathRune(r rune) bool {
 	return true
 }
 
-// maxSkillPathLen caps a relative path so a pathological name can't reach the syscall.
+// maxSkillPathLen은 상대 경로 길이를 막아, 병적인 이름이 시스템 호출까지 가지 않게 합니다.
 const maxSkillPathLen = 512
 
-// skillRelPath validates a relative file path supplied by the client.
-// Returns the cleaned path and an empty error string on success.
-// Validation order matters: character check first (before Clean) so encoding tricks
-// can't survive normalization.
+// skillRelPath는 클라이언트가 준 상대 파일 경로를 검사합니다.
+// 성공하면 정리된 경로와 빈 오류 문자열을 돌려줍니다.
+// 검사 순서가 중요합니다. 글자 검사를 Clean보다 먼저 해서, 인코딩 속임수가
+// 정규화를 통과하지 못하게 합니다.
 func skillRelPath(file string) (string, string) {
-	// 1. Character check — before normalization. Defeats null bytes, backslash,
-	//    '%', control characters and unicode look-alikes; CJK names pass through.
+	// 1. 글자 검사. 정규화 전입니다. 널 바이트, 백슬래시,
+	//    %, 제어 문자, 유니코드로 비슷해 보이는 문자를 막습니다. CJK 이름은 통과합니다.
 	if file == "" || len(file) > maxSkillPathLen {
 		return "", "invalid path: empty or too long"
 	}
@@ -1520,18 +1522,18 @@ func skillRelPath(file string) (string, string) {
 			return "", "invalid path: illegal character " + strconv.QuoteRune(r)
 		}
 	}
-	// 2. Reject ".." explicitly. With the whitelist above, encoding bypass is already
-	//    impossible, but we keep this check so the intent is obvious to reviewers.
+	// 2. ".."를 명시적으로 거절합니다. 위의 허용 목록으로는 인코딩 우회가 이미
+	//    불가능하지만, 의도가 보이게 이 검사를 남깁니다.
 	if strings.Contains(file, "..") {
 		return "", "invalid path: '..' not allowed"
 	}
-	// 3. Reject leading slash and empty segments (double slash).
-	//    Leading slash would survive filepath.Clean as an absolute path.
+	// 3. 앞의 슬래시와 빈 구간(슬래시 두 번)을 거절합니다.
+	//    앞의 슬래시는 filepath.Clean 뒤에도 절대 경로로 남습니다.
 	if strings.HasPrefix(file, "/") || strings.Contains(file, "//") {
 		return "", "invalid path: must be relative with no empty segments"
 	}
-	// 4. Normalize and final safety re-check after Clean.
-	//    filepath.Clean removes redundant separators and resolves single dots.
+	// 4. 정규화한 뒤 Clean 이후를 마지막으로 다시 확인합니다.
+	//    filepath.Clean은 남는 구분자를 없애고 점 하나를 풉니다.
 	clean := filepath.Clean(file)
 	if clean == "." || filepath.IsAbs(clean) || strings.HasPrefix(clean, "..") {
 		return "", "invalid path"
@@ -1539,16 +1541,16 @@ func skillRelPath(file string) (string, string) {
 	return clean, ""
 }
 
-// walkSkillFiles returns all files under root (relative to root), sorted,
-// including files in subdirectories (scripts/, references/, assets/, etc.).
-// walkSkillFiles returns all entries under root relative to root.
-// Directories are included with a trailing "/" so the frontend can distinguish
-// them from files and render empty folders in the tree.
+// walkSkillFiles는 root 아래의 모든 파일을 root 기준 상대 경로로, 정렬해 돌려줍니다.
+// 하위 디렉터리의 파일도 포함합니다(scripts/, references/, assets/ 등).
+// walkSkillFiles는 root 아래의 모든 항목을 root 기준으로 돌려줍니다.
+// 디렉터리는 끝에 /를 붙여, 화면이 파일과 구분하고
+// 빈 폴더도 트리에 그리게 합니다.
 func walkSkillFiles(root string) ([]string, error) {
 	var entries []string
 	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
-			return nil // skip unreadable entries
+			return nil // 읽을 수 없는 항목은 건너뜁니다.
 		}
 		rel, relErr := filepath.Rel(root, path)
 		if relErr != nil || rel == "." {
@@ -1633,7 +1635,7 @@ func (s *Server) fsWriteFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	fullPath := filepath.Join(skillPath, file)
-	// create parent subdirectory if needed (e.g. scripts/, references/, assets/)
+	// 필요하면 부모 디렉터리를 만듭니다(예: scripts/, references/, assets/).
 	if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
 		writeErr(w, 500, err.Error())
 		return
@@ -1698,7 +1700,7 @@ func (s *Server) fsDeletePath(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"deleted": file})
 }
 
-// ---------- skill visibility ----------
+// ---------- 스킬 보이기 ----------
 
 func (s *Server) pgSkillVisibility(w http.ResponseWriter, r *http.Request) {
 	pg := s.pg(w)
@@ -1734,7 +1736,7 @@ func (s *Server) pgToggleSkillVisibility(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, 200, map[string]any{"ok": true})
 }
 
-// ---------- visibility (MCP resource side + toggle) ----------
+// ---------- 보이기(MCP 자원 쪽과 스위치) ----------
 
 func (s *Server) pgResourceVisibility(w http.ResponseWriter, r *http.Request) {
 	pg := s.pg(w)
@@ -1772,7 +1774,7 @@ func (s *Server) pgToggleVisibility(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"ok": true})
 }
 
-// ---------- llm profiles ----------
+// ---------- LLM 설정 ----------
 
 func (s *Server) pgListProfiles(w http.ResponseWriter, r *http.Request) {
 	pg := s.pg(w)
@@ -1792,11 +1794,11 @@ func (s *Server) pgSaveProfile(w http.ResponseWriter, r *http.Request) {
 	if pg == nil {
 		return
 	}
-	// APIKey has json:"-" on db.LLMProfile so it is never leaked to the UI on
-	// read; accept it here via a sibling field for create/update. Streaming is a
-	// *bool shadowing the embedded json:"streaming": an absent field must default
-	// to streaming (true), which a plain bool zero value (false = non-streaming)
-	// would get wrong — legacy/partial clients that never send it stay streaming.
+	// db.LLMProfile의 APIKey는 json:"-"라 읽을 때 화면으로 새지 않습니다.
+	// 만들고 고칠 때는 옆 필드로 받습니다. Streaming은
+	// 포함된 json:"streaming"을 가리는 *bool입니다. 필드가 없으면 스트리밍(true)이
+	// 기본이어야 합니다. 그냥 bool의 영(false, 스트리밍 아님)은
+	// 틀립니다. 이 필드를 안 보내는 옛 클라이언트나 일부 클라이언트는 스트리밍을 유지합니다.
 	var body struct {
 		db.LLMProfile
 		APIKey    string `json:"api_key"`
@@ -1823,13 +1825,13 @@ func (s *Server) pgSaveProfile(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 500, err.Error())
 		return
 	}
-	// Editing a profile rebuilds any task pinned to it on its next round. Reapply
-	// the active profile too: the global fallback and explicit task chains must
-	// repopulate the same provider-cache entry and therefore share one limiter.
+	// 설정을 고치면, 그것에 고정된 작업은 다음 라운드에 다시 만들어집니다. 활성
+	// 설정도 다시 적용합니다. 전역 폴백과 명시한 작업 사슬이
+	// 같은 제공자 캐시 항목을 다시 채워야, 제한기를 하나 같이 씁니다.
 	s.invalidateProfileAgents()
-	// Hot-apply. Not just when the ACTIVE profile changed: with failover on, any
-	// profile's key/model/priority/pool_exclude edit reshapes the chain, so the
-	// engine's provider has to be rebuilt either way.
+	// 바로 적용합니다. 활성 설정이 바뀔 때만은 아닙니다. 장애 조치가 켜져 있으면
+	// 어떤 설정의 키, 모델, 우선순위, pool_exclude를 고쳐도 사슬 모양이 바뀌므로,
+	// 어느 쪽이든 엔진의 제공자를 다시 만들어야 합니다.
 	s.reapplyActiveProfile()
 	writeJSON(w, 200, map[string]any{"id": id})
 }
@@ -1888,11 +1890,11 @@ func (s *Server) pgDeleteProfile(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	s.invalidateProfileAgents() // drop cached agents for the removed profile
-	s.llmHealth.Reset(id)       // its breaker state is meaningless now (row is FK-cascaded away)
+	s.invalidateProfileAgents() // 지운 설정의 캐시된 에이전트를 버립니다.
+	s.llmHealth.Reset(id)       // 이제 차단기 상태는 의미가 없습니다(행이 FK로 같이 사라짐).
 	s.restoreTasksAfterProfileDelete(pg)
-	// Cache invalidation also removed the active profile's shared provider entry.
-	// Reapply after task-state sync so the wake-up observes the post-delete chain.
+	// 캐시 무효는 활성 설정의 공유 제공자 항목도 뺐습니다.
+	// 작업 상태를 맞춘 뒤에 다시 적용해, 깨울 때 삭제 뒤의 사슬을 보게 합니다.
 	s.reapplyActiveProfile()
 	writeJSON(w, 200, map[string]any{"deleted": id})
 }
@@ -1902,10 +1904,10 @@ func (s *Server) restoreTasksAfterProfileDelete(pg *db.DB) {
 		if taskID, err := strconv.ParseInt(task.ID, 10, 64); err == nil {
 			if pt, err := pg.GetTask(taskID); err == nil && pt != nil {
 				s.syncTaskLLMState(pt)
-				// Deleting the active entry may advance the task to a ready successor,
-				// or clear the explicit chain and restore its Agent/global fallback.
-				// Resume only intents that were blocked by the exhausted chain; a
-				// paused task remains paused and terminal tasks remain immutable.
+				// 활성 항목을 지우면 작업이 준비된 다음 설정으로 갈 수 있고,
+				// 또는 명시한 사슬을 비우고 에이전트/전역 폴백으로 돌아갑니다.
+				// 바닥난 사슬 때문에 막힌 의도만 재개합니다.
+				// 일시정지된 작업은 그대로 두고, 끝난 작업은 바꾸지 않습니다.
 				if !isTerminalStatus(task.lifecycleSnapshot().Status) && s.taskRuntimeAvailable(task, "planner", "worker") {
 					if _, reopenErr := task.Store.ReopenIntentsByBlockedReason(db.IntentBlockedLLMQuota); reopenErr != nil {
 						log.Printf("[llm-profile] task %s reopen quota-blocked intents after profile delete: %v", task.ID, reopenErr)
@@ -1933,13 +1935,13 @@ func (s *Server) pgActivateProfile(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 500, err.Error())
 		return
 	}
-	s.invalidateProfileAgents() // active change may affect pinned-task fallbacks
-	s.reapplyActiveProfile()    // switch the running engine to the newly activated profile
+	s.invalidateProfileAgents() // 활성 변경은 고정된 작업의 폴백에 영향을 줄 수 있습니다.
+	s.reapplyActiveProfile()    // 돌고 있는 엔진을 새로 활성화한 설정으로 바꿉니다.
 	writeJSON(w, 200, map[string]any{"ok": true})
 }
 
 // pgLLMPoolStatus는 페일오버("순환") 전환, 결정된 체인 순서,
-// and every profile's circuit-breaker state — what the LLM page renders as the
+// 그리고 설정마다의 회로 차단기 상태입니다. LLM 화면이 다음으로 그리는
 // "순환 순서" 띠와 카드별 건강 배지를 보고한다.
 func (s *Server) pgLLMPoolStatus(w http.ResponseWriter, r *http.Request) {
 	if s.pg(w) == nil {
@@ -1948,7 +1950,7 @@ func (s *Server) pgLLMPoolStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, s.llmPoolStatus())
 }
 
-// pgLLMPoolReset clears a tripped profile's circuit breaker so the next call
+// pgLLMPoolReset은 끊긴 설정의 회로 차단기를 비워, 다음 호출이
 // 바로 다시 시도한다("즉시 복구"). id=0이면 모든 profile을 비운다.
 func (s *Server) pgLLMPoolReset(w http.ResponseWriter, r *http.Request) {
 	pg := s.pg(w)
@@ -1956,7 +1958,7 @@ func (s *Server) pgLLMPoolReset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		ID int64 `json:"id"` // 0 / omitted = all
+		ID int64 `json:"id"` // 0이거나 생략이면 전부
 	}
 	if err := decode(r, &body); err != nil {
 		writeErr(w, 400, err.Error())
@@ -1972,23 +1974,23 @@ func (s *Server) pgLLMPoolReset(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, s.llmPoolStatus())
 }
 
-// pgListModels fetches available models from the provider's API endpoint.
-// Supports OpenAI-format (GET /models) and Anthropic-format (GET /v1/models); for
-// Anthropic-compatible third parties (e.g. DeepSeek) whose model list lives only on
-// the OpenAI path, it falls back to the OpenAI endpoint at the stripped root.
+// pgListModels는 제공자 API 끝점에서 쓸 수 있는 모델을 가져옵니다.
+// OpenAI 형식(GET /models)과 Anthropic 형식(GET /v1/models)을 받습니다.
+// 모델 목록이 OpenAI 경로에만 있는 Anthropic 호환 제3자(예: DeepSeek)는
+// 루트를 잘라 OpenAI 끝점으로 물러섭니다.
 func (s *Server) pgListModels(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Provider  string `json:"provider"` // "openai" | "anthropic"
+		Provider  string `json:"provider"` // 형식: openai 또는 anthropic
 		BaseURL   string `json:"base_url"`
 		APIKey    string `json:"api_key"`
 		Proxy     string `json:"proxy"`
-		ProfileID *int64 `json:"profile_id"` // fallback: use stored key from this profile
+		ProfileID *int64 `json:"profile_id"` // 폴백: 이 설정에 저장된 키를 씀
 	}
 	if err := decode(r, &req); err != nil {
 		writeErr(w, 400, err.Error())
 		return
 	}
-	// Resolve API key: form input > profile stored key.
+	// API 키를 정합니다. 폼 입력, 그다음 설정에 저장된 키.
 	apiKey := strings.TrimSpace(req.APIKey)
 	if apiKey == "" && req.ProfileID != nil {
 		if p, err := s.m.pg.ProfileByID(*req.ProfileID); err == nil && p != nil {
@@ -2003,10 +2005,10 @@ func (s *Server) pgListModels(w http.ResponseWriter, r *http.Request) {
 	baseURL := strings.TrimRight(strings.TrimSpace(req.BaseURL), "/")
 	provider := strings.TrimSpace(req.Provider)
 
-	// Candidate endpoints to try in order. Some Anthropic-compatible providers
-	// (e.g. DeepSeek) implement /v1/messages under an /anthropic path but expose
-	// the model list only on their OpenAI-format path — so for anthropic we fall
-	// back to the OpenAI endpoint at the stripped root.
+	// 순서대로 시도할 후보 끝점입니다. 어떤 Anthropic 호환 제공자는
+	// (예: DeepSeek) /v1/messages를 /anthropic 경로 아래에 두지만,
+	// 모델 목록은 OpenAI 형식 경로에만 둡니다. 그래서 anthropic이면
+	// 루트를 잘라 OpenAI 끝점으로 물러섭니다.
 	type candidate struct {
 		url string
 		hdr http.Header
@@ -2026,21 +2028,21 @@ func (s *Server) pgListModels(w http.ResponseWriter, r *http.Request) {
 	var candidates []candidate
 	switch provider {
 	case "openai", "openai-responses":
-		// Responses API shares the OpenAI model list at /v1/models; tolerate a full
-		// endpoint URL of either format.
+		// Responses API는 OpenAI 모델 목록을 /v1/models에서 같이 씁니다.
+		// 어느 형식이든 전체 끝점 URL을 허용합니다.
 		if baseURL == "" {
 			baseURL = "https://api.openai.com/v1"
 		}
 		b := strings.TrimRight(strings.TrimSuffix(strings.TrimSuffix(baseURL, "/chat/completions"), "/responses"), "/")
 		candidates = append(candidates, candidate{b + "/models", bearerHdr()})
-	default: // anthropic
+	default: // anthropic 형식
 		if baseURL == "" {
 			baseURL = "https://api.anthropic.com"
 		}
 		b := strings.TrimRight(strings.TrimSuffix(baseURL, "/v1/messages"), "/")
 		candidates = append(candidates, candidate{b + "/v1/models", anthropicHdr()})
-		// Fallback for Anthropic-compatible third parties whose model list lives on
-		// the OpenAI path: strip a trailing /anthropic and try the OpenAI endpoint.
+		// Anthropic 호환 제3자용 폴백입니다. 모델 목록이
+		// OpenAI 경로에 있으면, 끝의 /anthropic을 자르고 OpenAI 끝점을 시도합니다.
 		if root := strings.TrimRight(strings.TrimSuffix(b, "/anthropic"), "/"); root != b {
 			candidates = append(candidates,
 				candidate{root + "/models", bearerHdr()},
@@ -2049,7 +2051,7 @@ func (s *Server) pgListModels(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Build HTTP client with optional proxy.
+	// 선택적 프록시가 있는 HTTP 클라이언트를 만듭니다.
 	transport := &http.Transport{}
 	if p := strings.TrimSpace(req.Proxy); p != "" {
 		if pu, err := url.Parse(p); err == nil {
@@ -2058,7 +2060,7 @@ func (s *Server) pgListModels(w http.ResponseWriter, r *http.Request) {
 	}
 	client := &http.Client{Transport: transport, Timeout: 30 * time.Second}
 
-	// Try each candidate; return the first that yields a non-empty model list.
+	// 후보를 하나씩 시도하고, 비어 있지 않은 모델 목록을 처음 준 것을 돌려줍니다.
 	var lastErr string
 	emptyOK := false
 	for _, c := range candidates {
@@ -2079,7 +2081,7 @@ func (s *Server) pgListModels(w http.ResponseWriter, r *http.Request) {
 			lastErr = fmt.Sprintf("API 반환 %d: %s", resp.StatusCode, string(body[:min(len(body), 512)]))
 			continue
 		}
-		// Both OpenAI and Anthropic return {"data": [{"id": "..."},...]}.
+		// OpenAI와 Anthropic 모두 {"data": [{"id": "..."}, ...]}를 돌려줍니다.
 		var parsed struct {
 			Data []struct {
 				ID string `json:"id"`
@@ -2099,7 +2101,7 @@ func (s *Server) pgListModels(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, 200, map[string]any{"ok": true, "models": models})
 			return
 		}
-		emptyOK = true // 200 but no model ids — keep trying other candidates
+		emptyOK = true // 200인데 모델 id가 없습니다. 다른 후보를 계속 시도합니다.
 	}
 	if emptyOK {
 		writeJSON(w, 200, map[string]any{"ok": true, "models": []string{}})
@@ -2113,20 +2115,21 @@ func (s *Server) pgListModels(w http.ResponseWriter, r *http.Request) {
 
 // --- prompt template helpers (Go text/template + catalog 허용 목록) --- 엔진이 UI용 문구 틀을 고를 때 쓰며, 자산 그래프와 탐색 그래프의 행을 직접 쓰지 않는다.
 
-// globalPromptVars are runtime variables available to EVERY agent (built-in and
-// custom) regardless of its per-agent catalog. Each agent's render path fills them
-// (see agent.nowStr, rendered fresh each turn), so a prompt may always reference
-// {{.Now}} — e.g. subtract it from a fixed start stamp to reason about elapsed time.
+// globalPromptVars는 모든 에이전트(내장과
+// 사용자 정의)가 에이전트별 목록과 무관하게 쓸 수 있는 실행 중 변수입니다. 각 에이전트의 그리기 경로가
+// 채웁니다(agent.nowStr, 턴마다 새로). 그래서 프롬프트는 항상
+// {{.Now}}를 가리킬 수 있습니다. 예를 들어 고정된 시작 시각에서 빼 경과 시간을 따집니다.
+// 초보용: 플래너와 워커를 포함한 모든 에이전트 프롬프트가 {{.Now}} 같은 값을 쓸 수 있습니다.
 var globalPromptVars = []db.PromptVar{
 	{Name: "Now", Description: "서버 현재 시각（실행할 때마다 실시간으로 갱신되며, 고정된 시작 시각과 빼서 경과 시간을 판단할 수 있습니다）", Example: "2026-08-11 14:30:00 CST", Source: "runtime"},
 	{Name: "DataDir", Description: "서버 데이터 루트 디렉터리（모든 작업/세션 산출물의 루트. 각 agent의 실제 디스크 쓰기는 그 아래 하위 디렉터리에서 이루어집니다. 예: <DataDir>/<taskID>）. 초보자 참고: 이 파일 산출물은 엔진이 PostgreSQL 자산 그래프와 탐색 그래프에 남기는 기록과 함께 작업 결과를 이룹니다.", Example: "/app/data", Source: "runtime"},
 }
 
-// withGlobalVars appends the universal runtime vars onto an agent's own catalog,
-// so validation / the UI variable list / preview all recognize {{.Now}} etc.
-// A stored catalog entry that collides with a global name is dropped: the global
-// runtime var is authoritative (it's what the render path actually resolves), and
-// this keeps the returned list name-unique so the UI never sees duplicate keys.
+// withGlobalVars는 전역 런타임 변수를 에이전트 자신의 목록 뒤에 붙입니다.
+// 그래서 검사, 화면의 변수 목록, 미리보기가 {{.Now}} 등을 알아봅니다.
+// 전역 이름과 겹치는 저장된 목록 항목은 버립니다. 전역
+// 런타임 변수가 기준입니다(그리기 경로가 실제로 푸는 값). 그리고
+// 돌려주는 목록의 이름을 유일하게 해, 화면이 같은 키를 두 번 보지 않게 합니다.
 func withGlobalVars(vars []db.PromptVar) []db.PromptVar {
 	globalNames := make(map[string]bool, len(globalPromptVars))
 	for _, g := range globalPromptVars {
@@ -2135,15 +2138,15 @@ func withGlobalVars(vars []db.PromptVar) []db.PromptVar {
 	out := make([]db.PromptVar, 0, len(vars)+len(globalPromptVars))
 	for _, v := range vars {
 		if globalNames[v.Name] {
-			continue // shadowed by the authoritative global runtime var
+			continue // 기준이 되는 전역 런타임 변수가 가립니다.
 		}
 		out = append(out, v)
 	}
 	return append(out, globalPromptVars...)
 }
 
-// validateTemplate parses the template and rejects any {{.Var}} not in the catalog.
-// Returns "" if valid, otherwise an error message.
+// validateTemplate는 템플릿을 파싱하고, 목록에 없는 {{.Var}}를 거절합니다.
+// 맞으면 빈 문자열, 아니면 오류 글을 돌려줍니다.
 func validateTemplate(tmpl string, catalog []db.PromptVar) string {
 	t, err := template.New("p").Option("missingkey=error").Parse(tmpl)
 	if err != nil {
@@ -2161,7 +2164,7 @@ func validateTemplate(tmpl string, catalog []db.PromptVar) string {
 	return ""
 }
 
-// renderPrompt renders with example values (catalog example overridden by sample).
+// renderPrompt는 예시 값으로 그립니다(목록의 예시를 sample이 덮음).
 func renderPrompt(tmpl string, catalog []db.PromptVar, sample map[string]string) (string, error) {
 	t, err := template.New("p").Option("missingkey=error").Parse(tmpl)
 	if err != nil {
@@ -2181,8 +2184,8 @@ func renderPrompt(tmpl string, catalog []db.PromptVar, sample map[string]string)
 	return buf.String(), nil
 }
 
-// templateFields returns the distinct top-level {{.X}} field names referenced by
-// the template (used to validate against the catalog whitelist).
+// templateFields는 템플릿이 가리키는 맨 위 {{.X}} 필드 이름을
+// 중복 없이 돌려줍니다(목록 허용 목록과 맞추는 검사에 씀).
 func templateFields(t *template.Template) []string {
 	seen := map[string]bool{}
 	var out []string

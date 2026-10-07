@@ -14,8 +14,8 @@ const FindingRetestAgentKey = "retester"
 
 var ErrRetestNotRunning = errors.New("이번 재테스트는 이미 끝났거나 아직 시작되지 않았습니다. 발견 상세에서 새 재테스트를 시작하세요")
 
-// FindingRetest is an immutable historical test once its conversation turn ends.
-// Snapshot is only loaded for the agent, never sent with the history list.
+// FindingRetest는 대화 차례가 끝나면 고칠 수 없는 과거 재시험이다.
+// Snapshot은 에이전트에게만 불러 주고, 이력 목록에는 보내지 않는다.
 type FindingRetest struct {
 	ID             int64           `json:"id"`
 	FindingID      int64           `json:"finding_id"`
@@ -34,8 +34,8 @@ type FindingRetest struct {
 
 const retestCols = `id, finding_id, conversation_id, status, verdict, notes, summary, evidence, error, created_at, started_at, finished_at`
 
-// ActiveFindingRetest is the small status payload polled by the findings list.
-// Finding IDs use the same string representation as the findings API.
+// ActiveFindingRetest는 발견 목록이 폴링하는 작은 상태 본문이다.
+// 발견 ID 문자열은 발견 API와 같다.
 type ActiveFindingRetest struct {
 	ID             int64  `json:"id"`
 	FindingID      int64  `json:"finding_id,string"`
@@ -71,9 +71,9 @@ func scanRetest(row interface{ Scan(...any) error }) (*FindingRetest, error) {
 	return r, err
 }
 
-// CreateFindingRetest atomically snapshots the source, creates its conversation
-// and persists the first message. A finding row lock deduplicates simultaneous
-// clicks across clients; an existing active run is returned without dispatching.
+// CreateFindingRetest는 원본을 한 번에 스냅샷하고, 대화를 만든 뒤 첫 메시지를 저장한다.
+// 발견 행 잠금이 여러 클라이언트의 동시 클릭을 하나로 합친다.
+// 이미 진행 중인 실행이 있으면 새로 보내지 않고 그것을 돌려준다.
 func (d *DB) CreateFindingRetest(ctx context.Context, findingID int64, notes string) (*FindingRetest, *Conversation, bool, error) {
 	tx, err := d.BeginTx(ctx, nil)
 	if err != nil {
@@ -97,7 +97,7 @@ func (d *DB) CreateFindingRetest(ctx context.Context, findingID int64, notes str
 	if r != nil {
 		return r, nil, false, nil
 	}
-	// Keep the title within the same limit as ordinary conversations.
+	// 제목 길이는 일반 대화와 같은 상한에 맞춘다.
 	if runes := []rune(title); len(runes) > 100 {
 		title = string(runes[:100])
 	}
@@ -177,8 +177,8 @@ func (d *DB) StartFindingRetest(ctx context.Context, id int64) (bool, error) {
 	return n == 1, err
 }
 
-// RecordFindingRetestResult never accepts a finding ID: ownership comes from the
-// runtime conversation. Identical retries are safe; a second verdict is refused.
+// RecordFindingRetestResult는 발견 ID를 받지 않는다. 소유는 실행 중인 대화에서 온다.
+// 같은 재시도는 안전하고, 두 번째 판정은 거절한다.
 func (d *DB) RecordFindingRetestResult(ctx context.Context, conversationID int64, verdict, summary, evidence string) error {
 	if verdict != "reproduced" && verdict != "fixed" && verdict != "inconclusive" {
 		return errors.New("verdict는 reproduced / fixed / inconclusive 여야 합니다")
@@ -203,9 +203,9 @@ func (d *DB) RecordFindingRetestResult(ctx context.Context, conversationID int64
 	return nil
 }
 
-// FinishFindingRetest seals the result. Cancellation/failure takes precedence
-// over a staged verdict so an interrupted test cannot appear successfully fixed.
-// Only a newly completed fixed verdict updates triage, in the same transaction.
+// FinishFindingRetest는 결과를 봉인한다. 취소·실패가 미리 적어 둔 판정보다 우선한다.
+// 그래서 끊긴 시험이 고친 것처럼 보이지 않는다.
+// 새로 완료된 「고침」 판정만 같은 트랜잭션에서 분류(triage)를 고친다.
 func (d *DB) FinishFindingRetest(id int64, status, reason string) error {
 	if status != "completed" && status != "failed" && status != "stopped" {
 		return errors.New("invalid terminal retest status")
@@ -215,11 +215,11 @@ func (d *DB) FinishFindingRetest(id int64, status, reason string) error {
 		return err
 	}
 	defer tx.Rollback()
-	// Lock the finding before the retest, matching creation and cascading deletion.
+	// 재시험보다 먼저 발견을 잠근다. 생성과 연쇄 삭제와 같은 순서다.
 	var findingID int64
 	err = tx.QueryRow(`SELECT f.id FROM findings f WHERE f.id=(SELECT finding_id FROM finding_retests WHERE id=$1) FOR UPDATE OF f`, id).Scan(&findingID)
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil // Finding/retest already deleted.
+		return nil // 발견이나 재시험이 이미 지워졌다.
 	}
 	if err != nil {
 		return err
@@ -230,7 +230,7 @@ func (d *DB) FinishFindingRetest(id int64, status, reason string) error {
 	error=CASE WHEN $2='completed' AND verdict='' THEN 'Agent가 재검사 결론을 저장하지 않았습니다. 세션을 확인한 뒤 다시 재검사하세요' ELSE $3 END,
 	finished_at=now() WHERE id=$1 AND status IN ('pending','running') RETURNING status,verdict`, id, status, reason).Scan(&finalStatus, &verdict)
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil // A replay must not overwrite a later manual triage decision.
+		return nil // 재생이 나중에 사람이 고른 분류 결정을 덮어쓰면 안 된다.
 	}
 	if err != nil {
 		return err

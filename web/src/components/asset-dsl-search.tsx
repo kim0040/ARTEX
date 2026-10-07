@@ -7,9 +7,9 @@ import { SearchIcon } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
-// ── DSL autocomplete ──────────────────────────────────────────────────────────
+// ── DSL 자동완성 ──────────────────────────────────────────────────────────
 // 전역 자산 보기(/function/assets)와 작업별 테스트 자산이 함께 씀
-// search, so both search boxes behave and look identical.
+// 검색이라, 두 검색창이 똑같이 동작하고 똑같이 보입니다.
 
 const DSL_FIELDS: { name: string; desc: string; ops: { op: string; desc: string }[] }[] = [
   {
@@ -188,15 +188,15 @@ interface DslSuggestion {
 
 function getDslSuggestions(text: string, cursor: number): DslSuggestion[] {
   const before = text.slice(0, cursor);
-  // Current token: non-whitespace, non-paren run ending at cursor
+  // 지금 토큰: 커서에서 끝나는, 공백과 괄호가 아닌 구간
   const tokenMatch = before.match(/([^\s()]*$)/);
   const currentToken = tokenMatch?.[1] ?? "";
   const tokenStart = cursor - currentToken.length;
 
-  // Token already contains field+operator → typing a value, no suggestions
+  // 토큰에 필드와 연산자가 이미 있으면 값을 치는 중이니 제안하지 않습니다
   if (/^[a-z_]+(==|!=|>=|<=|=|>|<)/.test(currentToken)) return [];
 
-  // Complete known field name → suggest operators for that field
+  // 아는 필드 이름이 완성되면 그 필드의 연산자를 제안합니다
   const exactField = DSL_FIELDS.find((f) => f.name === currentToken.toLowerCase());
   if (exactField) {
     return exactField.ops.map(({ op, desc }) => ({
@@ -209,11 +209,11 @@ function getDslSuggestions(text: string, cursor: number): DslSuggestion[] {
     }));
   }
 
-  // Everything before the current token (trimmed)
+  // 지금 토큰 앞의 모든 것(앞뒤 공백 제거)
   const beforeToken = before.slice(0, tokenStart).trimEnd();
   const afterExpression = beforeToken.length > 0 && !/\b(AND|OR)\s*$/i.test(beforeToken) && !beforeToken.endsWith("(");
 
-  // Current token is a prefix of AND/OR and follows a complete expression
+  // 지금 토큰이 AND/OR의 앞부분이고, 앞에 완성된 식이 있습니다
   if (/^(a|an|and|o|or)$/i.test(currentToken) && afterExpression) {
     return LOGIC_OPS.filter((l) => l.label.startsWith(currentToken.toUpperCase())).map(({ label, desc }) => ({
       kind: "logic",
@@ -225,7 +225,7 @@ function getDslSuggestions(text: string, cursor: number): DslSuggestion[] {
     }));
   }
 
-  // No current token, after a complete expression → suggest AND/OR
+  // 지금 토큰이 없고 완성된 식 다음이면 AND/OR를 제안합니다
   if (!currentToken && afterExpression) {
     return LOGIC_OPS.map(({ label, desc }) => ({
       kind: "logic",
@@ -237,7 +237,7 @@ function getDslSuggestions(text: string, cursor: number): DslSuggestion[] {
     }));
   }
 
-  // Default: suggest fields filtered by prefix
+  // 기본: 앞글자로 걸러 필드를 제안합니다
   const prefix = currentToken.toLowerCase();
   return DSL_FIELDS.filter((f) => f.name.startsWith(prefix)).map((f) => ({
     kind: "field",
@@ -260,9 +260,9 @@ const KIND_STYLE: Record<string, string> = {
   logic: "text-emerald-500 dark:text-emerald-400",
 };
 
-// AssetDslSearch is the shared DSL search box: a monospace input with a
+// AssetDslSearch는 같이 쓰는 DSL 검색창입니다. 고정폭 입력과
 // field/operator/logic 자동완성 popover와 상태 줄("N건 찾음" /
-// error / loading). Used by both the global asset view and the per-task view.
+// 오류나 불러오는 중을 보여 줍니다. 전체 자산 화면과 작업별 화면이 같이 씁니다.
 export function AssetDslSearch({
   query,
   onChange,
@@ -297,7 +297,7 @@ export function AssetDslSearch({
   const apply = React.useCallback(
     (s: DslSuggestion) => {
       const cursor = inputRef.current?.selectionStart ?? query.length;
-      // use cursor for logic-kind (insert at cursor), replaceStart/End for others
+      // logic 종류는 커서 위치에 넣고, 나머지는 replaceStart/End 구간을 바꿉니다
       const adjusted: DslSuggestion =
         s.kind === "logic" && !query.slice(s.replaceStart, s.replaceEnd)
           ? { ...s, replaceStart: cursor, replaceEnd: cursor }

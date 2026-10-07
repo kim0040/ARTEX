@@ -19,15 +19,15 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-// isFKViolation reports whether err is a Postgres foreign-key violation (SQLSTATE
-// 23503) — e.g. an activity insert whose exploration_id has no parent row.
+// isFKViolation은 err가 Postgres 외래 키 위반(SQLSTATE
+// 23503)인지 봅니다. 예를 들어 부모 행이 없는 exploration_id로 활동을 넣는 경우입니다.
 func isFKViolation(err error) bool {
 	var pgErr *pgconn.PgError
 	return errors.As(err, &pgErr) && pgErr.Code == "23503"
 }
 
-// dropReason classifies why an activity write was dropped, so the log can be
-// grouped/analysed by cause rather than by raw error text.
+// dropReason은 활동 쓰기가 왜 버려졌는지 나눕니다. 로그를 날것 오류 글이 아니라
+// 원인별로 묶고 분석하게 합니다.
 func dropReason(err error) string {
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) {
@@ -43,17 +43,17 @@ func dropReason(err error) string {
 	return "write_error"
 }
 
-// bumpDrop increments and returns the running count of dropped (unpersistable)
-// activity records for a task. Concurrent planner + worker emits race here, so the
-// counter is an atomic behind sync.Map. The count in the log shows loss scale at a
-// glance instead of forcing a grep-and-count.
+// bumpDrop은 작업에서 버려진(저장 못 한) 활동 기록의 누적 수를 하나 올리고
+// 그 수를 돌려줍니다. 플래너와 워커가 동시에 내보내면 여기서 겹치므로,
+// 카운터는 sync.Map 안의 원자 값입니다. 로그의 이 수로 손실 규모를
+// 한눈에 보고, grep으로 세지 않아도 됩니다.
 func (e *Engine) bumpDrop(taskID string) int64 {
 	v, _ := e.dropCnt.LoadOrStore(taskID, new(int64))
 	return atomic.AddInt64(v.(*int64), 1)
 }
 
-// preview collapses newlines and trims s to a short rune-safe snippet for one-line
-// log output (avoids dumping a multi-KB summary/detail into the log).
+// preview는 줄바꿈을 접고 s를 룬 단위로 짧게 잘라 한 줄 로그에 씁니다
+// (몇 KB짜리 요약이나 상세를 로그에 통째로 넣지 않으려고요).
 func preview(s string, n int) string {
 	s = strings.ReplaceAll(s, "\r", " ")
 	s = strings.ReplaceAll(s, "\n", " ")
@@ -76,65 +76,66 @@ const (
 
 var errWorkControlConflict = errors.New("작업 제어가 충돌했습니다")
 
-// retryableWorkerModelError excludes errors already handled by the task router.
-// In particular, a quota error after partial streaming advances the task cursor
-// for the next LLM call but must not replay this whole intent on the backup.
+// retryableWorkerModelError는 작업 라우터가 이미 처리한 오류를 뺍니다.
+// 특히 일부만 스트리밍된 뒤의 할당량 오류는 다음 LLM 호출을 위해 작업 커서를
+// 앞으로 옮기지만, 이 의도 전체를 백업에서 다시 돌리면 안 됩니다.
 func retryableWorkerModelError(reason harness.TerminalReason, err error) bool {
 	return reason == harness.ReasonModelError && !isTaskLLMRuntimeError(err)
 }
 
-// Engine drives the event-driven exploration loop with real LLM agents
-// (docs §4.3/§4.4): on asset/exploration-graph change (debounced) it wakes the
-// planner, which reads the route, queries assets, judges goals and emits intents;
-// N concurrent work agents claim intents and execute them. There is no
-// simulation mode — an LLM provider is required. The planner/worker can be
-// (re)installed at runtime (LLM configured from the UI); the loops always run
-// but idle until an LLM is set.
+// Engine은 실제 LLM 에이전트로 이벤트 기반 탐색 루프를 돌립니다
+// (docs §4.3/§4.4). 자산 그래프나 탐색 그래프가 바뀌면(모아서) 플래너를
+// 깨웁니다. 플래너는 경로를 읽고, 자산을 조회하고, 목표를 판단하고, 의도를 냅니다.
+// 워커 N개가 동시에 의도를 집어 실행합니다. 시뮬레이션 모드는
+// 없습니다. LLM 제공자가 필요합니다. 플래너와 워커는 실행 중에
+// (다시) 붙일 수 있습니다(화면에서 LLM을 설정). 루프는 항상 돌지만
+// LLM이 정해지기 전에는 쉽니다.
+// 초보용: 자산 그래프와 탐색 그래프의 변화를 모아 플래너를 깨우고, 워커가 프론티어의 의도를 실행합니다.
 type Engine struct {
 	m        *Manager
 	debounce time.Duration
 
-	bc *Broadcaster // live activity pub/sub (SSE)
+	bc *Broadcaster // 실시간 활동 발행/구독(SSE)
 
-	started  sync.Map // taskID -> bool, so Run is idempotent per task
-	lastAct  sync.Map // taskID -> int64 unix, last planner/worker activity (heartbeat)
-	llmCalls sync.Map // taskID -> *int64, actual planner/worker/main-agent LLM calls
-	paused   sync.Map // taskID -> bool, user-paused (planner + workers idle but loops alive)
-	deleting sync.Map // taskID -> bool, delete barrier (no new task-owned writes)
-	dropCnt  sync.Map // taskID -> *int64, running count of dropped (unpersistable) activity records
+	started  sync.Map // taskID -> bool. Run이 작업마다 한 번만 돌게 합니다
+	lastAct  sync.Map // taskID -> int64 유닉스 시각. 플래너/워커의 마지막 활동(심장박동)
+	llmCalls sync.Map // taskID -> *int64. 플래너/워커/메인 에이전트의 실제 LLM 호출 수
+	paused   sync.Map // taskID -> bool. 사용자 일시정지(플래너와 워커는 쉬고 루프는 살아 있음)
+	deleting sync.Map // taskID -> bool. 삭제 장벽(그 작업에 속한 새 쓰기는 거절)
+	dropCnt  sync.Map // taskID -> *int64. 버려진(저장 못 한) 활동 기록의 누적 수
 
-	// deleteMu makes installing the delete barrier atomic with registering a new
-	// task operation. Once BeginDelete returns, every admitted writer is reflected
-	// in inflight and every later writer is rejected.
+	// deleteMu는 삭제 장벽을 거는 일과 새 작업 조작을 등록하는 일을 한 덩어리로 만듭니다.
+	// BeginDelete가 돌아오면, 이미 들어온 쓰는 쪽은 전부 inflight에 반영되고
+	// 그 뒤의 쓰는 쪽은 거절됩니다.
 	deleteMu sync.RWMutex
 
-	// Every long-lived task goroutine (planner, workers and deadline coordinator)
-	// runs under one task-scoped context. Successful deletion cancels that context,
-	// waits for all goroutines, then releases every task-level Engine reference.
+	// 오래 사는 작업 고루틴(플래너, 워커, 마감 조율기)은
+	// 작업 하나의 컨텍스트 아래에서 돕니다. 삭제가 성공하면 그 컨텍스트를 취소하고,
+	// 모든 고루틴을 기다린 뒤 작업 수준의 Engine 참조를 전부 놓습니다.
 	runtimeMu sync.Mutex
 	runtimes  map[string]*taskRuntime
 
-	// per-task execution context: each planner.Plan / worker.Execute runs under it,
-	// so pausing can CANCEL an in-flight run (not just skip the next one). Recreated
-	// on resume since cancelling is one-shot. Every cancellation carries a named
-	// cause so the activity trace can identify the initiating control path.
+	// 작업별 실행 컨텍스트입니다. planner.Plan과 worker.Execute가 이 아래에서 돕니다.
+	// 그래서 일시정지는 다음 번을 건너뛰는 데 그치지 않고, 진행 중인 실행을 취소할 수 있습니다. 취소는
+	// 한 번뿐이라 재개할 때 새로 만듭니다. 취소마다 이름이 있는
+	// 원인을 실어, 활동 기록에서 어떤 제어 경로가 시작했는지 알 수 있습니다.
 	execMu     sync.Mutex
 	execCancel map[string]context.CancelCauseFunc
 	execCtx    map[string]context.Context
 
-	// Per-work control lets the planner kill a worker and lets the UI pause/cancel
-	// one intent without pausing the whole task. The done channel closes only after
-	// runWorkerStep has stopped writing and committed its final state.
+	// 실행 하나 제어는 플래너가 워커를 끊고, 화면이 작업 전체를 멈추지 않고
+	// 의도 하나만 일시정지하거나 취소하게 합니다. done 채널은
+	// runWorkerStep이 쓰기를 멈추고 최종 상태를 확정한 뒤에만 닫힙니다.
 	workMu sync.Mutex
 	work   map[int64]*workExecution
 
-	// steerBox queues planner course-corrections for a running work (keyed by intent
-	// id). The worker's PreToolUse hook drains it before its next tool call and hands
-	// the message to the model (blocking that call) so it re-plans — no kill needed.
+	// steerBox는 도는 실행에 플래너의 방향 수정을 쌓습니다(의도
+	// id가 키). 워커의 PreToolUse 훅이 다음 도구 호출 전에 꺼내
+	// 모델에 넘기고 그 호출을 막습니다. 그래서 죽이지 않고 다시 계획합니다.
 	steerMu  sync.Mutex
 	steerBox map[int64][]string
 
-	plannerRound sync.Map // taskID -> int, planner round counter (for UI round separators)
+	plannerRound sync.Map // taskID -> int. 플래너 라운드 카운터(화면의 라운드 구분선)
 
 	// 작업 수준 타임아웃(docs/작업-수준-타임아웃과-마감-설계.md 참고):
 	settling     sync.Map // taskID -> bool, 작업이 마감 시퀀스에 들어감(새 의도 배분/수령 중지)
@@ -143,13 +144,13 @@ type Engine struct {
 	inflight     sync.Map // taskID -> *int64, 실행 중인 planner.Plan + worker.Execute 개수(drain에 사용)
 	coordStarted sync.Map // taskID -> bool, deadline 조율기가 이미 시작되었는지(Run/reload 중복 제거)
 
-	// resolve returns a task's dedicated planner/worker (wired by the server as the
-	// authoritative task-router). nil,nil means this task is deliberately unavailable
-	// (for example an exhausted failover chain) — there is no global-pair fallback.
+	// resolve는 작업 전용 플래너/워커를 돌려줍니다(서버가 권위 있는 작업 라우터로 연결).
+	// nil,nil은 이 작업을 일부러 못 쓰게 한 것입니다
+	// (예를 들어 장애 조치 사슬이 바닥남). 전역 쌍으로 물러서지 않습니다.
 	resolve              func(t *Task) (*agent.Planner, *agent.Worker)
 	resolveAuthoritative bool
-	// readiness reports whether a global LLM provider is configured — the signal behind
-	// Ready()/the llm_configured indicator. Wired once at startup; nil → not ready.
+	// readiness는 전역 LLM 제공자가 설정됐는지 알립니다. Ready()와
+	// llm_configured 표시의 근거입니다. 시작 때 한 번 연결합니다. nil이면 준비 안 됨.
 	readiness func() bool
 }
 
@@ -162,10 +163,10 @@ type taskRuntime struct {
 type workExecution struct {
 	cancel context.CancelCauseFunc
 	done   chan error
-	action string // user action: pause | cancel
+	action string // 사용자 동작: pause(일시정지) | cancel(취소)
 }
 
-// nextPlannerRound returns the next planner round number for a task (1-based).
+// nextPlannerRound는 작업의 다음 플래너 라운드 번호(1부터)를 돌려줍니다.
 func (e *Engine) nextPlannerRound(taskID string) int {
 	v, _ := e.plannerRound.LoadOrStore(taskID, 0)
 	n := v.(int) + 1
@@ -173,17 +174,18 @@ func (e *Engine) nextPlannerRound(taskID string) int {
 	return n
 }
 
-// Pause stops a task: marks it paused AND cancels any in-flight planner/worker run
-// for it (a long worker.Execute would otherwise keep going until it finishes).
+// Pause는 작업을 멈춥니다. 일시정지로 표시하고, 진행 중인 플래너/워커 실행도
+// 취소합니다. 안 그러면 긴 worker.Execute가 끝날 때까지 계속됩니다.
 func (e *Engine) Pause(taskID string, cause error) {
 	e.paused.Store(taskID, true)
 	e.cancelExec(taskID, cause)
 }
 
-// BeginDelete installs an execution barrier before task data/files are removed.
-// The temporary pause is not a user pause. The server serializes this transition
-// with lifecycle admission and tells AbortDelete whether the persisted task is
-// paused/queued if cleanup fails.
+// BeginDelete는 작업 데이터와 파일을 지우기 전에 실행 장벽을 겁니다.
+// 이 일시정지는 사용자의 일시정지가 아닙니다. 서버는 이 전환을
+// 수명 주기 입장과 순서를 맞추고, 정리가 실패하면 AbortDelete에 저장된 작업이
+// 일시정지였는지 대기였는지 알립니다.
+// 초보용: 삭제 중에는 그 작업에 속한 새 조작이 엔진에 들어가지 못하게 막습니다.
 func (e *Engine) BeginDelete(taskID string) bool {
 	e.deleteMu.Lock()
 	if _, loaded := e.deleting.LoadOrStore(taskID, true); loaded {
@@ -219,8 +221,8 @@ func (e *Engine) IsDeleting(taskID string) bool {
 	return ok
 }
 
-// registerTaskRoutines reserves count goroutines in the task runtime. Callers
-// hold deleteMu for reading so StopTask cannot race WaitGroup.Add with Wait.
+// registerTaskRoutines는 작업 런타임에 고루틴 count개를 예약합니다. 호출자는
+// deleteMu를 읽기로 잡고 있어, StopTask가 WaitGroup.Add와 Wait을 겹치지 않게 합니다.
 func (e *Engine) registerTaskRoutines(parent context.Context, taskID string, count int) *taskRuntime {
 	e.runtimeMu.Lock()
 	defer e.runtimeMu.Unlock()
@@ -241,9 +243,9 @@ func runTaskRoutine(rt *taskRuntime, fn func(context.Context)) {
 	}()
 }
 
-// StopTask permanently stops every long-lived goroutine and removes all Engine
-// state for a successfully deleted task. The delete barrier remains installed
-// until cleanup finishes, so no new task operation can race the teardown.
+// StopTask는 오래 사는 고루틴을 모두 영원히 멈추고, 삭제가 성공한 작업의
+// Engine 상태를 전부 지웁니다. 정리가 끝날 때까지 삭제 장벽은 걸린 채라,
+// 새 작업 조작이 해체와 경주하지 않습니다.
 func (e *Engine) StopTask(taskID string) {
 	e.deleteMu.Lock()
 	e.deleting.Store(taskID, true)
@@ -290,9 +292,9 @@ func (e *Engine) StopTask(taskID string) {
 	e.deleteMu.Unlock()
 }
 
-// cancelExec cancels a task's current per-task exec context (any in-flight
-// planner.Plan / worker.Execute), if present. Shared by Pause and the settle
-// sequence's hard-drain backstop.
+// cancelExec는 작업의 현재 실행 컨텍스트(진행 중인
+// planner.Plan / worker.Execute)가 있으면 취소합니다. Pause와 마감
+// 시퀀스의 강제 비우기 안전장치가 같이 씁니다.
 func (e *Engine) cancelExec(taskID string, cause error) {
 	e.execMu.Lock()
 	if cancel := e.execCancel[taskID]; cancel != nil {
@@ -301,12 +303,12 @@ func (e *Engine) cancelExec(taskID string, cause error) {
 	e.execMu.Unlock()
 }
 
-// Resume un-pauses a task and nudges a fresh planning round. The next exec under
-// it gets a fresh (uncancelled) context.
+// Resume은 작업의 일시정지를 풀고 새 계획 라운드를 한 번 밉니다. 그 다음 실행은
+// 취소되지 않은 새 컨텍스트를 받습니다.
 func (e *Engine) Resume(t *Task) {
-	// BeginDelete owns the pause barrier once deletion starts. A concurrent
-	// resume must never clear it and let a planner/worker re-enter while cleanup
-	// is waiting for task operations to drain.
+	// 삭제가 시작되면 일시정지 장벽은 BeginDelete가 가집니다. 동시에 온
+	// 재개가 그것을 지우면 안 됩니다. 정리가 작업 조작이 빠지기를 기다리는 동안
+	// 플래너나 워커가 다시 들어오면 안 됩니다.
 	if t == nil {
 		return
 	}
@@ -319,13 +321,13 @@ func (e *Engine) Resume(t *Task) {
 	t.Notify()
 }
 
-// execContextFor returns a live per-task context derived from parent, recreating
-// it if a prior pause cancelled it.
+// execContextFor는 parent에서 나온, 살아 있는 작업별 컨텍스트를 돌려줍니다. 앞선
+// 일시정지가 취소했으면 새로 만듭니다.
 func (e *Engine) execContextFor(parent context.Context, taskID string) context.Context {
 	e.execMu.Lock()
 	defer e.execMu.Unlock()
 	if e.IsPaused(taskID) {
-		// never hand out a live context while paused (guards the claim→Execute race)
+		// 일시정지 중에는 살아 있는 컨텍스트를 넘기지 않습니다(집기에서 Execute로 가는 경주를 막음).
 		c, cancel := context.WithCancelCause(parent)
 		cancel(agent.AbortPausedRaceGuard)
 		return c
@@ -339,20 +341,20 @@ func (e *Engine) execContextFor(parent context.Context, taskID string) context.C
 	return c
 }
 
-// IsPaused reports whether a task is user-paused.
+// IsPaused는 작업을 사용자가 일시정지했는지 알립니다.
 func (e *Engine) IsPaused(taskID string) bool {
 	v, ok := e.paused.Load(taskID)
 	return ok && v.(bool)
 }
 
-// Started reports whether the engine loops are running for a task.
+// Started는 그 작업의 엔진 루프가 도는지 알립니다.
 func (e *Engine) Started(taskID string) bool {
 	_, ok := e.started.Load(taskID)
 	return ok
 }
 
-// LastActivity returns the unix time of the last planner/worker activity for a
-// task (0 if none yet).
+// LastActivity는 작업에서 플래너나 워커가 마지막으로 활동한 유닉스 시각을
+// 돌려줍니다. 아직 없으면 0입니다.
 func (e *Engine) LastActivity(taskID string) int64 {
 	if v, ok := e.lastAct.Load(taskID); ok {
 		return v.(int64)
@@ -360,9 +362,10 @@ func (e *Engine) LastActivity(taskID string) int64 {
 	return 0
 }
 
-// BeginLLMCall/EndLLMCall track actual provider calls separately from the
-// scheduler's task-operation counter. A task can have live loops while all of
-// them are waiting for a trigger; that state must remain idle in the UI.
+// BeginLLMCall/EndLLMCall은 스케줄러의 작업 조작 카운터와 따로, 실제 제공자 호출을 셉니다.
+// 작업은 루프가 살아 있어도 전부 트리거를 기다릴 수 있습니다. 그 상태는 화면에서
+// 쉬는 중으로 남아야 합니다.
+// 초보용: 화면의 도는 중 표시는 루프가 아니라 실제 LLM 호출로 판단합니다.
 func (e *Engine) BeginLLMCall(taskID string) {
 	v, _ := e.llmCalls.LoadOrStore(taskID, new(int64))
 	atomic.AddInt64(v.(*int64), 1)
@@ -393,27 +396,27 @@ func NewEngine(m *Manager) *Engine {
 		runtimes: map[string]*taskRuntime{}}
 }
 
-// registerWork records the cancel for the work currently running intentID.
+// registerWork는 지금 intentID를 돌리는 실행의 취소를 기록합니다.
 func (e *Engine) registerWork(intentID int64, cancel context.CancelCauseFunc) {
 	e.workMu.Lock()
 	e.work[intentID] = &workExecution{cancel: cancel, done: make(chan error, 1)}
 	e.workMu.Unlock()
 }
 
-// detachWork removes the live control handle once Execute has returned. complete
-// must be called after the final intent state write so a waiting cancel handler can
-// safely delete the worker's blackboard output without racing a late write.
+// detachWork는 Execute가 돌아온 뒤 살아 있는 제어 손잡이를 뺍니다. complete는
+// 최종 의도 상태를 쓴 뒤에 불러야 합니다. 기다리는 취소 처리기가
+// 늦은 쓰기와 경주하지 않고 워커의 칠판 출력을 지울 수 있게 하려고요.
 func (e *Engine) detachWork(intentID int64) (action string, complete func(error)) {
 	e.workMu.Lock()
 	run := e.work[intentID]
 	if run != nil {
 		delete(e.work, intentID)
 		action = run.action
-		run.cancel(agent.AbortWorkFinished) // release resources (no-op if already cancelled)
+		run.cancel(agent.AbortWorkFinished) // 자원을 놓습니다(이미 취소됐으면 아무 일도 안 함).
 	}
 	e.workMu.Unlock()
 	e.steerMu.Lock()
-	delete(e.steerBox, intentID) // drop any undelivered steering for a finished work
+	delete(e.steerBox, intentID) // 끝난 실행에 아직 전달하지 않은 방향 수정은 버립니다.
 	e.steerMu.Unlock()
 	if run == nil {
 		return action, func(error) {}
@@ -421,9 +424,10 @@ func (e *Engine) detachWork(intentID int64) (action string, complete func(error)
 	return action, func(err error) { run.done <- err }
 }
 
-// ControlWork requests a user-visible pause or cancellation and waits until the
-// worker has fully stopped writing. Cancellation cleanup is performed by the API
-// handler after this returns; pause state is committed by runWorkerStep itself.
+// ControlWork는 화면에 보이는 일시정지나 취소를 요청하고, 워커가
+// 쓰기를 완전히 멈출 때까지 기다립니다. 취소 정리는 이 함수가 돌아온 뒤
+// API 처리기가 합니다. 일시정지 상태는 runWorkerStep이 직접 확정합니다.
+// 초보용: 화면에서 의도 하나만 멈추고, 작업 전체의 플래너 루프는 그대로 둡니다.
 func (e *Engine) ControlWork(ctx context.Context, intentID int64, action string) error {
 	if action != "pause" && action != "cancel" {
 		return fmt.Errorf("unsupported work action %q", action)
@@ -464,10 +468,10 @@ func (e *Engine) ControlWork(ctx context.Context, intentID int64, action string)
 	}
 }
 
-// releaseWorkControl drops only this caller's reservation after its wait is
-// cancelled. The work context stays cancelled; runWorkerStep recognizes the
-// named cancellation cause and settles the intent into the recoverable paused
-// state even if the HTTP caller has gone away.
+// releaseWorkControl은 대기가 취소된 뒤 이 호출자의 예약만 놓습니다.
+// 실행 컨텍스트는 취소된 채로 둡니다. runWorkerStep은
+// 이름이 있는 취소 원인을 알아채고, HTTP 호출자가 이미 나가도
+// 의도를 다시 이을 수 있는 일시정지 상태로 정리합니다.
 func (e *Engine) releaseWorkControl(intentID int64, run *workExecution, action string) {
 	e.workMu.Lock()
 	if current := e.work[intentID]; current == run && current.action == action {
@@ -487,9 +491,10 @@ func transitionIntentState(store *db.ExplorationStore, intentID int64, expected,
 	return nil
 }
 
-// SteerWork queues a mid-run course-correction for the work running intentID (the
-// planner's steer_work tool). The worker delivers it before its next tool call and
-// re-plans — no kill. Errors if no work is currently running that intent.
+// SteerWork는 intentID를 돌리는 실행에 도중에 방향 수정을 넣습니다
+// (플래너의 steer_work 도구). 워커는 다음 도구 호출 전에 전달하고
+// 다시 계획합니다. 죽이지 않습니다. 그 의도를 지금 실행 중인 것이 없으면 오류입니다.
+// 초보용: 플래너가 도는 워커의 다음 도구 앞에서 탐색 방향을 바꿉니다.
 func (e *Engine) SteerWork(intentID int64, msg string) error {
 	if strings.TrimSpace(msg) == "" {
 		return fmt.Errorf("교정 메시지는 비울 수 없음")
@@ -506,7 +511,7 @@ func (e *Engine) SteerWork(intentID int64, msg string) error {
 	return nil
 }
 
-// drainSteer pops the oldest queued steering message for intentID (FIFO), if any.
+// drainSteer는 intentID에 쌓인 방향 수정 중 가장 오래된 것을 꺼냅니다(FIFO). 없으면 없습니다.
 func (e *Engine) drainSteer(intentID int64) (string, bool) {
 	e.steerMu.Lock()
 	defer e.steerMu.Unlock()
@@ -523,10 +528,10 @@ func (e *Engine) drainSteer(intentID int64) (string, bool) {
 	return msg, true
 }
 
-// steerHooks wraps the guard's hook runner so the planner can steer a running work:
-// before each tool call it drains a queued course-correction (if any) and blocks the
-// call, handing the message back to the model — which re-plans its next step instead
-// of running the tool. No queued message → the guard behaves exactly as before.
+// steerHooks는 가드의 훅 실행기를 감싸, 플래너가 도는 실행을 조종하게 합니다.
+// 도구 호출 전에 쌓인 방향 수정이 있으면 꺼내 그 호출을 막고,
+// 메시지를 모델에 돌려줍니다. 모델은 도구를 실행하는 대신 다음 단계를 다시 계획합니다.
+// 쌓인 메시지가 없으면 가드는 예전과 똑같이 동작합니다.
 // 이것은 「공회전 턴」의 이어 실행도 맡는다. Stop을 본다.
 type steerHooks struct {
 	inner harness.HookRunner
@@ -562,8 +567,8 @@ const defaultEmptyTurnNudges = 2
 const emptyTurnNudge = "【공회전 알림】이전 라운드에서는 사고 과정만 출력했고, 본문 답도 주지 않았으며 어떤 도구도 호출하지 않았다," +
 	"이 라운드는 산출이 없다. 방금 생각한 다음 단계를 바로 실행하라. 도구를 호출하거나 결론 문장을 제시하라. 생각을 반복하지 마라."
 
-// isThinkingOnlyTurn reports whether the latest assistant turn produced neither
-// text nor a tool call — i.e. the model spent the whole round thinking.
+// isThinkingOnlyTurn은 최근 어시스턴트 턴이 글도 도구 호출도 안 냈는지 봅니다.
+// 즉 모델이 그 라운드 내내 생각만 했는지입니다.
 func isThinkingOnlyTurn(messages []llm.Message) bool {
 	for i := len(messages) - 1; i >= 0; i-- {
 		m := messages[i]
@@ -619,8 +624,8 @@ func (h steerHooks) Stop(ctx context.Context, messages []llm.Message) (bool, []s
 	return false, []string{emptyTurnNudge}, ""
 }
 
-// KillWork cancels the in-flight work running intentID (planner's kill_work tool).
-// The work's agent-core session honors ctx cancellation and aborts promptly.
+// KillWork는 intentID를 돌리는 실행을 취소합니다(플래너의 kill_work 도구).
+// 그 실행의 에이전트 코어 세션은 ctx 취소를 따르고 바로 끊깁니다.
 func (e *Engine) KillWork(intentID int64) error {
 	e.workMu.Lock()
 	run := e.work[intentID]
@@ -632,24 +637,25 @@ func (e *Engine) KillWork(intentID int64) error {
 	return nil
 }
 
-// Broadcaster exposes the engine's live activity pub/sub (used by the SSE handler).
+// Broadcaster는 엔진의 실시간 활동 발행/구독을 내보입니다(SSE 처리기가 씀).
 func (e *Engine) Broadcaster() *Broadcaster { return e.bc }
 
-// emitActivity persists one captured step AND fans it out to live subscribers,
-// from a single point so storage and the SSE stream never diverge.
+// emitActivity는 잡은 단계 하나를 저장하고, 실시간 구독자에게도 뿌립니다.
+// 한곳에서 하므로 저장소와 SSE 스트림이 어긋나지 않습니다.
+// 초보용: 탐색 단계가 DB와 화면의 실시간 흐름에 같이 남습니다.
 func (e *Engine) emitActivity(t *Task, r db.Activity) db.Activity {
 	id, err := e.appendActivity(t, r)
 	if err != nil {
-		// NO LONGER SILENT: dropping a record breaks command↔result pairing in the
+		// 이제는 조용히 넘기지 않습니다. 기록을 버리면 흔적에서 명령과 결과의 짝이 깨집니다.
 		// trace — tool_result가 유실된 tool_use는 영원히 "실행 중"으로 보이고,
 		// 유실된 'result'/'round' 기록은 세션을 요약 없이 남긴다("요약 없음").
 		// 원인 분석에 필요한 모든 것은 error 수준 한 줄에 들어간다: reason class,
-		// summary preview, running drop count for this task, and — on the FK case — a
-		// live probe of WHY the parent exploration is unreachable.
+		// 요약 미리보기, 이 작업에서 버린 누적 수, 그리고 외래 키일 때는
+		// 부모 탐색 행이 왜 닿지 않는지 지금 DB를 살펴본 결과입니다.
 		n := e.bumpDrop(t.ID)
 		diag := ""
-		// On the FK-parent failure (23503) probe the live DB so the log records WHY the
-		// exploration is unreachable (row gone / wrong expID) instead of just that it is.
+		// 부모 외래 키 실패(23503)면 지금 DB를 살펴, 로그에 탐색이 왜
+		// 닿지 않는지(행이 없음 / expID가 틀림)를 남깁니다. 닿지 않는다는 사실만 남기지 않습니다.
 		if isFKViolation(err) {
 			storeID := t.Store.ID()
 			if exists, refs, maxID, dErr := e.m.pg.ExplorationDiag(storeID); dErr != nil {
@@ -673,11 +679,11 @@ func (e *Engine) emitActivity(t *Task, r db.Activity) db.Activity {
 	return r
 }
 
-// appendActivity persists one activity row, retrying briefly on write failure.
-// Concurrent planner + worker inserts into the same exploration's activity log
-// occasionally fail; a couple of quick retries recover most. Crucially, every
-// failure is now LOGGED (it used to be swallowed by an `if err == nil`), so the
-// underlying DB error is finally visible for diagnosis.
+// appendActivity는 활동 행 하나를 저장하고, 쓰기가 실패하면 짧게 다시 시도합니다.
+// 같은 탐색의 활동 로그에 플래너와 워커가 동시에 넣으면
+// 가끔 실패합니다. 짧은 재시도 몇 번이면 대부분 회복됩니다. 중요한 점은, 이제
+// 실패를 로그로 남긴다는 것입니다(예전에는 `if err == nil`에 삼켜졌습니다). 그래서
+// 원인 DB 오류를 진단할 때 드디어 볼 수 있습니다.
 func (e *Engine) appendActivity(t *Task, r db.Activity) (int64, error) {
 	var id int64
 	var err error
@@ -696,28 +702,28 @@ func (e *Engine) appendActivity(t *Task, r db.Activity) (int64, error) {
 	return 0, err
 }
 
-// SetReadiness wires the global "an LLM provider is configured" predicate (read by
-// Ready() / the llm_configured indicator). Called once at startup.
+// SetReadiness는 전역 "LLM 제공자가 설정됨" 판정을 연결합니다(Ready()와
+// llm_configured 표시가 읽음). 시작 때 한 번 부릅니다.
 func (e *Engine) SetReadiness(fn func() bool) { e.readiness = fn }
 
-// SetAgentResolver installs a per-task planner/worker resolver (wired by the server).
-// Called once at startup before any task loop runs, so no lock is needed on reads.
+// SetAgentResolver는 작업별 플래너/워커 결정 함수를 붙입니다(서버가 연결).
+// 어떤 작업 루프보다 먼저, 시작 때 한 번 부릅니다. 읽을 때 잠금이 필요 없습니다.
 func (e *Engine) SetAgentResolver(fn func(t *Task) (*agent.Planner, *agent.Worker)) {
 	e.resolve = fn
 	e.resolveAuthoritative = false
 }
 
-// SetAuthoritativeAgentResolver installs a resolver whose nil result must not
-// fall through to the global provider. Task-level failover chains use this so a
-// fully exhausted chain cannot silently bypass its configured boundary.
+// SetAuthoritativeAgentResolver는 nil 결과가 전역 제공자로 떨어지면 안 되는
+// 결정 함수를 붙입니다. 작업 수준 장애 조치 사슬이 이것을 써서, 바닥난
+// 사슬이 설정된 경계를 조용히 넘지 못하게 합니다.
 func (e *Engine) SetAuthoritativeAgentResolver(fn func(t *Task) (*agent.Planner, *agent.Worker)) {
 	e.resolve = fn
 	e.resolveAuthoritative = true
 }
 
-// snapshotFor returns the planner/worker a task should run on, from the task-router
-// resolver. nil,nil means the task is deliberately unavailable (e.g. an exhausted
-// failover chain); there is no global-pair fallback.
+// snapshotFor는 작업이 돌릴 플래너/워커를 작업 라우터의 결정 함수에서 가져옵니다.
+// nil,nil은 그 작업을 일부러 못 쓰게 한 것입니다(예: 바닥난
+// 장애 조치 사슬). 전역 쌍으로 물러서지 않습니다.
 func (e *Engine) snapshotFor(t *Task) (*agent.Planner, *agent.Worker) {
 	if e.resolve != nil {
 		p, w := e.resolve(t)
@@ -728,23 +734,24 @@ func (e *Engine) snapshotFor(t *Task) (*agent.Planner, *agent.Worker) {
 	return nil, nil
 }
 
-// Ready reports whether a global LLM provider is configured (via the readiness
-// predicate wired at startup).
+// Ready는 전역 LLM 제공자가 설정됐는지 알립니다(시작 때 연결한
+// 판정을 봄).
 func (e *Engine) Ready() bool {
 	return e.readiness != nil && e.readiness()
 }
 
-// ReadyFor reports whether a specific task can resolve a planner/worker pair.
-// An explicit task profile chain can be runnable even when no global default
-// provider is configured, so task status must not rely on Ready alone.
+// ReadyFor는 특정 작업이 플래너/워커 쌍을 찾을 수 있는지 알립니다.
+// 작업에 명시한 설정 사슬은 전역 기본 제공자가 없어도 돌 수 있어서,
+// 작업 상태를 Ready만으로 판단하면 안 됩니다.
 func (e *Engine) ReadyFor(t *Task) bool {
 	p, w := e.snapshotFor(t)
 	return p != nil && w != nil
 }
 
-// Run starts the planner loop + N worker loops for a task. The loops always run
-// but no-op until an LLM is configured (so a task created while idle picks up
-// automatically once LLM is set from the UI).
+// Run은 작업의 플래너 루프와 워커 루프 N개를 시작합니다. 루프는 항상 돌지만
+// LLM이 설정되기 전에는 아무 일도 안 합니다. 쉬는 동안 만든 작업도 화면에서
+// LLM을 정하면 알아서 이어집니다.
+// 초보용: 이 함수가 작업의 플래너 루프와, 프론티어를 집는 워커 루프를 시작합니다.
 func (e *Engine) Run(ctx context.Context, t *Task) {
 	workers := e.m.Workers()
 	e.deleteMu.RLock()
@@ -754,7 +761,7 @@ func (e *Engine) Run(ctx context.Context, t *Task) {
 	}
 	if _, loaded := e.started.LoadOrStore(t.ID, true); loaded {
 		e.deleteMu.RUnlock()
-		t.Notify() // already running — just nudge a planning round
+		t.Notify() // 이미 돌고 있습니다. 계획 라운드만 한 번 밉니다.
 		return
 	}
 	rt := e.registerTaskRoutines(ctx, t.ID, 1+workers)
@@ -772,7 +779,7 @@ func (e *Engine) Run(ctx context.Context, t *Task) {
 	// ⚠️ 프론티어를 쓰면 안 된다(open만 센다): 워커 수령(open→running)과 이 검사 사이에 경쟁이 있어, 잘못 kick할 수 있다.
 	// 재시작 자동 복구 때에도 running 의도만 남을 수 있으며, 마찬가지로 건너뛰어야 한다.
 	if has, _ := t.Store.HasActiveIntent(); !has {
-		t.Notify() // kick the first planning round (acted on once LLM is ready)
+		t.Notify() // 첫 계획 라운드를 밉니다(LLM이 준비되면 실행됩니다).
 	}
 }
 
@@ -807,7 +814,7 @@ func (e *Engine) plannerLoop(ctx context.Context, t *Task) {
 
 	// runRound는 계획 한 라운드를 돈다(debounce 병합 + 각 가드(guard) 포함). src는 로그에서 트리거 출처를 구분하는 데만 쓴다.
 	runRound := func(src string) {
-		// debounce: coalesce a burst of changes into one planning round
+		// 디바운스: 몰린 변화를 계획 라운드 하나로 모읍니다.
 		timer := time.NewTimer(e.debounce)
 	drain:
 		for {
@@ -819,17 +826,17 @@ func (e *Engine) plannerLoop(ctx context.Context, t *Task) {
 		}
 		planner, _ := e.snapshotFor(t)
 		if planner == nil {
-			return // idle until LLM configured
+			return // LLM이 설정될 때까지 쉽니다.
 		}
 		if e.IsPaused(t.ID) {
-			return // user-paused: don't plan
+			return // 사용자 일시정지: 계획하지 않습니다.
 		}
 		if e.IsDeleting(t.ID) {
 			return
 		}
-		// terminal task (goals all met → done, or failed): the run is over. A
-		// resume/nudge — e.g. auto-resume of the active task on restart — must NOT
-		// re-plan (it would burn an LLM round and re-confirm a settled result).
+		// 끝난 작업입니다(목표를 모두 이루면 완료, 아니면 실패). 실행은 끝났습니다.
+		// 재개나 밀기(예: 재시작 때 활성 작업을 자동 재개)가 다시
+		// 계획하면 안 됩니다. LLM 라운드를 낭비하고, 이미 정리된 결과를 다시 확인하게 됩니다.
 		if isTerminalStatus(t.lifecycleSnapshot().Status) {
 			return
 		}
@@ -868,12 +875,12 @@ func (e *Engine) plannerLoop(ctx context.Context, t *Task) {
 			return
 		}
 		log.Printf("[planner] task %s 계획 중…(%s 트리거)", t.ID, src)
-		// round marker: each Plan() is one planner round; emit a boundary so the
-		// UI can separate rounds in the transcript (kind='round').
+		// 라운드 표시: Plan() 한 번이 플래너 라운드 하나입니다. 경계를 내보내
+		// 화면이 대화 기록에서 라운드를 나누게 합니다(kind='round').
 		e.emitActivity(t, db.Activity{Worker: "planner", Kind: "round",
 			Summary: fmt.Sprintf("%d번째 계획 라운드", e.nextPlannerRound(t.ID))})
-		// what fired this round (worker done / finding; may be several — debounce
-		// coalesces a burst; empty for time/heartbeat wakes).
+		// 이 라운드를 깨운 것(워커 완료 / 발견. 여러 개일 수 있고, 디바운스가
+		// 몰림을 모읍니다. 시간이나 심장박동으로 깨면 비어 있습니다).
 		triggers := t.drainTriggers()
 		taskIDInt, _ := strconv.ParseInt(t.ID, 10, 64)
 		e.BeginLLMCall(t.ID)
@@ -931,7 +938,7 @@ func (e *Engine) workerLoop(ctx context.Context, t *Task, name string) {
 			if sleepCtx(ctx, 1000*time.Millisecond) {
 				return
 			}
-			continue // user-paused: don't claim/execute intents
+			continue // 사용자 일시정지: 의도를 집거나 실행하지 않습니다.
 		}
 		if e.IsDeleting(t.ID) {
 			return
@@ -959,9 +966,10 @@ func (e *Engine) workerLoop(ctx context.Context, t *Task, name string) {
 	}
 }
 
-// runWorkerStep claims one intent from the frontier and fully settles it via
-// runIntent. Returns false when nothing was claimable. The pool worker loop is its
-// only caller.
+// runWorkerStep은 프론티어에서 의도 하나를 집어 runIntent로 끝까지 정리합니다.
+// 집을 것이 없으면 false입니다. 부르는 곳은 풀의 워커 루프
+// 뿐입니다.
+// 초보용: 워커 풀이 탐색 그래프 프론티어의 열린 의도 하나를 실행합니다.
 func (e *Engine) runWorkerStep(ctx context.Context, t *Task, name string, worker *agent.Worker) bool {
 	intent := e.claimNext(t, name)
 	if intent == nil {
@@ -971,14 +979,15 @@ func (e *Engine) runWorkerStep(ctx context.Context, t *Task, name string, worker
 	return e.runIntent(ctx, t, name, worker, intent, "", "")
 }
 
-// runIntent executes and fully settles one already-claimed (state=running) intent.
-// Both the pool worker loop (via runWorkerStep) and the human-message handler (via
-// runDetachedIntent, a dedicated goroutine outside the worker pool) call it, so the
-// execute/retry/state-write logic lives in exactly one place. A non-empty message
-// is injected as this turn's input through ExecuteWithMessage; requestID keys the
-// transcript marker that dedups re-injection across model_error retries. The caller
-// must already hold one task-operation admission for the whole sequence so a delete
-// cannot observe quiescence between the LLM return and the final DB writes.
+// runIntent는 이미 집은(state=running) 의도 하나를 실행하고 끝까지 정리합니다.
+// 풀 워커 루프(runWorkerStep 경유)와 사람 메시지 처리기(runDetachedIntent,
+// 워커 풀 밖의 전용 고루틴)가 같이 부릅니다. 그래서 실행, 재시도, 상태 쓰기는
+// 정확히 한곳에만 있습니다. message가 비어 있지 않으면 ExecuteWithMessage로
+// 이 턴의 입력에 넣습니다. requestID는 대화 기록 표시의 키로, model_error 재시도 때
+// 같은 내용을 다시 넣지 않게 합니다. 호출자는 이 과정 전체에 대해
+// 작업 조작 입장을 이미 하나 가지고 있어야 합니다. 그래야 삭제가
+// LLM이 돌아온 시점과 마지막 DB 쓰기 사이를 잠잠하다고 보지 않습니다.
+// 초보용: 집은 의도 하나를 워커가 실행하고, 결과를 탐색 그래프에 확정합니다.
 func (e *Engine) runIntent(ctx context.Context, t *Task, name string, worker *agent.Worker, intent *db.Node, requestID, message string) bool {
 	hasChatMessage := message != ""
 	e.stampFirstRun(t) // 처음 진짜 실행 → first_run_at을 찍고 deadline을 계산한다(timeout이 있는 작업만)
@@ -991,11 +1000,11 @@ func (e *Engine) runIntent(ctx context.Context, t *Task, name string, worker *ag
 		}
 		return true
 	}
-	// per-work child context so the planner's kill_work can stop just this work.
+	// 이 실행만의 자식 컨텍스트입니다. 플래너의 kill_work가 이 실행만 멈추게 합니다.
 	workCtx, workCancel := context.WithCancelCause(ectx)
 	e.registerWork(intent.ID, workCancel)
-	// wrap the guard hooks so steer_work can inject a mid-run course-correction
-	// for THIS intent (drained before the worker's next tool call).
+	// 가드 훅을 감싸, steer_work가 이 의도에 대해 도중에 방향 수정을
+	// 넣게 합니다(워커의 다음 도구 호출 전에 꺼냄).
 	iid := intent.ID
 	taskEmit := func(a db.Activity) {
 		nid := iid
@@ -1044,17 +1053,17 @@ func (e *Engine) runIntent(ctx context.Context, t *Task, name string, worker *ag
 		}
 		e.EndLLMCall(t.ID)
 	}
-	// Capture kill state before detachWork cancels workCtx. kill = this work's
-	// ctx was cancelled (planner kill_work) while the TASK ctx kept running; a
-	// pause cancels the task ctx (ectx) instead. Checking workCtx.Err() AFTER
-	// unregister would always be true (unregister cancels it) → every completed
-	// work would be wrongly marked stopped.
+	// detachWork가 workCtx를 취소하기 전에 중단 상태를 잡아 둡니다. kill은 이 실행의
+	// ctx가 취소된 경우입니다(플래너 kill_work). 그때 작업 ctx(ectx)는 계속 돕니다. 일시정지는
+	// 작업 ctx(ectx)를 취소합니다. unregister 뒤에 workCtx.Err()를 보면
+	// 항상 참입니다(unregister가 취소함). 그러면 끝난
+	// 실행이 전부 잘못 중단으로 표시됩니다.
 	workCause := context.Cause(workCtx)
 	killed := workCtx.Err() != nil && ectx.Err() == nil
 	action, completeWork := e.detachWork(intent.ID)
-	// A caller may stop waiting and release its in-memory reservation before the
-	// agent honors cancellation. The named context cause remains authoritative and
-	// still settles the stopped run into a recoverable state.
+	// 호출자가 기다림을 멈추고, 에이전트가 취소를 따르기 전에 메모리 예약을 놓을 수 있습니다.
+	// 이름이 있는 컨텍스트 원인이 기준이고,
+	// 그래도 멈춘 실행을 다시 이을 수 있는 상태로 정리합니다.
 	if action == "" {
 		switch {
 		case errors.Is(workCause, agent.AbortWorkPausedByUser):
@@ -1076,9 +1085,9 @@ func (e *Engine) runIntent(ctx context.Context, t *Task, name string, worker *ag
 		return true
 	}
 	if action == "cancel" {
-		// Park the stopped run in paused before handing cleanup to the API. If the
-		// request disconnects after cancellation, the intent remains recoverable and
-		// a later cancel can finish cleanup instead of leaving a phantom running row.
+		// 멈춘 실행을 API에 정리를 넘기기 전에 paused로 둡니다. 취소 뒤에
+		// 요청이 끊겨도 의도는 다시 이을 수 있고,
+		// 나중의 취소가 정리를 끝낼 수 있습니다. 유령 running 행으로 남지 않습니다.
 		controlErr = transitionIntentState(t.Store, intent.ID, "running", "paused")
 		if controlErr != nil {
 			log.Printf("[worker %s] task %s 의도 #%d 취소 펜스 DB 기록 실패: %v", name, t.ID, intent.ID, controlErr)
@@ -1088,9 +1097,9 @@ func (e *Engine) runIntent(ctx context.Context, t *Task, name string, worker *ag
 		e.touch(t.ID)
 		return true
 	}
-	// if a pause cancelled this run mid-flight, return the intent to the frontier
-	// so it is re-claimed on resume — the worker will resume the prior LLM
-	// conversation from its transcript instead of restarting from scratch.
+	// 일시정지가 실행 도중에 이 런을 취소하면, 의도를 프론티어로 돌려
+	// 재개 때 다시 집히게 합니다. 워커는 처음부터 다시 시작하지 않고
+	// 대화 기록으로 이전 LLM 대화를 이어 갑니다.
 	if ectx.Err() != nil && taskExecutionPaused(context.Cause(ectx)) {
 		if err := transitionIntentState(t.Store, intent.ID, "running", "open"); err != nil {
 			log.Printf("[worker %s] task %s 의도 #%d 작업 일시정지 되돌리기 실패: %v", name, t.ID, intent.ID, err)
@@ -1117,7 +1126,7 @@ func (e *Engine) runIntent(ctx context.Context, t *Task, name string, worker *ag
 		e.touch(t.ID)
 		return true
 	}
-	// killed by the planner: mark stopped (don't write back results, don't auto-reclaim).
+	// 플래너가 죽임: stopped로 표시합니다(결과를 쓰지 않고, 자동으로 다시 집지 않음).
 	if killed {
 		if err := transitionIntentState(t.Store, intent.ID, "running", "stopped"); err != nil {
 			log.Printf("[worker %s] task %s 의도 #%d planner 정지 DB 기록 실패: %v", name, t.ID, intent.ID, err)
@@ -1152,22 +1161,23 @@ func (e *Engine) runIntent(ctx context.Context, t *Task, name string, worker *ag
 	}
 	log.Printf("[worker %s] task %s 의도 #%d 종료: %s (%s에 기록)", name, t.ID, intent.ID, state, wrote)
 	e.touch(t.ID)
-	t.NotifyDone(intent.ID) // results changed the graph -> wake the planner (with the just-finished intent id)
+	t.NotifyDone(intent.ID) // 결과가 그래프를 바꿈 → 플래너를 깨웁니다(방금 끝난 의도 id와 함께).
 	return true
 }
 
-// runDetachedIntent runs one paused intent OUTSIDE the worker pool in its own
-// goroutine — the human-message path. It transitions the intent paused->running
-// itself (never through 'open'), so the pool, which only claims 'open', can never
-// race it; the "at most one run per intent" invariant still holds because winning
-// the CAS is the sole entry and work[intentID] was cleared when the pause settled.
-// Because it does not compete for a frontier slot, a user message continues the
-// worker immediately even when all pool slots are busy (mirroring how the
-// main-agent chat handler starts its run directly). The spawned goroutine owns one
-// task-operation admission for the whole run and roots its context at ctx (pass the
-// server root, never the HTTP request, so a disconnect cannot strand the run while
-// task pause/delete/shutdown still stops it). Returns an error if the run could not
-// be started; the intent is left untouched in that case.
+// runDetachedIntent는 일시정지된 의도 하나를 워커 풀 밖에서, 자기
+// 고루틴으로 돌립니다. 사람 메시지 경로입니다. 의도 상태를 스스로 paused에서 running으로
+// 바꿉니다('open'은 거치지 않음). 그래서 'open'만 집는 풀은
+// 경주할 수 없습니다. "의도마다 실행은 최대 하나"는 여전히 맞습니다. 이기는
+// CAS가 유일한 입구이고, 일시정지가 정리될 때 work[intentID]가 비워졌기 때문입니다.
+// 프론티어 자리를 놓고 다투지 않으므로, 풀 자리가 모두 바빠도 사용자 메시지는
+// 워커를 바로 이어 갑니다(메인 에이전트 채팅 처리기가 실행을 직접
+// 시작하는 것과 같습니다). 띄운 고루틴이 실행 전체의 작업 조작 입장을
+// 하나 가지고, 컨텍스트의 뿌리는 ctx입니다(HTTP 요청이 아니라 서버 뿌리를 넘기세요.
+// 연결이 끊겨도 실행이 중간에 갇히지 않고, 작업 일시정지, 삭제, 종료는
+// 여전히 멈춥니다). 실행을 시작하지 못하면 오류를 돌려주고,
+// 그때 의도는 그대로 둡니다.
+// 초보용: 화면의 사람 메시지는 워커 풀 밖에서 그 의도의 대화를 바로 이어 갑니다.
 func (e *Engine) runDetachedIntent(ctx context.Context, t *Task, intentID int64, requestID, message, agentMessage string) error {
 	if !e.beginTaskOperation(t.ID) {
 		return fmt.Errorf("작업을 삭제하는 중입니다")
@@ -1197,13 +1207,13 @@ func (e *Engine) runDetachedIntent(ctx context.Context, t *Task, intentID int64,
 		return fmt.Errorf("%w: 의도가 더 이상 paused 상태가 아닙니다", db.ErrIntentStateConflict)
 	}
 	node.State, node.Owner = "running", "chat"
-	// Record the human turn as a visible activity BEFORE the run starts, so it is
-	// ordered ahead of any worker step and never appears without the run happening.
-	// Keep the UI copy concise; ExecuteWithMessage writes the server-resolved
-	// reference snapshot into the intent transcript as the LLM input.
+	// 실행이 시작되기 전에 사람 턴을 보이는 활동으로 기록합니다. 그래서 어떤 워커 단계보다
+	// 앞에 정렬되고, 실행 없이 혼자 나타나지 않습니다.
+	// 화면 글은 짧게 둡니다. ExecuteWithMessage가 서버가 푼
+	// 참조 스냅샷을 LLM 입력으로 의도 대화 기록에 씁니다.
 	uid := intentID
 	e.emitActivity(t, db.Activity{NodeID: &uid, Worker: "user", Kind: "user", Summary: message, Detail: message})
-	release = false // ownership of the admission passes to the goroutine
+	release = false // 입장 허가의 소유는 고루틴으로 넘어갑니다.
 	go func() {
 		defer e.decInflight(t.ID)
 		e.runIntent(ctx, t, "chat", worker, node, requestID, agentMessage)

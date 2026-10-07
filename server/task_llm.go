@@ -20,7 +20,7 @@ import (
 )
 
 type taskAgentBundle struct {
-	runtime        *taskLLMRuntime // goal decomposition runtime
+	runtime        *taskLLMRuntime // 목표 분해용 런타임
 	plannerRuntime *taskLLMRuntime
 	workerRuntime  *taskLLMRuntime
 	mainRuntime    *taskLLMRuntime
@@ -37,7 +37,7 @@ type llmAuditProfile struct {
 }
 
 type llmTransitionAudit struct {
-	Mode     string           `json:"mode"` // automatic | manual | exhausted
+	Mode     string           `json:"mode"` // automatic=자동 | manual=수동 | exhausted=한도 소진
 	Reason   string           `json:"reason"`
 	Previous *llmAuditProfile `json:"previous,omitempty"`
 	Next     *llmAuditProfile `json:"next,omitempty"`
@@ -78,9 +78,9 @@ func isTaskLLMChainExhausted(err error) bool {
 	return errors.As(err, &target) && target.chainExhausted
 }
 
-// isQuotaExhaustedError is intentionally strict. A generic 429, auth error,
-// network failure, or 5xx does not rotate providers; the response must explicitly
-// identify quota, credits, billing balance, or payment exhaustion.
+// isQuotaExhaustedError는 일부러 엄격합니다. 일반 429, 인증 오류,
+// 네트워크 실패, 5xx는 프로바이더를 바꾸지 않습니다. 응답이 명시적으로
+// 할당량, 크레딧, 청구 잔액, 결제 소진을 말해야 합니다.
 func isQuotaExhaustedError(err error) bool {
 	return err != nil && agent.IsQuotaExhaustedMessage(err.Error())
 }
@@ -101,7 +101,7 @@ type taskLLMStreamHooks struct {
 	transition func(taskLLMSelection, db.TaskLLMTransition, error)
 }
 
-// current resolves the provider this role runs on, by precedence:
+// current는 이 역할이 돌 프로바이더를 이 순서로 고릅니다.
 // Agent 바인딩 → 작업 LLM 설정 체인 → 전역/환경 설정.
 // 바인딩은 작업 체인보다 우선한다: 어떤 역할에 모델이 명시되면 그 모델에서 계속 돈다. 바인딩이 없거나
 // 구성에 실패할 때만 작업 체인으로 내리고, 작업 체인이 비면 다시 전역 설정으로 내린다.
@@ -146,11 +146,11 @@ func (r *taskLLMRuntime) current() (taskLLMSelection, error) {
 	return sel, nil
 }
 
-// activeCfg resolves the task's currently-active LLM config, mirroring current()'s
-// source precedence (agent binding → active chain profile → global). Read-only and
-// best-effort: ok=false when nothing resolves, leaving the per-setting fallback to
-// the caller. If failover switches profiles, the change takes effect on the next
-// agent run (a fresh Session is built per run in captureRun).
+// activeCfg는 작업이 지금 쓰는 LLM 설정을 고릅니다. current()와
+// 같은 출처 순서입니다(에이전트 바인딩 → 활성 체인 설정 → 전역). 읽기 전용이고
+// 실패해도 흐름은 계속합니다. 아무것도 안 풀리면 ok=false이고, 설정별 폴백은
+// 호출자에게 맡깁니다. 장애 조치로 설정이 바뀌면, 다음
+// 에이전트 실행부터 적용됩니다(captureRun이 실행마다 세션을 새로 만듦).
 func (r *taskLLMRuntime) activeCfg() (agent.Config, bool) {
 	taskNum, err := parseTaskID(r.taskID)
 	if err != nil {
@@ -174,15 +174,15 @@ func (r *taskLLMRuntime) activeCfg() (agent.Config, bool) {
 	return agent.Config{}, false
 }
 
-// nonStreaming reports whether the task's currently-active LLM source is set to
-// non-streaming. Unresolvable → streaming (false), the safe default.
+// nonStreaming은 작업이 지금 쓰는 LLM 출처가 비스트리밍인지 알려 줍니다.
+// 못 풀면 스트리밍입니다(false). 안전한 기본값.
 func (r *taskLLMRuntime) nonStreaming() bool {
 	cfg, ok := r.activeCfg()
 	return ok && !cfg.Stream
 }
 
-// maxTokens returns the currently-active source's per-reply output cap.
-// Unresolvable → 0, i.e. send no cap, matching the pre-setting behaviour.
+// maxTokens는 지금 쓰는 출처의 답 하나 출력 상한입니다.
+// 못 풀면 0, 즉 상한을 안 보냅니다. 설정이 생기기 전과 같습니다.
 func (r *taskLLMRuntime) maxTokens() int {
 	cfg, _ := r.activeCfg() // 설정을 풀지 못하면 제로 값 0이다
 	return cfg.MaxTokens
@@ -196,9 +196,9 @@ func parseTaskID(id string) (int64, error) {
 	return n, nil
 }
 
-// streamHooks builds the failover/exhaustion callbacks shared by Stream and
-// Complete: how to read the current profile selection, how to mark it quota
-// exhausted, and how to emit a failover transition.
+// streamHooks는 Stream과 Complete가 같이 쓰는 장애 조치/소진 콜백을 만듭니다.
+// 지금 설정 선택을 어떻게 읽고, 할당량 소진을 어떻게 표시하고,
+// 장애 조치 전환을 어떻게 낼지입니다.
 func (r *taskLLMRuntime) streamHooks() taskLLMStreamHooks {
 	return taskLLMStreamHooks{
 		current: r.current,
@@ -224,11 +224,11 @@ func (r *taskLLMRuntime) Stream(ctx context.Context, req llm.CompletionRequest) 
 	return streamTaskLLM(ctx, r.taskID, req, r.streamHooks())
 }
 
-// Complete is the non-streaming counterpart of Stream. A non-streaming call is
-// atomic — it never delivers partial output — so every failure is safe to retry
-// on the same provider or fail over to the next profile without risking
-// duplicated model output or tool execution (the "committed" bookkeeping the
-// streaming path needs is unnecessary here).
+// Complete는 Stream의 비스트리밍 짝입니다. 비스트리밍 호출은
+// 원자적입니다. 중간 출력을 주지 않으므로, 실패는 모두 같은 프로바이더에서
+// 다시 시도하거나 다음 설정으로 넘어가도 안전합니다. 모델 출력이나 도구 실행이
+// 중복될 위험이 없습니다(스트리밍 경로의 "확정됨" 장부는
+// 여기서는 필요 없습니다).
 func (r *taskLLMRuntime) Complete(ctx context.Context, req llm.CompletionRequest) (llm.Message, string, llm.Usage, error) {
 	ctx = llmrec.WithTaskID(ctx, r.taskID)
 	return completeTaskLLM(ctx, r.taskID, req, r.streamHooks())
@@ -345,9 +345,9 @@ func streamTaskLLM(ctx context.Context, taskID string, req llm.CompletionRequest
 				}
 				return
 			}
-			// profileID=0 means the explicit chain was cleared while this stable task
-			// bundle was still in use. Agent/global fallback errors follow the legacy
-			// behavior and never mutate task failover state.
+			// profileID=0은 이 안정 작업 묶음이 아직 쓰이는 동안
+			// 명시적 체인이 지워졌다는 뜻입니다. 에이전트/전역 폴백 오류는 예전
+			// 동작을 따르고, 작업 장애 조치 상태는 바꾸지 않습니다.
 			if selection.profileID == 0 || !isQuotaExhaustedError(streamErr) {
 				for _, buffered := range pending {
 					if !yield(buffered, nil) {
@@ -361,9 +361,9 @@ func streamTaskLLM(ctx context.Context, taskID string, req llm.CompletionRequest
 			if markErr != nil {
 				cause := fmt.Errorf("mark profile quota exhausted after %v: %w", streamErr, markErr)
 				if committed {
-					// Output may already have driven tool execution. Report the persistence
-					// failure, but classify it as router-handled so the worker does not
-					// replay the entire intent and duplicate those side effects.
+					// 출력이 이미 도구 실행을 일으켰을 수 있습니다. 저장
+					// 실패를 알리되, 라우터가 처리한 것으로 분류합니다. 워커가
+					// 의도 전체를 다시 돌려 그 부작용을 중복하지 않게 합니다.
 					yield(llm.StreamEvent{}, &taskLLMError{taskID: taskID, cause: cause})
 				} else {
 					yield(llm.StreamEvent{}, cause)
@@ -377,8 +377,8 @@ func streamTaskLLM(ctx context.Context, taskID string, req llm.CompletionRequest
 				yield(llm.StreamEvent{}, &taskLLMError{taskID: taskID, chainExhausted: transition.ChainExhausted, cause: streamErr})
 				return
 			}
-			// No event reached the caller, so replaying the same logical request on
-			// the next profile cannot duplicate model output or tool execution.
+			// 호출자에게 이벤트가 아직 안 갔습니다. 그래서 같은 논리 요청을
+			// 다음 설정에서 다시 해도 모델 출력이나 도구 실행이 중복되지 않습니다.
 		}
 	}
 }
@@ -451,8 +451,8 @@ func isRetryableStreamError(err error) bool {
 	return true
 }
 
-// CompactionWindow mirrors current()'s precedence so the context window always
-// matches the provider the role will actually stream on.
+// CompactionWindow는 current()와 같은 순서를 봅니다. 컨텍스트 창이
+// 그 역할이 실제로 스트리밍할 프로바이더와 항상 같게 합니다.
 func (r *taskLLMRuntime) CompactionWindow() int {
 	if _, cfg, ok := r.s.agentBindingProvider(r.agentKey); ok {
 		return cfg.CompactionWindow()
@@ -486,11 +486,12 @@ func (r *taskLLMRuntime) CompactionWindow() int {
 	return minimum
 }
 
-// agentBindingProvider resolves the profile a role is explicitly bound to
-// (agents.llm_profile_id) — the highest-precedence level for task agents. ok=false
-// when the role has no binding or the bound profile no longer builds, so callers
-// fall through to the task chain. A bound profile stays exclusive unless
-// llm_pool_bind_fallback is on, which is what poolForBinding encodes.
+// agentBindingProvider는 역할이 명시적으로 묶인 설정을 고릅니다
+// (agents.llm_profile_id). 작업 에이전트에서 가장 높은 우선순위입니다. ok=false는
+// 바인딩이 없거나, 묶인 설정을 더 이상 만들 수 없을 때입니다. 그러면 호출자는
+// 작업 체인으로 내려갑니다. 묶인 설정은 독점입니다. 다만
+// llm_pool_bind_fallback이 켜지면 예외이고, 그것을 poolForBinding이 나타냅니다.
+// 초보용: 플래너·워커·메인 에이전트에 화면에서 묶은 모델이 있으면, 엔진은 그 모델을 먼저 씁니다.
 func (s *Server) agentBindingProvider(agentKey string) (llm.Provider, agent.Config, bool) {
 	id := s.effectiveProfileForAgent(agentKey, nil)
 	if id == nil {
@@ -503,9 +504,9 @@ func (s *Server) agentBindingProvider(agentKey string) (llm.Provider, agent.Conf
 	return s.poolForBinding(*id, prov, cfg), cfg, true
 }
 
-// globalProvider returns the process-wide provider (persisted active profile or
-// environment config) — the last resort once a role has neither a binding nor a
-// task chain.
+// globalProvider는 프로세스 전역 프로바이더를 돌려줍니다(저장된 활성 설정 또는
+// 환경 설정). 역할에 바인딩도 작업 체인도 없을 때의
+// 마지막 수단입니다.
 func (s *Server) globalProvider() (llm.Provider, agent.Config, bool) {
 	s.cfgMu.Lock()
 	defer s.cfgMu.Unlock()
@@ -515,10 +516,10 @@ func (s *Server) globalProvider() (llm.Provider, agent.Config, bool) {
 	return s.llmProv, s.llmCfg, true
 }
 
-// taskRuntimeAvailable reports whether every listed role can resolve a provider
-// under the runtime precedence in current(): the role's own binding first, then
-// the task chain, then global. An exhausted chain is a hard stop for unbound
-// roles rather than a silent fall through to global — same as current().
+// taskRuntimeAvailable은 나열한 역할이 모두 프로바이더를 고를 수 있는지 알려 줍니다.
+// current()의 런타임 순서입니다. 역할 자신의 바인딩, 그다음
+// 작업 체인, 그다음 전역. 소진된 체인은 안 묶인
+// 역할에게 하드 정지입니다. 전역으로 조용히 내려가지 않습니다. current()와 같습니다.
 func (s *Server) taskRuntimeAvailable(t *Task, agentKeys ...string) bool {
 	if t == nil || len(agentKeys) == 0 {
 		return false

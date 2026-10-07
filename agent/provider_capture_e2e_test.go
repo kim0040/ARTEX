@@ -13,11 +13,10 @@ import (
 	"github.com/Autumn-27/norma/llm"
 )
 
-// End-to-end through a real norma provider: the Capture rides the context into
-// norma, survives its internal request building, and comes back holding the
-// exact bytes buildBody() put on the wire. This is the load-bearing assumption
-// of the whole feature — norma must propagate the caller's context down to
-// http.NewRequestWithContext.
+// 진짜 norma provider 를 끝까지 탑니다. Capture 가 context 를 타고 norma 로
+// 들어가, 안의 요청 만들기를 견디고, buildBody() 가 전선에 올린 바이트를
+// 그대로 들고 돌아옵니다. 이 기능의 전제입니다. norma 는 호출자 context 를
+// http.NewRequestWithContext 까지 넘겨야 합니다.
 func TestCapturePropagatesThroughNormaProvider(t *testing.T) {
 	sse := strings.Join([]string{
 		`event: message_start`,
@@ -34,8 +33,8 @@ func TestCapturePropagatesThroughNormaProvider(t *testing.T) {
 		``,
 	}, "\n")
 
-	// Record exactly what the server receives, so the capture can be compared
-	// against it byte for byte rather than merely spot-checked for fields.
+	// 서버가 받은 것을 그대로 기록합니다. 캡처를 필드만 보지 않고
+	// 바이트 단위로 비교합니다.
 	var gotPath, serverSaw string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
@@ -88,15 +87,14 @@ func TestCapturePropagatesThroughNormaProvider(t *testing.T) {
 		t.Fatalf("path=%q", gotPath)
 	}
 
-	// The raw request must be what norma actually sent, not the recorder's
-	// re-serialization — which is exactly why it carries fields the normalized
-	// view drops.
+	// 원본 요청은 recorder 가 다시 직렬화한 것이 아니라, norma 가 실제로
+	// 보낸 것이어야 합니다. 그래서 정규화 뷰가 버린 필드도 있습니다.
 	raw := capt.RawRequest()
 	if raw == "" {
 		t.Fatal("no raw request captured — context did not reach the transport")
 	}
-	// The load-bearing claim: what we stored equals, byte for byte, what the
-	// server received — not merely "has the right fields".
+	// 핵심 주장입니다. 저장한 것이 서버가 받은 것과 바이트까지 같습니다.
+	// "필드가 맞다"만으로는 부족합니다.
 	if raw != serverSaw {
 		t.Fatalf("captured request != what the server received:\n got: %q\nsaw: %q", raw, serverSaw)
 	}
@@ -110,7 +108,7 @@ func TestCapturePropagatesThroughNormaProvider(t *testing.T) {
 	if body["stream"] != true {
 		t.Errorf("stream=%v want true", body["stream"])
 	}
-	// The full tool schema is the headline gain: the normalized view keeps names only.
+	// 도구 schema 전체가 핵심 이득입니다. 정규화 뷰는 이름만 남깁니다.
 	tools, _ := body["tools"].([]any)
 	if len(tools) != 1 {
 		t.Fatalf("tools=%v", body["tools"])
@@ -123,8 +121,8 @@ func TestCapturePropagatesThroughNormaProvider(t *testing.T) {
 		t.Errorf("tool input_schema missing: %v", tool)
 	}
 
-	// And the response is the untouched SSE frames, including the events the
-	// recorder never turns into stored output.
+	// 응답은 손대지 않은 SSE 프레임입니다. recorder 가 저장 출력으로
+	// 바꾸지 않는 사건도 포함합니다.
 	if capt.RawResponse() != sse {
 		t.Errorf("RawResponse mismatch:\n got: %q\nwant: %q", capt.RawResponse(), sse)
 	}

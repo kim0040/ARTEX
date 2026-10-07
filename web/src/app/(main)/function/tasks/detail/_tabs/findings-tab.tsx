@@ -155,7 +155,7 @@ export function FindingsTab({ taskId }: { taskId: string }) {
           if (active) setFindings(fs);
         })
         .catch(() => {
-          // Keep the last successful snapshot during transient refresh failures.
+          // 잠깐 새로고침이 실패해도 마지막으로 성공한 데이터를 유지합니다.
         });
     };
     load();

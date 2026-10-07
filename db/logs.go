@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// DBLog is one persisted backend log row from the server_logs table.
+// DBLog는 server_logs 테이블에 저장된 백엔드 로그 한 줄이다.
 type DBLog struct {
 	ID        int64
 	CreatedAt time.Time
@@ -14,7 +14,7 @@ type DBLog struct {
 	Text      string
 }
 
-// InsertLog appends one log line and returns its auto-assigned id.
+// InsertLog는 로그 한 줄을 덧붙이고, 자동으로 붙은 id를 돌려준다.
 func (d *DB) InsertLog(level, tag, text string) (int64, error) {
 	var id int64
 	err := d.QueryRowContext(context.Background(),
@@ -24,7 +24,7 @@ func (d *DB) InsertLog(level, tag, text string) (int64, error) {
 	return id, err
 }
 
-// RecentLogs returns the most recent limit rows, oldest-first.
+// RecentLogs는 최근 limit개 로그를 오래된 것부터 돌려준다.
 func (d *DB) RecentLogs(limit int) ([]*DBLog, error) {
 	rows, err := d.QueryContext(context.Background(),
 		`SELECT id, created_at, level, tag, text
@@ -43,14 +43,14 @@ func (d *DB) RecentLogs(limit int) ([]*DBLog, error) {
 		}
 		out = append(out, l)
 	}
-	// Reverse to oldest-first
+	// 오래된 것부터 보이게 순서를 뒤집는다
 	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
 		out[i], out[j] = out[j], out[i]
 	}
 	return out, nil
 }
 
-// ListLogsBefore returns up to limit rows with id < beforeID, oldest-first.
+// ListLogsBefore는 id가 beforeID보다 작은 로그를 최대 limit개, 오래된 것부터 돌려준다.
 func (d *DB) ListLogsBefore(beforeID int64, limit int) ([]*DBLog, error) {
 	rows, err := d.QueryContext(context.Background(),
 		`SELECT id, created_at, level, tag, text
@@ -70,7 +70,7 @@ func (d *DB) ListLogsBefore(beforeID int64, limit int) ([]*DBLog, error) {
 		}
 		out = append(out, l)
 	}
-	// Reverse to oldest-first
+	// 오래된 것부터 보이게 순서를 뒤집는다
 	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
 		out[i], out[j] = out[j], out[i]
 	}

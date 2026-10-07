@@ -16,10 +16,10 @@ func TestExplorationFlow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer d.Exec(`DELETE FROM explorations WHERE id=$1`, expID) // cascades nodes/edges/activity
+	defer d.Exec(`DELETE FROM explorations WHERE id=$1`, expID) // 노드/간선/활동이 함께 지워진다
 	es := d.Exploration(expID)
 
-	// goal node + two intents
+	// 목표 노드와 의도 둘
 	goal, err := es.AddGoal(map[string]any{"text": "getadmin", "vulnclass": "authz"}, "human")
 	if err != nil {
 		t.Fatal(err)
@@ -32,7 +32,7 @@ func TestExplorationFlow(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// frontier ordered by priority desc → i2(8) before i1(5)
+	// 프론티어는 우선순위 내림차순이라 i2(8)가 i1(5)보다 앞
 	fr, err := es.Frontier(10)
 	if err != nil {
 		t.Fatal(err)
@@ -41,7 +41,7 @@ func TestExplorationFlow(t *testing.T) {
 		t.Fatalf("frontier order wrong: %+v", fr)
 	}
 
-	// atomic claim: first wins, second on same id fails
+	// 원자적 선점: 먼저 온 쪽이 이기고, 같은 id의 두 번째는 실패
 	ok, err := es.ClaimIntent(i2, "worker-1")
 	if err != nil || !ok {
 		t.Fatalf("claim i2: ok=%v err=%v", ok, err)
@@ -51,7 +51,7 @@ func TestExplorationFlow(t *testing.T) {
 		t.Fatalf("double-claim should fail")
 	}
 
-	// finding yields from intent, proves goal
+	// 발견은 의도에서 yields되고, 목표를 proves한다
 	find, err := es.AddNode("finding", map[string]any{"vulnclass": "idor", "severity": "high"}, 9, "confirmed", "worker-1", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -66,9 +66,9 @@ func TestExplorationFlow(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// lineage: ancestors of the finding traced backward — here {i2, find} joined by
-	// the yields edge. The proves→goal edge is DOWNSTREAM (goal must be excluded),
-	// and the unrelated intent i1 is not on any path to the finding (excluded too).
+	// 계보: 발견의 조상을 거슬러 간다. 여기선 {i2, find}가
+	// yields 간선으로 이어진다. proves→goal 간선은 아래쪽이라 목표는 빠지고,
+	// 관계없는 의도 i1은 발견으로 가는 길에 없어 역시 빠진다.
 	lnNodes, lnEdges, err := es.FindingLineage(find)
 	if err != nil {
 		t.Fatal(err)
@@ -87,7 +87,7 @@ func TestExplorationFlow(t *testing.T) {
 		t.Fatalf("lineage edges: want i2-yields->find, got %+v", lnEdges)
 	}
 
-	// activity poll by id cursor
+	// id 커서로 활동을 폴링한다
 	id1, err := es.AppendActivity(Activity{Worker: "worker-1", Kind: "tool_use", Tool: "Bash", Summary: "ran curl", Detail: "full output"})
 	if err != nil {
 		t.Fatal(err)
@@ -103,13 +103,13 @@ func TestExplorationFlow(t *testing.T) {
 	if det != "full output" {
 		t.Fatalf("detail want 'full output', got %q", det)
 	}
-	// incremental: nothing new after cursor
+	// 증분: 커서 뒤에는 새 것이 없다
 	items2, _, _ := es.ActivityList(nil, cursor, 100)
 	if len(items2) != 0 {
 		t.Fatalf("incremental poll should be empty, got %d", len(items2))
 	}
 
-	// stats
+	// 통계
 	st, _ := es.Stats()
 	if st["intent"] != 2 || st["goal"] != 1 || st["finding"] != 1 {
 		t.Fatalf("stats: %+v", st)
@@ -287,7 +287,7 @@ func TestNodesPageQueryMatchesID(t *testing.T) {
 	onlyTarget("hash id", "#"+fmt.Sprint(target))
 	onlyTarget("payload still works", "needle-alpha")
 
-	// A non-matching numeric id returns nothing (and does not accidentally match other).
+	// 안 맞는 숫자 id는 빈 결과를 돌려주고, 다른 항목에 잘못 맞지 않는다.
 	if nodes, total, err := es.NodesPage(NodeFilter{Query: fmt.Sprint(target + other + 1000)}, 1, 50); err != nil {
 		t.Fatal(err)
 	} else if total != 0 || len(nodes) != 0 {

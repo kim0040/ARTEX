@@ -9,9 +9,8 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
-// TestMain acquires a PostgreSQL advisory lock (7337741002) for the entire
-// agent test suite so cross-package DELETE cleanup races with db/server
-// packages are avoided when running `go test ./...`.
+// TestMain 은 agent 테스트 전체 동안 PostgreSQL 권고 잠금(7337741002)을 잡습니다.
+// `go test ./...` 할 때 db/server 패키지와 DELETE 정리가 겹치지 않게 합니다.
 func TestMain(m *testing.M) {
 	dsn, _, err := db.DSN()
 	if err != nil {

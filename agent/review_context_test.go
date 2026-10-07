@@ -14,8 +14,8 @@ import (
 	"github.com/Autumn-27/norma/tool"
 )
 
-// Real PostgreSQL + SDK hooks: Worker reviews receive the current call only.
-// Intent summaries, inherited background and prior execution are excluded.
+// 진짜 PostgreSQL 과 SDK 훅입니다. 워커 검토는 이번 호출만 받습니다.
+// 의도 요약, 물려받은 배경, 이전 실행은 빠집니다.
 func TestWorkerReviewContextAcrossToolCalls(t *testing.T) {
 	dsn, _, err := db.DSN()
 	if err != nil {

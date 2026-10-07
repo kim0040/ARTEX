@@ -17,13 +17,13 @@ import (
 func (s *Server) seedFindingWorkflowTools() {
 	const hostSearchDescriptionFlag = "finding_workflow_tools_v3_host_search_description"
 	if value, _, _ := s.m.pg.GetSetting(hostSearchDescriptionFlag); value != "true" {
-		// Only replace the original built-in text. A user-edited description is
-		// authoritative and must survive upgrades.
+		// 원래 내장 문구만 바꿉니다. 사용자가 고친 설명은
+		// 기준이며 업그레이드 뒤에도 남아야 합니다.
 		legacy := "기록 프록시(127.0.0.1:8788)가 수집한 대상 트래픽을 조회합니다(host는 필수이며, URL 부분 문자열이나 본문 키워드로 더 필터할 수 있음). body_contains는 이미 수집된 요청/응답 헤더와 본문에서 전문 검색을 하며, 임의 부분 문자열과 중국어를 지원합니다(최소 3자). 응답 안의 비밀번호, 키, 오류, 내부망 주소 등을 찾는 데 쓸 수 있습니다. 매우 가벼운 인덱스(id/method/url/status/resp_len)만 반환하며 응답 내용은 포함하지 않습니다. 기본은 3건만 반환하고 페이지당 최대 10건입니다. 결과가 많으면 page로 넘깁니다(page=0부터). 특정 항목의 요청/응답 원문은 traffic_get(id)로 봅니다. 이미 방문한 자원과 엔드포인트를 찾을 때는 먼저 이것을 써서 같은 URL을 curl로 반복하지 않습니다."
 		if _, err := s.m.pg.Exec(`UPDATE tools SET description=$1,updated_at=now() WHERE key='traffic_search' AND system AND description=$2`, traffic.TrafficSearchDescription, legacy); err != nil {
-			// Log and leave the flag unset so the next startup retries; do not
-			// return, or a transient error here would also skip the reporter
-			// migration below — the two are independent.
+			// 로그를 남기고 플래그는 안 켠 채 둡니다. 다음 시작 때 다시 시도합니다.
+			// 여기서 return하면 안 됩니다. 잠깐의 오류가 아래 보고자
+			// 이관까지 건너뛰게 됩니다. 둘은 서로 별개입니다.
 			log.Printf("[evidence] upgrade traffic_search description: %v", err)
 		} else {
 			_ = s.m.pg.SetSetting(hostSearchDescriptionFlag, "true")
@@ -83,10 +83,10 @@ func (s *Server) seedFindingWorkflowTools() {
 		}
 		if n, _ := result.RowsAffected(); n != 1 {
 			return
-		} // preserve concurrent user edits
+		} // 동시에 사용자가 고친 내용은 유지합니다.
 	}
-	// Upgrade only the original default binding. Customized lists and enabled
-	// flags survive; the one-time flag also preserves future user unbinding.
+	// 원래 기본 바인딩만 올립니다. 바꾼 목록과 enabled
+	// 플래그는 남습니다. 한 번 켜는 플래그는 나중에 사용자가 푸는 것도 유지합니다.
 	readers := `["worker","reporter"]`
 	for _, key := range []string{"traffic_search", "traffic_get", "traffic_blob"} {
 		if _, err := s.m.pg.Exec(`UPDATE tools SET agents=$2::jsonb WHERE key=$1 AND system AND (agents='["worker"]'::jsonb OR (agents @> '["worker","planner","mainagent","auto","pentest"]'::jsonb AND jsonb_array_length(agents)=5))`, key, readers); err != nil {
@@ -96,7 +96,7 @@ func (s *Server) seedFindingWorkflowTools() {
 	if _, err := s.m.pg.Exec(`UPDATE tools SET agents=$1::jsonb WHERE key='get_finding_traffic' AND system AND agents @> '["auto","reporter"]'::jsonb AND jsonb_array_length(agents)=2`, `["auto","reporter","worker","planner","mainagent","pentest"]`); err != nil {
 		return
 	}
-	// Replace the previous code default only; preserve customized binding lists.
+	// 이전 코드 기본값만 바꿉니다. 사용자가 바꾼 바인딩 목록은 유지합니다.
 	if _, err := s.m.pg.Exec(`UPDATE tools SET agents='["reporter"]'::jsonb WHERE key='bind_finding_traffic' AND system AND agents @> '["worker","planner","mainagent","auto","pentest"]'::jsonb AND jsonb_array_length(agents)=5`); err != nil {
 		return
 	}

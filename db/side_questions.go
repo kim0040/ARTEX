@@ -14,8 +14,8 @@ import (
 var ErrSideBusy = errors.New("현재 세션에 이미 사이드 질문이 답변 중이다")
 var ErrSideParentGone = errors.New("사이드 부모 세션이 삭제되었거나 보관되었다")
 
-// Lock the real parent before the side session, also covering soft task/intent
-// deletion. A delayed checkpoint cannot recreate data after archive cleanup.
+// 사이드 세션보다 먼저 진짜 부모를 잠근다. 작업·의도의 소프트 삭제도 포함한다.
+// 늦게 도착한 체크포인트가 보관 정리 뒤에 데이터를 다시 만들지 못하게 한다.
 func lockSideParent(ctx context.Context, tx *sql.Tx, p sidequestion.Parent) error {
 	var id int64
 	var err error
@@ -198,8 +198,8 @@ func (d *DB) StartSideRequest(ctx context.Context, s sidequestion.Snapshot, clie
 	return &e, true, tx.Commit()
 }
 
-// Conditional updates cannot resurrect deleted history or overwrite a terminal
-// cancellation with a late provider callback.
+// 조건부 갱신은 지운 기록을 되살리지 못하고, 늦게 온 provider 콜백이
+// 이미 끝난 취소를 덮어쓰지도 못한다.
 func (d *DB) UpdateSideRequest(ctx context.Context, e sidequestion.Exchange) (bool, error) {
 	usage, err := json.Marshal(e.Usage)
 	if err != nil {
@@ -245,8 +245,8 @@ WHERE r.id=$1 AND r.generation=s.generation AND s.generation=$2 AND r.status='ru
 	return memory, err
 }
 
-// Unlike SideReplay's UI-era 20-row window, this cursor visits all unsummarized
-// successful exchanges, in bounded pages and only before the admitted request.
+// SideReplay의 UI용 20줄 창과 달리, 이 커서는 아직 요약하지 않은
+// 성공한 문답을 페이지 단위로 모두 본다. 입장한 요청보다 앞선 것만 본다.
 func (d *DB) SideReplayPage(ctx context.Context, e sidequestion.Exchange, after int64) ([]sidequestion.Exchange, error) {
 	rows, err := d.QueryContext(ctx, `SELECT `+sideCols+` FROM side_question_requests WHERE session_key=$1 AND generation=$2
 AND status='completed' AND ordinal>$3 AND ordinal<$4 ORDER BY ordinal LIMIT 20`, e.SessionKey, e.Generation, after, e.Ordinal)

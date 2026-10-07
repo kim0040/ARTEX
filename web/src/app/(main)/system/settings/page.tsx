@@ -108,21 +108,21 @@ export default function SystemSettingsPage() {
   }, [apply]);
 
   const toggleTraffic = (v: boolean) => {
-    setTrafficCapture(v); // optimistic
+    setTrafficCapture(v); // 먼저 화면에 반영
     setSaving(true);
     api
       .setSettings({ traffic_capture: v })
       .then(apply)
-      .catch(() => setTrafficCapture(!v)) // revert on failure
+      .catch(() => setTrafficCapture(!v)) // 실패하면 되돌림
       .finally(() => setSaving(false));
   };
 
   const toggleInjectPlanner = (v: boolean) => {
-    setInjectPlanner(v); // optimistic
+    setInjectPlanner(v); // 먼저 화면에 반영
     api
       .setSettings({ constraints_inject_planner: v })
       .then(apply)
-      .catch(() => setInjectPlanner(!v)); // revert on failure
+      .catch(() => setInjectPlanner(!v)); // 실패하면 되돌림
   };
 
   const toggleAgentTrafficBinding = (v: boolean) => {
@@ -142,15 +142,15 @@ export default function SystemSettingsPage() {
   };
 
   const toggleInjectWorker = (v: boolean) => {
-    setInjectWorker(v); // optimistic
+    setInjectWorker(v); // 먼저 화면에 반영
     api
       .setSettings({ constraints_inject_worker: v })
       .then(apply)
-      .catch(() => setInjectWorker(!v)); // revert on failure
+      .catch(() => setInjectWorker(!v)); // 실패하면 되돌림
   };
 
   const toggleNoaCompaction = (v: boolean) => {
-    setNoaCompaction(v); // optimistic
+    setNoaCompaction(v); // 먼저 화면에 반영
     api
       .setSettings({ noa_compaction: v })
       .then((s) => {
@@ -158,12 +158,12 @@ export default function SystemSettingsPage() {
         toast.success(v ? "noa 맥락 압축을 켰습니다(이후에 시작하는 실행부터 적용)" : "noa 맥락 압축을 껐습니다(내장 압축으로 복귀)");
       })
       .catch((e) => {
-        setNoaCompaction(!v); // revert on failure
+        setNoaCompaction(!v); // 실패하면 되돌림
         toast.error(`저장 실패:${(e as Error).message}`);
       });
   };
 
-  // Persist a web-search patch (enable and/or backend). Optimistic with refetch.
+  // 웹 검색 설정(켜기 또는 백엔드)을 저장합니다. 먼저 화면에 반영한 뒤 다시 읽습니다.
   const saveWebSearch = (patch: Partial<Settings>) => {
     setSaving(true);
     api
@@ -232,8 +232,8 @@ export default function SystemSettingsPage() {
       .finally(() => setSavingGlobalProxy(false));
   };
 
-  // Run a real "test" search ("test") against the CURRENT form values (backend +
-  // proxy + entered key), falling back to saved values server-side. Toasts result.
+  // 지금 폼에 있는 값(백엔드와
+  // 프록시, 입력한 키)으로 "test" 검색을 실제로 해 봅니다. 비어 있으면 서버에 저장된 값을 씁니다. 결과는 토스트로 알립니다.
   const runTest = () => {
     setTesting(true);
     api
@@ -251,7 +251,7 @@ export default function SystemSettingsPage() {
       .finally(() => setTesting(false));
   };
 
-  // brave-free selected but no key stored and none being entered → tool stays off.
+  // brave-free를 골랐는데 저장된 키도 입력 중인 키도 없으면 도구는 꺼진 채로 둡니다.
   const braveNeedsKey = webSearch && backend === "brave-free" && !braveKeySet;
 
   return (
@@ -454,7 +454,7 @@ export default function SystemSettingsPage() {
                 checked={webSearch}
                 disabled={!loaded || saving}
                 onCheckedChange={(v) => {
-                  setWebSearch(v); // optimistic
+                  setWebSearch(v); // 먼저 화면에 반영
                   saveWebSearch({ web_search_enabled: v });
                 }}
               />
@@ -467,7 +467,7 @@ export default function SystemSettingsPage() {
                   value={backend}
                   disabled={!loaded || saving}
                   onValueChange={(v) => {
-                    setBackend(v); // optimistic
+                    setBackend(v); // 먼저 화면에 반영
                     saveWebSearch({ web_search_backend: v });
                   }}
                 >

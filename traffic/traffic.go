@@ -78,117 +78,115 @@ CREATE TABLE IF NOT EXISTS blob_refs (
 CREATE INDEX IF NOT EXISTS idx_blob_refs_ex ON blob_refs(exchange_id);
 `
 
-// ftsSchema is applied separately from indexSchema: a driver build without FTS5
-// must degrade to "no full-text search" rather than take the whole recorder down.
-// trigram (not the default unicode61) is required for two reasons this subsystem
-// depends on: it matches arbitrary substrings — "ssw0r" finds "P@ssw0rd" — and it
-// handles CJK, which unicode61 does not tokenize. Contentless (content=”) keeps
-// only the index, since the text itself lives in exchange_bodies; contentless_delete
-// lets rows be deleted without replaying the original text back in.
+// ftsSchema 는 indexSchema 와 따로 적용합니다. FTS5 가 없는 드라이버는
+// 기록기 전체를 내리지 않고 "전문 검색 없음"으로 내려앉습니다.
+// 기본 unicode61 이 아니라 trigram 인 이유는 둘입니다. 아무 부분 문자열이나
+// 맞추고("ssw0r" 가 "P@ssw0rd" 를 찾음), unicode61 이 토큰으로 쪼개지 못하는
+// 한중일 글자도 다룹니다. content 가 비어 있으면 색인만 남습니다. 본문은
+// exchange_bodies 에 있기 때문입니다. contentless_delete 는 원래 글을 다시
+// 넣지 않고도 행을 지울 수 있게 합니다.
 const ftsSchema = `CREATE VIRTUAL TABLE IF NOT EXISTS ex_fts USING fts5(
   content, tokenize='trigram', content='', contentless_delete=1
 );`
 
 const (
-	// maxInlineBody is the cutoff between a body stored inline (SQLite column) and
-	// one spilled to the content-addressed blob store.
+	// maxInlineBody 는 본문을 SQLite 칸에 둘지, 내용 주소 blob 저장소로
+	// 넘길지 가르는 크기입니다.
 	maxInlineBody = 256 * 1024
-	// blobPreview is how much of a spilled body stays inline so readers can tell
-	// what it is (JSON shape, SQL dump header, ZIP magic) without fetching it.
+	// blobPreview 는 넘긴 본문 중 칸에 남겨 두는 양입니다. 파일을 다시 받지
+	// 않고도 JSON 모양, SQL 덤프 머리, ZIP 매직을 알아볼 수 있습니다.
 	blobPreview = 8 * 1024
-	// maxIndexBody caps a single body's contribution to the full-text index. Text
-	// is indexed in full below this; binary never reaches the index at all.
+	// maxIndexBody 는 본문 하나가 전문 색인에 넣는 상한입니다. 이보다 작은
+	// 글은 전부 색인하고, 이진 데이터는 색인에 넣지 않습니다.
 	maxIndexBody = 4 * 1024 * 1024
-	// minTrigram is the shortest term the trigram tokenizer can match; shorter
-	// queries fall back to metadata LIKE.
+	// minTrigram 은 trigram 토크나이저가 맞출 수 있는 가장 짧은 길이입니다.
+	// 더 짧으면 메타데이터 LIKE 로 돌아갑니다.
 	minTrigram = 3
-	// maxBlobRead caps one traffic_blob read so paging through a large body never
-	// floods the agent's context.
+	// maxBlobRead 는 traffic_blob 한 번이 읽는 상한입니다. 큰 본문을
+	// 넘기며 에이전트 컨텍스트를 채우지 않게 합니다.
 	maxBlobRead = 8 * 1024
-	// autoVacuumIncremental is SQLite's numeric value for auto_vacuum=incremental.
+	// autoVacuumIncremental 은 auto_vacuum=incremental 의 SQLite 숫자 값입니다.
 	autoVacuumIncremental = 2
-	// reclaimChunkPages bounds how much index space one locked step returns to the
-	// filesystem (pages are 4KiB, so ~32MB). Reclamation holds the write lock, and
-	// record() runs before go-mitmproxy replies to the client, so an unbounded
-	// pass would stall the very requests being recorded.
+	// reclaimChunkPages 는 잠금을 잡은 한 단계가 파일 시스템으로 되돌리는
+	// 색인 공간의 상한입니다(페이지 4KiB, 약 32MB). 회수는 쓰기 잠금을 잡고,
+	// record() 는 go-mitmproxy 가 클라이언트에 답하기 전에 돕니다. 한도를
+	// 없애면 기록 중인 요청이 멈춥니다.
 	reclaimChunkPages = 8192
-	// reclaimMergePages bounds the full-text merge done alongside each chunk.
-	// Deleting from a contentless_delete index only writes tombstones; merging is
-	// what discards them, and left undone the index grows on every deletion.
+	// reclaimMergePages 는 조각마다 같이 하는 전문 병합의 상한입니다.
+	// contentless_delete 색인에서 지우면 묘비 표시만 씁니다. 병합이 그것을
+	// 버리고, 안 하면 지울 때마다 색인이 커집니다.
 	reclaimMergePages = 256
-	// reclaimMergeSteps bounds how many merges one reclamation performs. fts5
-	// offers no way to ask whether an index has settled — its special INSERT
-	// registers a row change of its own, so change counting cannot tell a real
-	// merge from a no-op — so the budget is simply spent down, and whatever is
-	// left over falls to the next deletion.
+	// reclaimMergeSteps 는 회수 한 번이 하는 병합 횟수입니다. fts5 는 색인이
+	// 안정됐는지 묻는 방법이 없습니다. 특수 INSERT 가 스스로 행 변경을
+	// 기록해서, 변경 횟수로는 진짜 병합과 빈 동작을 가를 수 없습니다.
+	// 그래서 예산만 쓰고, 남은 것은 다음 삭제에 넘깁니다.
 	reclaimMergeSteps = 16
-	// reclaimMaxSteps backstops the loop. Both merging and incremental_vacuum are
-	// documented to stop making progress eventually, but a reclamation that cannot
-	// converge must give up rather than spin holding the write lock.
+	// reclaimMaxSteps 는 루프의 안전 장치입니다. 병합과 incremental_vacuum 은
+	// 결국 진행이 멈춘다고 문서에 있습니다. 수렴하지 않는 회수는 쓰기 잠금을
+	// 쥔 채 돌지 말고 포기해야 합니다.
 	reclaimMaxSteps = 512
-	// reclaimBudget caps one background reclamation. Deleting a busy host can free
-	// gigabytes, and the next deletion resumes wherever this one stopped.
+	// reclaimBudget 은 배경 회수 한 번의 시간 상한입니다. 바쁜 호스트를
+	// 지우면 기가바이트가 나올 수 있고, 다음 삭제는 여기서 멈춘 곳부터 이어갑니다.
 	reclaimBudget = 5 * time.Minute
 )
 
-// TrafficSearchDescription is persisted into the tool catalog for new and
-// upgraded installations. Keep it in the traffic package so the runtime tool
-// and the catalog migration cannot drift apart.
+// TrafficSearchDescription 은 새 설치와 업그레이드 설치의 도구 목록에 남습니다.
+// 실행 중 도구와 목록 이전이 어긋나지 않게 traffic 패키지에 둡니다.
+// 초보: 아래 문자열은 모델에게 가는 도구 설명이라 원문 그대로입니다.
 const TrafficSearchDescription = "查询记录代理已抓取的目标流量（必须指定 host；支持裸主机、主机:端口或完整 URL，可再按 URL 子串或正文关键词过滤）。指定端口时只返回该服务的流量，避免同一 IP 的不同端口串包。body_contains 会在已抓取的请求/响应头与正文中做全文搜索，支持任意子串和中文（至少 3 个字符）。仅返回极轻量索引(id/method/url/status/resp_len)，不含响应内容；结果非空后必须用 traffic_get 逐条核实请求/响应，再把确实支持当前漏洞的 ID 交给 bind_finding_traffic。默认只返回 3 条、每页最多 10 条；结果多时用 page 翻页。" // han-allow 업스트림 프롬프트·픽스처
 
-// Traffic runs the recording proxy and owns the file tree + index.
+// Traffic 는 기록 프록시를 돌리고 파일 트리와 색인을 가집니다.
+// 초보: 여기 데이터는 PostgreSQL 그래프가 아닙니다. 지워도 되는 HTTP 일지입니다.
 type Traffic struct {
 	dir   string
 	addr  string
 	db    *sql.DB
-	wmu   sync.Mutex // serializes record() vs DeleteHost (incl. blob GC)
+	wmu   sync.Mutex // record() 와 DeleteHost(blob 수거 포함)를 직렬화
 	seq   atomic.Int64
 	proxy *mproxy.Proxy
-	// fts reports whether the full-text index is available. False on a driver
-	// build without FTS5: recording and metadata search still work, body search
-	// degrades to unsupported rather than erroring.
+	// fts 는 전문 색인이 있는지입니다. FTS5 없는 빌드에서는 거짓입니다.
+	// 기록과 메타데이터 검색은 되고, 본문 검색만 미지원으로 내려앉으며 오류는 아닙니다.
 	fts bool
-	// reaping tracks background reclamation of legacy trees and index space, so
-	// shutdown and tests can wait for it instead of racing it.
+	// reaping 은 옛 트리와 색인 공간을 배경에서 회수 중인지 셉니다.
+	// 종료와 테스트가 그것과 경합하지 않고 기다리게 합니다.
 	reaping sync.WaitGroup
-	// incrementalVacuum reports whether the index can return freed pages to the
-	// filesystem on its own. False on a database created before this was the
-	// default: PRAGMA incremental_vacuum is a silent no-op there, so deletions
-	// reclaim nothing until an explicit full compaction converts the file.
+	// incrementalVacuum 는 색인이 빈 페이지를 스스로 파일 시스템에 되돌릴 수
+	// 있는지입니다. 이 기본값이 생기기 전에 만든 DB 에서는 거짓입니다.
+	// 거기서는 PRAGMA incremental_vacuum 이 조용히 아무 일도 안 해서,
+	// 파일 전체를 압축하기 전에는 지워도 공간이 안 돌아옵니다.
 	incrementalVacuum bool
-	// reclaiming keeps a single background reclamation in flight. Concurrent ones
-	// would only contend for wmu, never finish sooner.
+	// reclaiming 은 배경 회수를 한 번에 하나만 돌립니다. 동시에 여러 개면
+	// wmu 만 다투고 더 빨리 끝나지 않습니다.
 	reclaiming atomic.Bool
-	// closed is shut by Close so a reclamation abandons its remaining budget
-	// instead of holding shutdown open for minutes. Nil on the zero value, which
-	// stopping() treats as "not closing".
+	// closed 는 Close 가 닫습니다. 회수는 남은 예산을 버리고, 종료를
+	// 몇 분씩 붙잡지 않습니다. 영값이면 nil 이고, stopping() 은 그것을
+	// "닫는 중이 아님"으로 봅니다.
 	closed    chan struct{}
 	closeOnce sync.Once
-	// pass is the set of hosts whose MITM interception failed for a proxy/protocol
-	// reason; connections to them are tunneled transparently (fail-open) so the
-	// request still reaches the target — unrecorded — instead of being killed.
-	pass sync.Map // hostname(string) -> struct{}
-	// upstream is the global egress proxy every captured request is forwarded
-	// through (nil = dial targets directly). Both the intercepted and the
-	// transparent-passthrough paths honor it (go-mitmproxy's getUpstreamConn),
-	// so no host escapes it. Hot-swappable at runtime via SetUpstreamProxy.
+	// pass 는 MITM 이 프록시·프로토콜 문제로 깨진 호스트 집합입니다.
+	// 그 연결은 투명하게 터널(실패 시 열림)해서, 기록을 못 해도 요청은
+	// 대상에 도달하고 죽이지 않습니다.
+	pass sync.Map // 호스트 이름(string) → struct{}
+	// upstream 은 잡은 요청을 모두 넘기는 전역 출구 프록시입니다.
+	// nil 이면 대상에 직접 접속합니다. 가로챈 경로와 투명 통과 경로가
+	// 모두 이것을 따릅니다(go-mitmproxy 의 getUpstreamConn). 그래서
+	// 어떤 호스트도 빠져나가지 않습니다. SetUpstreamProxy 로 실행 중에 바꿉니다.
 	upstream atomic.Pointer[url.URL]
 }
 
-// Open initializes the traffic tree, blob store and SQLite index under dir.
+// Open 은 dir 아래에 트래픽 트리, blob 저장소, SQLite 색인을 준비합니다.
 func Open(dir, addr string) (*Traffic, error) {
 	for _, d := range []string{dir, filepath.Join(dir, "_index"), filepath.Join(dir, "_blobs"), filepath.Join(dir, "_ca")} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
 			return nil, err
 		}
 	}
-	// busy_timeout is a per-connection setting, so it belongs in the DSN rather
-	// than in a one-off Exec: the pool opens connections on demand, and an Exec
-	// only configures whichever one happened to serve it — leaving every other
-	// connection to fail instantly the moment a writer holds the database.
-	// The driver splits the DSN at the first '?', so a data directory containing
-	// one would silently name a different file; that path falls back to a bare
-	// DSN, where initIndex still applies the pragmas to its own connection.
+	// busy_timeout 은 연결마다의 설정이라, 한 번의 Exec 가 아니라 DSN 에 둡니다.
+	// 풀은 필요할 때 연결을 열고, Exec 는 그 요청을 처리한 연결만 바꿉니다.
+	// 그러면 다른 연결은 쓰는 쪽이 데이터베이스를 잡는 순간 바로 실패합니다.
+	// 드라이버는 DSN 을 첫 '?' 에서 자르므로, 경로에 '?' 가 있으면 다른 파일을
+	// 조용히 가리킵니다. 그 경로는 맨 DSN 으로 돌아가고, initIndex 가
+	// 자기 연결에 pragma 를 여전히 적용합니다.
 	index := filepath.Join(dir, "_index", "index.sqlite")
 	dsn := index
 	if !strings.ContainsRune(index, '?') {
@@ -213,18 +211,17 @@ func Open(dir, addr string) (*Traffic, error) {
 		db.Close()
 		return nil, err
 	}
-	// Upstream selection. By default (no global egress proxy set) targets are
-	// dialed DIRECTLY: go-mitmproxy's own default upstream uses
-	// http.ProxyFromEnvironment, so an HTTP_PROXY/HTTPS_PROXY in the environment
-	// (a VPN/system proxy) would make it forward target requests through that
-	// external proxy — which can't reach the target → 502. Returning nil forces
-	// a direct dial. When a global egress proxy IS configured (SetUpstreamProxy),
-	// every captured request — intercepted AND transparently tunneled — is
-	// forwarded through it instead, so no host leaks the real source IP.
+	// 출구 선택. 전역 출구 프록시가 없으면 대상에 직접 접속합니다.
+	// go-mitmproxy 기본 출구는 http.ProxyFromEnvironment 라서, 환경의
+	// HTTP_PROXY/HTTPS_PROXY(VPN·시스템 프록시)가 있으면 대상 요청을 그
+	// 바깥 프록시로 넘깁니다. 그 프록시가 대상에 못 가면 502 가 됩니다.
+	// nil 을 돌려주면 직접 접속입니다. 전역 출구가 설정되면(SetUpstreamProxy)
+	// 잡은 요청은 가로챈 것이든 투명 터널이든 그쪽으로 넘깁니다.
+	// 그래서 어떤 호스트도 진짜 출발 IP 를 흘리지 않습니다.
 	p.SetUpstreamProxy(func(*http.Request) (*url.URL, error) { return t.upstream.Load(), nil })
-	// Fail-open: MITM every host by default, EXCEPT ones a prior request proved we
-	// can't intercept without breaking (see maybePassthrough). Those are tunneled
-	// transparently so the request still reaches the target instead of being killed.
+	// 실패 시 열림: 기본은 모든 호스트를 MITM 합니다. 다만 이전 요청이
+	// 깨지지 않고는 가로챌 수 없다고 보여 준 호스트는 예외입니다(maybePassthrough).
+	// 그 호스트는 투명 터널이라, 요청을 죽이지 않고 대상까지 보냅니다.
 	p.SetShouldInterceptRule(func(req *http.Request) bool {
 		_, tunnel := t.pass.Load(hostOnly(req.Host))
 		return !tunnel
@@ -234,21 +231,19 @@ func Open(dir, addr string) (*Traffic, error) {
 	return t, nil
 }
 
-// initIndex applies the schema on a single pinned connection. Pinning is what
-// makes auto_vacuum reliable: it can only be set while the database still holds
-// no tables, and only the VACUUM that follows writes it into the file header —
-// two steps a pooled *sql.DB is free to route to different connections, which
-// would silently drop the setting.
+// initIndex 는 하나의 고정 연결에 schema 를 적용합니다. 고정이 auto_vacuum 을
+// 믿게 합니다. 이 값은 테이블이 아직 없을 때만 정할 수 있고, 이어지는 VACUUM 이
+// 파일 헤더에 씁니다. 풀링된 *sql.DB 는 두 단계를 다른 연결로 보낼 수 있어,
+// 설정이 조용히 사라질 수 있습니다.
 //
-// auto_vacuum=incremental is what lets a deletion hand freed pages back to the
-// filesystem. Without it SQLite merely chains them onto its freelist, so the
-// index file never shrinks no matter how much traffic is deleted — and since
-// every body below maxInlineBody lives in that file, plus a trigram index
-// roughly twice the size of the text it covers, a capture-heavy install ends up
-// holding gigabytes for traffic it no longer has. On a database that already has
-// tables the pragma is a documented no-op, so installs created before this keep
-// auto_vacuum=0 until a full compaction converts the file; incrementalVacuum
-// records that so reclaim can say so instead of pretending to reclaim.
+// auto_vacuum=incremental 이 있어야 삭제가 빈 페이지를 파일 시스템으로
+// 되돌립니다. 없으면 SQLite 는 프리리스트에만 매달아서, 트래픽을 아무리
+// 지워도 색인 파일은 줄지 않습니다. maxInlineBody 보다 작은 본문이 그 파일에
+// 있고, trigram 색인은 글의 약 두 배라, 캡처가 많은 설치는 이미 없는
+// 트래픽을 위해 기가바이트를 붙잡습니다. 테이블이 이미 있으면 이 pragma 는
+// 문서상 아무 일도 안 합니다. 그 전에 만든 설치는 전체 압축으로 바꾸기 전까지
+// auto_vacuum=0 입니다. incrementalVacuum 가 그 사실을 기억해서, 회수가
+// 공간을 되돌리는 척하지 않게 합니다.
 func (t *Traffic) initIndex() error {
 	ctx := context.Background()
 	conn, err := t.db.Conn(ctx)
@@ -256,9 +251,8 @@ func (t *Traffic) initIndex() error {
 		return err
 	}
 	defer conn.Close()
-	// Re-applied rather than left to the DSN so the bare-DSN fallback in Open is
-	// still correct: journal_mode persists in the file header, which is what every
-	// later connection reads.
+	// DSN 에만 맡기지 않고 다시 적용합니다. Open 의 맨 DSN 우회로도 맞으려면
+	// 그렇습니다. journal_mode 는 파일 헤더에 남고, 이후 연결은 그것을 읽습니다.
 	for _, p := range []string{`PRAGMA journal_mode=WAL`, `PRAGMA busy_timeout=5000`} {
 		if _, err := conn.ExecContext(ctx, p); err != nil {
 			return err
@@ -294,8 +288,8 @@ func (t *Traffic) initIndex() error {
 	return nil
 }
 
-// hostOnly strips an optional :port, so passthrough keys match whether the host
-// arrives as "example.com:443" (CONNECT) or "example.com" (request URL).
+// hostOnly 는 선택적인 :포트를 뺍니다. 통과 키가 "example.com:443"(CONNECT) 이든
+// "example.com"(요청 URL) 이든 같게 맞춥니다.
 func hostOnly(hostport string) string {
 	if h, _, err := net.SplitHostPort(hostport); err == nil {
 		return h
@@ -303,8 +297,8 @@ func hostOnly(hostport string) string {
 	return hostport
 }
 
-// ProxyAddr returns the address workers should set as HTTP(S)_PROXY. A bare
-// ":port" means "bind all interfaces" (legacy default), so map it to loopback.
+// ProxyAddr 는 워커가 HTTP(S)_PROXY 로 넣을 주소입니다. 맨 ":포트" 는
+// "모든 인터페이스에 바인드"(예전 기본값)라, 루프백으로 바꿉니다.
 func (t *Traffic) ProxyAddr() string {
 	if strings.HasPrefix(t.addr, ":") {
 		return "http://127.0.0.1" + t.addr
@@ -312,11 +306,11 @@ func (t *Traffic) ProxyAddr() string {
 	return "http://" + t.addr
 }
 
-// SetUpstreamProxy points every captured request at a global egress proxy
-// (http/https/socks5, optional user:pass in the URL). An empty raw string clears
-// it, restoring direct dialing. The change is atomic and takes effect on the next
-// connection — no restart, no proxy rebuild. go-mitmproxy dials all three schemes
-// itself, so socks5 works uniformly here regardless of the target tool.
+// SetUpstreamProxy 는 잡은 요청을 모두 전역 출구 프록시로 보냅니다
+// (http/https/socks5, URL 에 user:pass 가능). 빈 문자열은 지우고 직접 접속으로
+// 돌아갑니다. 바뀜은 원자적이고 다음 연결부터 적용됩니다. 재시작이나 프록시
+// 재조립은 없습니다. go-mitmproxy 가 세 스킴을 직접 다이얼하므로, 대상 도구와
+// 상관없이 socks5 가 여기서 같이 동작합니다.
 func (t *Traffic) SetUpstreamProxy(raw string) error {
 	if strings.TrimSpace(raw) == "" {
 		t.upstream.Store(nil)
@@ -330,9 +324,9 @@ func (t *Traffic) SetUpstreamProxy(raw string) error {
 	return nil
 }
 
-// ValidateProxyURL parses and checks a proxy URL (http/https/socks5, optional
-// user:pass), returning the parsed URL. Exposed so callers can validate a global
-// proxy before persisting it even when the traffic proxy itself is disabled.
+// ValidateProxyURL 은 프록시 URL 을 해석하고 검사합니다(http/https/socks5,
+// user:pass 가능). 해석된 URL 을 돌려줍니다. 기록 프록시가 꺼져 있어도
+// 저장하기 전에 전역 프록시를 검사할 수 있게 열어 둡니다.
 func ValidateProxyURL(raw string) (*url.URL, error) {
 	raw = strings.TrimSpace(raw)
 	u, err := url.Parse(raw)
@@ -352,20 +346,19 @@ func ValidateProxyURL(raw string) (*url.URL, error) {
 	return u, nil
 }
 
-// CACertPath returns the PEM CA cert clients must trust to verify HTTPS through
-// the MITM proxy (go-mitmproxy writes it here on first start).
+// CACertPath 는 클라이언트가 MITM 프록시의 HTTPS 를 믿으려면 신뢰할 PEM CA
+// 인증서 경로입니다. go-mitmproxy 가 첫 기동 때 여기에 씁니다.
 func (t *Traffic) CACertPath() string {
 	return filepath.Join(t.dir, "_ca", "mitmproxy-ca-cert.pem")
 }
 
-// Start runs the proxy (blocking); run in a goroutine.
+// Start 는 프록시를 돌립니다. 호출을 막으므로 고루틴에서 실행하세요.
 func (t *Traffic) Start() error { return t.proxy.Start() }
 
-// Close waits for background tree reclamation to finish before closing the
-// index, so shutdown never leaves a goroutine unlinking files out from under a
-// removed data directory. Index-space reclamation is signalled to stop first:
-// it holds a whole minutes-long budget, and finishing it is never worth delaying
-// shutdown for — the next deletion resumes it.
+// Close 는 배경의 트리 회수가 끝난 뒤에 색인을 닫습니다. 종료가 데이터
+// 디렉터리를 지운 뒤에도 파일을 푸는 고루틴을 남기지 않게 합니다. 색인 공간
+// 회수는 먼저 멈추라고 알립니다. 그 예산은 몇 분이고, 그것을 끝내려고 종료를
+// 미룰 가치는 없습니다. 다음 삭제가 이어서 합니다.
 func (t *Traffic) Close() error {
 	if t.closed != nil {
 		t.closeOnce.Do(func() { close(t.closed) })
@@ -374,8 +367,8 @@ func (t *Traffic) Close() error {
 	return t.db.Close()
 }
 
-// stopping reports whether Close has been called. A nil channel (the zero value)
-// is never ready, so this reads as "not closing" without a separate guard.
+// stopping 은 Close 가 호출됐는지 보고합니다. nil 채널(영값)은 준비되지
+// 않으므로, 별도 가드 없이 "닫는 중이 아님"으로 읽힙니다.
 func (t *Traffic) stopping() bool {
 	select {
 	case <-t.closed:
@@ -386,7 +379,7 @@ func (t *Traffic) stopping() bool {
 }
 func (t *Traffic) DB() *sql.DB { return t.db }
 
-// sink is the go-mitmproxy addon that records completed exchanges.
+// sink 는 끝난 교환을 기록하는 go-mitmproxy 애드온입니다.
 type sink struct {
 	mproxy.BaseAddon
 	t *Traffic
@@ -399,15 +392,15 @@ func (s *sink) Response(f *mproxy.Flow) {
 	s.t.record(f)
 }
 
-// RequestError fires when a request through an established MITM tunnel fails. If
-// the failure looks proxy/protocol-caused (h2 quirks, HEAD-with-body, protocol
-// errors) — not a plain target-unreachable error — we flag the host for
-// transparent passthrough so future requests to it succeed instead of dying.
+// RequestError 는 이미 맺은 MITM 터널의 요청이 실패할 때 돕니다. 실패가
+// 프록시·프로토콜 때문이면(h2 quirk, 본문 있는 HEAD, 프로토콜 오류) —
+// 대상에 닿지 않는 평범한 오류가 아니면 — 그 호스트를 투명 통과로 표시합니다.
+// 다음 요청은 죽지 않고 성공합니다.
 func (s *sink) RequestError(f *mproxy.Flow, err error) { s.t.maybePassthrough(f, err) }
 
-// maybePassthrough marks a host to be tunneled transparently on the next
-// connection, but only for errors the proxy itself caused — a target that is
-// simply down/filtered would fail without us too, and must stay MITM'd+recorded.
+// maybePassthrough 는 다음 연결에서 그 호스트를 투명 터널로 표시합니다.
+// 프록시 자신이 일으킨 오류만 해당합니다. 대상이 그냥 죽거나 걸러진 것은
+// 우리가 없어도 실패하므로, MITM 과 기록을 유지해야 합니다.
 func (t *Traffic) maybePassthrough(f *mproxy.Flow, err error) {
 	if err == nil || f == nil || f.Request == nil || f.Request.URL == nil || !proxyCausedErr(err) {
 		return
@@ -421,8 +414,8 @@ func (t *Traffic) maybePassthrough(f *mproxy.Flow, err error) {
 	}
 }
 
-// proxyCausedErr reports whether err indicates the interception layer (not the
-// target) is at fault — HTTP/2 handling, HEAD-with-body, or a protocol violation.
+// proxyCausedErr 는 오류가 대상이 아니라 가로채기 층 때문인지 보고합니다.
+// HTTP/2 처리, 본문 있는 HEAD, 프로토콜 위반입니다.
 func proxyCausedErr(err error) bool {
 	s := strings.ToLower(err.Error())
 	for _, p := range []string{"head request", "http2", "http/2", "protocol error", "protocol_error", "malformed"} {
@@ -433,12 +426,12 @@ func proxyCausedErr(err error) bool {
 	return false
 }
 
-// record persists one exchange entirely in SQLite: metadata, bodies and the
-// full-text index. Nothing is written to a per-request directory — only bodies
-// above maxInlineBody spill to the content-addressed blob store.
+// record 는 교환 하나를 SQLite 에만 남깁니다. 메타데이터, 본문, 전문 색인입니다.
+// 요청마다 디렉터리를 만들지 않습니다. maxInlineBody 를 넘는 본문만
+// 내용 주소 blob 저장소로 넘깁니다.
 func (t *Traffic) record(f *mproxy.Flow) {
-	// The write lock covers blob + index writes, so DeleteHost (and its blob GC)
-	// can run under the same lock without racing a concurrent record.
+	// 쓰기 잠금이 blob 과 색인 쓰기를 덮습니다. DeleteHost(와 blob 수거)가
+	// 같은 잠금 아래에서, 동시에 도는 record 와 경합하지 않습니다.
 	t.wmu.Lock()
 	defer t.wmu.Unlock()
 	host := f.Request.URL.Hostname()
@@ -452,8 +445,8 @@ func (t *Traffic) record(f *mproxy.Flow) {
 	url := f.Request.URL.String()
 	reqHead := fmt.Sprintf("%s %s %s\n%s", method, f.Request.URL.RequestURI(), f.Request.Proto, requestHeaderLines(f.Request))
 	respHead := fmt.Sprintf("HTTP %d\n%s", f.Response.StatusCode, headerLines(f.Response.Header))
-	// Bodies are spilled before the transaction opens: blob writes are filesystem
-	// work and must not sit inside the SQLite write lock.
+	// 본문은 트랜잭션을 열기 전에 넘깁니다. blob 쓰기는 파일 시스템 일이라
+	// SQLite 쓰기 잠금 안에 두면 안 됩니다.
 	reqB := t.spill(f.Request.Body, f.Request.Header.Get("Content-Type"))
 	respB := t.spill(f.Response.Body, ct)
 
@@ -462,10 +455,10 @@ func (t *Traffic) record(f *mproxy.Flow) {
 		log.Printf("[traffic] %s 기록 실패(트랜잭션 시작): %v", url, err)
 		return
 	}
-	defer tx.Rollback() //nolint:errcheck // no-op once committed
+	defer tx.Rollback() //nolint:errcheck // 커밋된 뒤에는 아무 일도 없음
 
-	// path stays empty for db-resident exchanges; a non-empty path marks a legacy
-	// row whose bodies still live in the old on-disk tree (see Get).
+	// DB 에 있는 교환의 path 는 비웁니다. path 가 있으면 본문이 아직 옛
+	// 디스크 트리에 있는 레거시 행입니다(Get 을 보세요).
 	res, err := tx.Exec(`INSERT OR REPLACE INTO exchanges(id,ts,host,method,url_template,url,status,content_type,req_len,resp_len,path)
 VALUES(?,?,?,?,?,?,?,?,?,?,'')`,
 		id, now.Unix(), host, method, tmpl, url, f.Response.StatusCode, ct,
@@ -498,8 +491,8 @@ VALUES(?,?,?,?,?,?,?)`,
 	}
 
 	if t.fts {
-		// The index is fed from memory, so a body that spilled to _blobs is still
-		// fully searchable even though only its preview is stored inline.
+		// 색인은 메모리에서 채웁니다. _blobs 로 넘긴 본문도, 칸에는 미리보기만
+		// 있어도 전문 검색이 됩니다.
 		idx := strings.Join([]string{url, reqHead, reqB.index, respHead, respB.index}, "\n")
 		if _, err := tx.Exec(`INSERT INTO ex_fts(rowid,content) VALUES(?,?)`, rowid, idx); err != nil {
 			log.Printf("[traffic] %s 기록 실패(전문 인덱스 쓰기): %v", url, err)
@@ -512,20 +505,19 @@ VALUES(?,?,?,?,?,?,?)`,
 	}
 }
 
-// storedBody is one body after the inline/spill decision: inline is what goes in
-// the SQLite column (the whole body, or a preview when spilled), hash names the
-// blob when it spilled, and index is the text handed to FTS (empty for binary).
+// storedBody 는 칸에 둘지 넘길지 정한 뒤의 본문입니다. inline 은 SQLite 칸에
+// 넣는 값(본문 전체, 또는 넘겼을 때의 미리보기)입니다. hash 는 넘긴 blob 의
+// 이름이고, index 는 FTS 에 넘기는 글입니다. 이진이면 비웁니다.
 type storedBody struct {
 	inline []byte
 	hash   string
 	index  string
 }
 
-// spill decides where one body lives. Small bodies stay inline. Large ones are
-// written to the content-addressed store and keep a readable preview inline so a
-// reader can identify them without fetching the blob. Either way, text bodies
-// are handed to the full-text index in full (up to maxIndexBody) — indexing is
-// independent of where the bytes end up.
+// spill 은 본문을 어디에 둘지 정합니다. 작은 본문은 칸에 남습니다. 큰 본문은
+// 내용 주소 저장소에 쓰고, 알아볼 수 있는 미리보기만 칸에 남겨 blob 을
+// 다시 받지 않아도 되게 합니다. 어느 쪽이든 글 본문은 전문 색인에
+// 전부 넘깁니다(maxIndexBody 까지). 색인은 바이트가 어디에 있는지와 별개입니다.
 func (t *Traffic) spill(body []byte, contentType string) storedBody {
 	if len(body) == 0 {
 		return storedBody{}
@@ -543,8 +535,8 @@ func (t *Traffic) spill(body []byte, contentType string) storedBody {
 
 	sum := sha256.Sum256(body)
 	h := hex.EncodeToString(sum[:])
-	// One bucket level (256 buckets) is enough to keep any single directory small;
-	// the store only ever holds bodies above maxInlineBody, deduplicated by hash.
+	// 버킷 한 단계(256개)면 디렉터리 하나가 커지지 않습니다. 저장소는
+	// maxInlineBody 를 넘는 본문만, 해시로 중복을 없앤 채 둡니다.
 	blobDir := filepath.Join(t.dir, "_blobs", "sha256", h[:2])
 	if err := os.MkdirAll(blobDir, 0o755); err != nil {
 		log.Printf("[traffic] blob 디렉터리 만들기 실패: %v", err)
@@ -566,10 +558,10 @@ func (t *Traffic) spill(body []byte, contentType string) storedBody {
 	return sb
 }
 
-// binaryTypes are content-type prefixes whose bodies are never worth indexing or
-// previewing as text. Anything not listed is treated as text (with a NUL-byte
-// check as backstop), so unusual-but-searchable types like application/sql or a
-// bare text/* are not silently dropped from the index.
+// binaryTypes 는 글처럼 색인하거나 미리볼 가치가 없는 content-type 접두사입니다.
+// 목록에 없으면 글으로 봅니다(NUL 바이트 검사가 마지막 안전장치). 그래서
+// application/sql 이나 맨 text/* 처럼 드물지만 검색할 만한 타입이
+// 색인에서 조용히 빠지지 않습니다.
 var binaryTypes = []string{
 	"image/", "audio/", "video/", "font/",
 	"application/octet-stream", "application/zip", "application/gzip",
@@ -589,13 +581,13 @@ func isBinaryBody(contentType string, body []byte) bool {
 			return true
 		}
 	}
-	// Backstop for mislabeled or absent content types: real text does not carry
-	// NUL bytes, so a NUL in the head of the body means binary regardless.
+	// 잘못 붙었거나 없는 content-type 의 안전장치입니다. 진짜 글에는 NUL 이
+	// 없으므로, 본문 앞에 NUL 이 있으면 이진으로 봅니다.
 	return bytes.IndexByte(clipBytes(body, 512), 0) >= 0
 }
 
-// binaryTag describes a spilled binary body in one line, including the leading
-// magic bytes so a reader can recognize the format without downloading it.
+// binaryTag 는 넘긴 이진 본문을 한 줄로 적습니다. 앞의 매직 바이트를 넣어,
+// 파일을 받지 않고도 형식을 알아볼 수 있게 합니다.
 func binaryTag(contentType string, body []byte) string {
 	ct := strings.TrimSpace(contentType)
 	if ct == "" {
@@ -612,15 +604,15 @@ func clipBytes(b []byte, n int) []byte {
 	return b[:n]
 }
 
-// truncateUTF8 cuts b to at most n bytes without splitting a multi-byte rune,
-// so a preview never ends in half a CJK character.
+// truncateUTF8 는 여러 바이트 문자를 쪼개지 않고 b 를 최대 n 바이트로 자릅니다.
+// 미리보기가 한중일 글자 중간에서 끝나지 않게 합니다.
 func truncateUTF8(b []byte, n int) string {
 	if len(b) <= n {
 		return string(b)
 	}
 	b = b[:n]
-	// A rune is at most 4 bytes, so backing off 3 bytes always finds the boundary
-	// (unless the input was already invalid UTF-8, in which case we keep the cut).
+	// 룬은 최대 4바이트라, 3바이트만 뒤로 물라도 경계를 찾습니다.
+	// 입력이 이미 잘못된 UTF-8 이면 자른 그대로 둡니다.
 	for i := 0; i < utf8.UTFMax-1 && len(b) > 0; i++ {
 		if r, size := utf8.DecodeLastRune(b); r != utf8.RuneError || size != 1 {
 			break
@@ -650,9 +642,9 @@ func headerLines(h map[string][]string) string {
 	return b.String()
 }
 
-// requestHeaderLines restores the HTTP Host header, which net/http stores on
-// Request.Host rather than in Header. Keeping it in request.http makes the raw
-// capture complete and directly replayable.
+// requestHeaderLines 는 HTTP Host 헤더를 되돌립니다. net/http 는 그것을
+// Header 가 아니라 Request.Host 에 둡니다. request.http 에 남겨야 원문
+// 캡처가 완전하고 그대로 다시 보낼 수 있습니다.
 func requestHeaderLines(req *mproxy.Request) string {
 	headers := req.Header.Clone()
 	headers.Del("Host")
@@ -684,13 +676,12 @@ func sanitize(s string) string {
 
 var blobHashRe = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
-// blobPath locates a stored blob. Current writes use one bucket level; blobs
-// written before that change used two, so both layouts are probed rather than
-// migrated.
+// blobPath 는 저장된 blob 위치를 찾습니다. 지금 쓰기는 버킷 한 단계이고,
+// 그 전에 쓴 blob 은 두 단계였습니다. 옮기지 않고 두 배치를 모두 봅니다.
 func (t *Traffic) blobPath(hash string) (string, error) {
 	hash = strings.ToLower(strings.TrimSpace(hash))
-	// Validated as pure hex before touching the filesystem, so a crafted hash can
-	// never traverse out of the blob directory.
+	// 파일 시스템을 건드리기 전에 순수 16진수인지 확인합니다. 조작된 hash 가
+	// blob 디렉터리 밖으로 나가지 못하게 합니다.
 	if !blobHashRe.MatchString(hash) {
 		return "", fmt.Errorf("blob hash 가 올바르지 않습니다")
 	}
@@ -705,9 +696,9 @@ func (t *Traffic) blobPath(hash string) (string, error) {
 	return "", fmt.Errorf("blob %s 이 없습니다", hash)
 }
 
-// Blob opens a spilled body for streaming; the caller must close the file.
-// Streaming matters here: the driver exposes no incremental BLOB API, so keeping
-// large bodies on disk is what lets them be served without loading them whole.
+// Blob 은 넘긴 본문을 스트림으로 엽니다. 호출자가 파일을 닫아야 합니다.
+// 스트림이 필요한 이유: 드라이버에 조각 BLOB API 가 없어서, 큰 본문을
+// 디스크에 둬야 통째로 올리지 않고 내줄 수 있습니다.
 func (t *Traffic) Blob(hash string) (*os.File, int64, error) {
 	p, err := t.blobPath(hash)
 	if err != nil {
@@ -725,9 +716,9 @@ func (t *Traffic) Blob(hash string) (*os.File, int64, error) {
 	return f, st.Size(), nil
 }
 
-// BlobRange reads at most length bytes of a blob from offset, and reports the
-// blob's total size. Used by the agent tool to page through a large body without
-// pulling all of it into the model's context.
+// BlobRange 는 offset 부터 최대 length 바이트를 읽고, blob 전체 크기를
+// 함께 알립니다. 에이전트 도구가 큰 본문을 모델 컨텍스트에 전부 넣지 않고
+// 페이지로 보게 합니다.
 func (t *Traffic) BlobRange(hash string, offset, length int64) (data []byte, total int64, err error) {
 	f, size, err := t.Blob(hash)
 	if err != nil {
@@ -751,7 +742,7 @@ func (t *Traffic) BlobRange(hash string, offset, length int64) (data []byte, tot
 	return buf[:n], size, nil
 }
 
-// ExchangeMeta is one row of the index (returned by Search).
+// ExchangeMeta 는 색인 한 행입니다. Search 가 돌려줍니다.
 type ExchangeMeta struct {
 	ID          string `json:"id"`
 	TS          int64  `json:"ts"`
@@ -765,7 +756,7 @@ type ExchangeMeta struct {
 	Path        string `json:"path"`
 }
 
-// Search returns paged exchange metadata (never bodies).
+// Search 는 페이지로 나눈 교환 메타데이터를 돌려줍니다. 본문은 없습니다.
 func (t *Traffic) Search(host string, page, size int) ([]ExchangeMeta, error) {
 	if size <= 0 || size > 500 {
 		size = 100
@@ -794,10 +785,10 @@ func (t *Traffic) Search(host string, page, size int) ([]ExchangeMeta, error) {
 	return out, rows.Err()
 }
 
-// ftsFilter builds the SQL condition restricting rows to those whose indexed
-// text matches term. ok is false when full-text search cannot serve the term —
-// no FTS index on this build, or fewer than three characters, which the trigram
-// tokenizer cannot match — leaving callers to fall back to metadata matching.
+// ftsFilter 는 색인된 글이 term 과 맞는 행만 남기는 SQL 조건을 만듭니다.
+// ok 가 거짓이면 전문 검색이 그 단어를 처리할 수 없습니다. 이 빌드에 FTS
+// 색인이 없거나, trigram 이 못 맞추는 세 글자 미만입니다. 호출자는
+// 메타데이터 검색으로 돌아갑니다.
 func (t *Traffic) ftsFilter(term string) (cond string, arg any, ok bool) {
 	term = strings.TrimSpace(term)
 	if !t.fts || utf8.RuneCountInString(term) < minTrigram {
@@ -806,37 +797,35 @@ func (t *Traffic) ftsFilter(term string) (cond string, arg any, ok bool) {
 	return `rowid IN (SELECT rowid FROM ex_fts WHERE ex_fts MATCH ?)`, ftsQuote(term), true
 }
 
-// ftsQuote wraps a term as an FTS5 string literal so that punctuation and query
-// operators inside it (quotes, AND/OR/NEAR, *, ^) are matched literally instead
-// of being parsed as query syntax.
+// ftsQuote 는 단어를 FTS5 문자열 리터럴로 감쌉니다. 안의 문장부호와 질의
+// 연산자(따옴표, AND/OR/NEAR, *, ^)가 질의 문법이 아니라 글자 그대로 맞게 합니다.
 func ftsQuote(s string) string {
 	return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
 }
 
-// PageQuery bundles the optional filters and sort order for Page. Every filter
-// is combined with AND; an empty string skips that filter, and RespMin/RespMax
-// of -1 skip the response-size bounds. An empty Sort/Order defaults to
-// newest-first by timestamp.
+// PageQuery 는 Page 의 선택 필터와 정렬을 묶습니다. 필터는 모두 AND 입니다.
+// 빈 문자열은 그 필터를 건너뛰고, RespMin/RespMax 가 -1 이면 응답 크기
+// 한계를 건너뜁니다. Sort/Order 가 비면 시각 기준 최신이 먼저입니다.
 type PageQuery struct {
-	Host    string // host substring
-	Method  string // exact method (case-insensitive)
-	Query   string // broad search box: metadata columns OR captured text
-	Body    string // content box: captured request/response text only (full-text)
-	Path    string // url_template substring — the vulnerability's path
-	Status  string // exact code ("404") or class bucket ("4xx")
-	RespMin int64  // minimum resp_len, or -1 when unset
-	RespMax int64  // maximum resp_len, or -1 when unset
-	Sort    string // ts | status | resp_len (default ts)
-	Order   string // asc | desc (default desc)
+	Host    string // 호스트 부분 문자열
+	Method  string // 메서드 정확히. 대소문자 무시
+	Query   string // 넓은 검색: 메타데이터 칸 또는 잡은 글
+	Body    string // 본문 칸: 잡은 요청/응답 글만(전문)
+	Path    string // url_template 부분 문자열. 경로 필터
+	Status  string // 정확한 코드("404") 또는 묶음("4xx")
+	RespMin int64  // resp_len 하한. 없으면 -1
+	RespMax int64  // resp_len 상한. 없으면 -1
+	Sort    string // ts | status | resp_len. 기본 ts
+	Order   string // asc | desc. 기본 desc
 }
 
-// sortColumns whitelists the columns Page may order by, so the caller-supplied
-// Sort can never reach the SQL as anything but one of these fixed names.
+// sortColumns 는 Page 가 정렬할 수 있는 칸의 허용 목록입니다. 호출자가 준
+// Sort 가 이 고정 이름 외의 SQL 로 들어가지 못하게 합니다.
 var sortColumns = map[string]string{"ts": "ts", "status": "status", "resp_len": "resp_len"}
 
-// statusFilter turns a status token into a SQL condition: an exact code ("404")
-// matches that status, an "Nxx" class ("4xx") matches the whole hundreds band.
-// ok is false for an empty or unrecognized token.
+// statusFilter 는 상태 토큰을 SQL 조건으로 바꿉니다. 정확한 코드("404")는
+// 그 상태만, "Nxx" 묶음("4xx")은 그 백 단위 전체를 맞춥니다.
+// 비었거나 알아보지 못하는 토큰이면 ok 는 거짓입니다.
 func statusFilter(s string) (cond string, args []any, ok bool) {
 	s = strings.ToLower(strings.TrimSpace(s))
 	if s == "" {
@@ -852,13 +841,11 @@ func statusFilter(s string) (cond string, args []any, ok bool) {
 	return "", nil, false
 }
 
-// Page returns one page of exchange metadata for the traffic list, filtered by
-// the criteria in f (all optional, combined with AND) and ordered by the
-// requested column. Query is the broad search box (metadata columns OR, when the
-// term is long enough for the trigram index, captured request/response text);
-// Body narrows to exchanges whose captured text matches, via that same index.
-// Also returns the total number of rows matching the filter (for the UI's
-// pagination). Bodies are never included in the rows.
+// Page 는 트래픽 목록의 교환 메타데이터 한 페이지를 돌려줍니다. f 의 조건으로
+// 거르고(모두 선택, AND) 요청한 칸으로 정렬합니다. Query 는 넓은 검색칸입니다
+// (메타데이터 칸, 또는 단어가 trigram 색인에 맞을 만큼 길면 잡은 요청/응답 글).
+// Body 는 같은 색인으로, 잡은 글이 맞는 교환만 남깁니다. 필터에 맞는 전체
+// 행 수도 돌려줍니다(화면의 페이지 번호). 행에 본문은 넣지 않습니다.
 func (t *Traffic) Page(f PageQuery, page, size int) (rows []ExchangeMeta, total int, err error) {
 	if size <= 0 || size > 500 {
 		size = 100
@@ -898,18 +885,17 @@ func (t *Traffic) Page(f PageQuery, page, size int) (rows []ExchangeMeta, total 
 	if s := strings.TrimSpace(f.Query); s != "" {
 		like := "%" + s + "%"
 		const meta = "host LIKE ? OR url LIKE ? OR url_template LIKE ? OR method LIKE ? OR content_type LIKE ? OR CAST(status AS TEXT) LIKE ?"
-		// Metadata match OR full-text match: one search box, widest recall. Terms
-		// too short for trigram silently fall back to metadata only.
+		// 메타데이터 일치 또는 전문 일치. 검색칸 하나, 가장 넓게 찾습니다.
+		// trigram 에 짧은 단어는 조용히 메타데이터만 봅니다.
 		if cond, arg, ok := t.ftsFilter(s); ok {
 			add("(("+meta+") OR "+cond+")", like, like, like, like, like, like, arg)
 		} else {
 			add("("+meta+")", like, like, like, like, like, like)
 		}
 	}
-	// Body is the dedicated content box: it only searches captured request/response
-	// text, so it goes straight to the full-text index with no metadata fallback. A
-	// term too short for the trigram tokenizer cannot be served and is skipped
-	// rather than guessed at — the UI hints at the three-character minimum.
+	// Body 는 본문 전용 칸입니다. 잡은 요청/응답 글만 보므로 메타데이터
+	// 우회 없이 전문 색인으로 갑니다. trigram 이 못 맞추는 짧은 단어는
+	// 추측하지 않고 건너뜁니다. 화면이 세 글자 최소를 알려 줍니다.
 	if b := strings.TrimSpace(f.Body); b != "" {
 		if cond, arg, ok := t.ftsFilter(b); ok {
 			add(cond, arg)
@@ -926,8 +912,8 @@ func (t *Traffic) Page(f PageQuery, page, size int) (rows []ExchangeMeta, total 
 	if strings.EqualFold(strings.TrimSpace(f.Order), "asc") {
 		dir = "ASC"
 	}
-	// id embeds capture timestamp + sequence, so a trailing id DESC makes the order
-	// total and pagination stable even when the sort column has many ties.
+	// id 에 캡처 시각과 순번이 들어 있습니다. 뒤에 id DESC 를 붙이면
+	// 정렬 칸에 동점이 많아도 순서와 페이지가 흔들리지 않습니다.
 	sel := `SELECT id,ts,host,method,url_template,url,status,content_type,resp_len,path FROM exchanges` +
 		where + ` ORDER BY ` + col + ` ` + dir + `, id DESC LIMIT ? OFFSET ?`
 	qargs := append(append([]any{}, args...), size, page*size)
@@ -946,10 +932,9 @@ func (t *Traffic) Page(f PageQuery, page, size int) (rows []ExchangeMeta, total 
 	return rows, total, rs.Err()
 }
 
-// Get returns the full request/response text of one exchange. Bodies come from
-// the database; rows recorded before bodies moved into SQLite carry a non-empty
-// path and are read from the legacy on-disk tree instead, so history stays
-// readable without being migrated.
+// Get 은 교환 하나의 요청/응답 글 전체를 돌려줍니다. 본문은 데이터베이스에서
+// 옵니다. 본문이 SQLite 로 들어가기 전에 기록된 행은 path 가 비어 있지 않아
+// 옛 디스크 트리에서 읽습니다. 옮기지 않아도 과거 기록을 볼 수 있습니다.
 func (t *Traffic) Get(id string) (req, resp string, err error) {
 	var reqHead, respHead string
 	var reqBody, respBody []byte
@@ -977,9 +962,9 @@ FROM exchange_bodies b JOIN exchanges e ON e.id=b.id WHERE b.id=?`, id).
 	return string(rb), string(pb), nil
 }
 
-// assembleRaw rebuilds one side's raw HTTP text: head, blank line, body. A body
-// that spilled to the blob store shows its inline preview followed by the blob
-// pointer, so the reader can see what it is and fetch the rest by hash.
+// assembleRaw 는 한쪽의 원문 HTTP 를 다시 조립합니다. 머리, 빈 줄, 본문입니다.
+// blob 저장소로 넘긴 본문은 칸의 미리보기 뒤에 blob 포인터를 붙여,
+// 무엇인지 보고 나머지를 hash 로 가져오게 합니다.
 func assembleRaw(head string, body []byte, blob sql.NullString, total int) string {
 	var b strings.Builder
 	b.WriteString(head)
@@ -991,14 +976,14 @@ func assembleRaw(head string, body []byte, blob sql.NullString, total int) strin
 	return b.String()
 }
 
-// HostCount is one distinct recorded host plus its exchange count.
+// HostCount 는 기록된 호스트 하나와 그 교환 수입니다.
 type HostCount struct {
 	Host  string `json:"host"`
 	Count int    `json:"count"`
 }
 
-// Hosts returns distinct recorded hosts with exchange counts, most recent
-// activity first — powers the page's target picker.
+// Hosts 는 기록된 호스트와 교환 수를, 최근 활동이 먼저 오게 돌려줍니다.
+// 화면의 대상 고르기가 이것을 씁니다.
 func (t *Traffic) Hosts() ([]HostCount, error) {
 	rows, err := t.db.Query(`SELECT host, COUNT(*) AS n, MAX(ts) AS last FROM exchanges GROUP BY host ORDER BY last DESC`)
 	if err != nil {
@@ -1017,25 +1002,24 @@ func (t *Traffic) Hosts() ([]HostCount, error) {
 	return out, rows.Err()
 }
 
-// Count returns total recorded exchanges.
+// Count 는 기록된 교환의 총수입니다.
 func (t *Traffic) Count() (int, error) {
 	var n int
 	err := t.db.QueryRow(`SELECT COUNT(*) FROM exchanges`).Scan(&n)
 	return n, err
 }
 
-// DeleteHost removes every recorded exchange whose host contains the given
-// substring — mirroring the UI's host filter, so what you filtered is what gets
-// deleted. Everything lives in SQLite, so the deletion is one transaction across
-// the index, bodies, full-text index and blob references. Content-addressed
-// blobs are shared across hosts and so are garbage-collected afterwards rather
-// than deleted by host. Returns rows deleted.
+// DeleteHost 는 호스트에 그 부분 문자열이 들어 있는 교환을 모두 지웁니다.
+// 화면의 호스트 필터와 같아서, 거른 것이 지워집니다. 전부 SQLite 에 있으므로
+// 삭제는 색인, 본문, 전문 색인, blob 참조를 한 트랜잭션으로 지웁니다.
+// 내용 주소 blob 은 호스트끼리 공유하므로 호스트로 지우지 않고 나중에
+// 쓰레기를 수거합니다. 지운 행 수를 돌려줍니다.
 func (t *Traffic) DeleteHost(host string) (int64, error) {
 	like := "%" + host + "%"
 	t.wmu.Lock()
 	defer t.wmu.Unlock()
-	// Resolved before the rows go away: with a substring match, the index is the
-	// only record of which host directories the filter actually hit.
+	// 행이 사라지기 전에 디렉터리를 정합니다. 부분 문자열 일치에서는
+	// 색인만이 필터가 실제로 맞은 호스트 디렉터리를 압니다.
 	legacy, err := t.hostTrees(`host LIKE ?`, like)
 	if err != nil {
 		return 0, err
@@ -1044,14 +1028,14 @@ func (t *Traffic) DeleteHost(host string) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	defer tx.Rollback() //nolint:errcheck // no-op once committed
+	defer tx.Rollback() //nolint:errcheck // 커밋된 뒤에는 아무 일도 없음
 	n, err := t.deleteWhere(tx, `host LIKE ?`, like)
 	if err != nil {
 		return 0, err
 	}
-	// Staged before the commit so a filesystem failure can still abort the whole
-	// deletion, and before gcBlobs so reference collection sees the correct live
-	// set — a staged tree is invisible to it.
+	// 커밋 전에 임시로 옮겨, 파일 시스템 실패가 삭제 전체를 되돌리게 합니다.
+	// gcBlobs 보다 앞입니다. 참조 수거가 살아 있는 집합을 맞게 보게 합니다.
+	// 임시로 옮긴 트리는 수거가 보지 못합니다.
 	stageDir, moves, err := t.stageTrees(legacy)
 	if err != nil {
 		return 0, errors.Join(err, restoreTrees(stageDir, moves))
@@ -1069,20 +1053,18 @@ func (t *Traffic) DeleteHost(host string) (int64, error) {
 	return n, nil
 }
 
-// DeleteAll removes every recorded exchange — the page's clear-everything
-// action. It differs from the host-scoped deletions in two ways. It sweeps host
-// directories without consulting the index, because "clear everything" should
-// leave nothing behind and a directory whose rows are already gone would
-// otherwise survive. And it ends with a full compaction: VACUUM costs what it
-// keeps, so an emptied index is the one moment it is free, and it is also the
-// only way to switch on auto_vacuum for a database created without it.
+// DeleteAll 은 기록된 교환을 모두 지웁니다. 화면의 전부 지우기입니다.
+// 호스트 단위 삭제와 두 가지가 다릅니다. 색인을 보지 않고 호스트 디렉터리를
+// sweep 합니다. 전부 지우기는 아무것도 남기면 안 되고, 행이 이미 없는
+// 디렉터리가 살아남으면 안 되기 때문입니다. 그리고 전체 압축으로 끝냅니다.
+// VACUUM 비용은 남기는 내용에 비례하므로, 색인이 빈 순간이 공짜에 가깝습니다.
+// auto_vacuum 없이 만든 데이터베이스를 켜는 방법도 이것뿐입니다.
 //
-// Evidence already bound to a finding is untouched. Those bodies were copied
-// into the evidence store when they were bound, precisely so that disposable
-// traffic could be cleared without taking proof with it.
+// 발견에 이미 묶인 증거는 건드리지 않습니다. 그 본문은 묶을 때 증거
+// 저장소로 복사됐습니다. 지워도 되는 트래픽을 지워도 증거가 따라 사라지지
+// 않게 하려는 것입니다.
 //
-// Returns the number of exchanges deleted and how many bytes of index the
-// compaction handed back.
+// 지운 교환 수와, 압축이 되돌린 색인 바이트 수를 돌려줍니다.
 func (t *Traffic) DeleteAll() (deleted int64, reclaimed int64, err error) {
 	t.wmu.Lock()
 	defer t.wmu.Unlock()
@@ -1095,12 +1077,12 @@ func (t *Traffic) DeleteAll() (deleted int64, reclaimed int64, err error) {
 	if err != nil {
 		return 0, 0, err
 	}
-	defer tx.Rollback() //nolint:errcheck // no-op once committed
+	defer tx.Rollback() //nolint:errcheck // 커밋된 뒤에는 아무 일도 없음
 	if deleted, err = t.deleteWhere(tx, `1=1`); err != nil {
 		return 0, 0, err
 	}
-	// Staged before the commit so a filesystem failure can still abort the whole
-	// deletion, exactly as in DeleteHost.
+	// 커밋 전에 임시로 옮깁니다. 파일 시스템 실패가 삭제 전체를 되돌립니다.
+	// DeleteHost 와 같습니다.
 	stageDir, moves, err := t.stageTrees(trees)
 	if err != nil {
 		return 0, 0, errors.Join(err, restoreTrees(stageDir, moves))
@@ -1113,18 +1095,18 @@ func (t *Traffic) DeleteAll() (deleted int64, reclaimed int64, err error) {
 		return deleted, 0, err
 	}
 	if err := t.compactIndex(); err != nil {
-		// The deletion is already durable; compaction is disk space, not
-		// correctness, so it must not turn a completed purge into a failed one.
+		// 삭제는 이미 디스크에 남았습니다. 압축은 용량 문제이지 정확성이
+		// 아니므로, 끝난 비우기를 실패로 바꾸면 안 됩니다.
 		log.Printf("[traffic] 인덱스 압축 실패: %v", err)
 		return deleted, 0, nil
 	}
 	return deleted, before - t.indexBytes(), nil
 }
 
-// allHostTrees lists every host directory left by the pre-SQLite layout. Unlike
-// hostTrees it does not go through the index, so it also finds directories whose
-// rows are already gone. Underscore-prefixed entries are the store's own
-// (_index, _blobs, _ca, _delete_staging) and are never hosts.
+// allHostTrees 는 SQLite 이전 배치가 남긴 호스트 디렉터리를 모두 나열합니다.
+// hostTrees 와 달리 색인을 거치지 않아서, 행이 이미 없는 디렉터리도 찾습니다.
+// 밑줄로 시작하는 항목은 저장소 자신(_index, _blobs, _ca, _delete_staging)이라
+// 호스트가 아닙니다.
 func (t *Traffic) allHostTrees() ([]string, error) {
 	entries, err := os.ReadDir(t.dir)
 	if err != nil {
@@ -1139,13 +1121,12 @@ func (t *Traffic) allHostTrees() ([]string, error) {
 	return dirs, nil
 }
 
-// compactIndex rewrites the index into a fresh file, which is what actually
-// returns its pages to the filesystem. VACUUM's runtime and temporary space
-// scale with the content it keeps, so this is only reached right after DeleteAll
-// has emptied the index — never as a routine step. It doubles as the conversion
-// path for a database created before auto_vacuum=incremental: that pragma only
-// takes effect through the VACUUM that follows it, and both must run on the same
-// connection. Callers must hold wmu.
+// compactIndex 는 색인을 새 파일로 다시 씁니다. 그래야 페이지가 파일
+// 시스템으로 돌아갑니다. VACUUM 의 시간과 임시 공간은 남기는 내용에
+// 비례하므로, DeleteAll 이 색인을 비운 직후에만 도달합니다. 일상 단계는
+// 아닙니다. auto_vacuum=incremental 이전에 만든 데이터베이스를 바꾸는
+// 경로이기도 합니다. 그 pragma 는 뒤따르는 VACUUM 으로만 적용되고, 둘은
+// 같은 연결에서 돌아야 합니다. 호출자는 wmu 를 잡고 있어야 합니다.
 func (t *Traffic) compactIndex() error {
 	ctx := context.Background()
 	conn, err := t.db.Conn(ctx)
@@ -1154,8 +1135,8 @@ func (t *Traffic) compactIndex() error {
 	}
 	defer conn.Close()
 	if t.fts {
-		// A full merge, not the bounded one reclaim uses: with the index emptied
-		// there is nothing left to merge, so this only discards the tombstones.
+		// 회수가 쓰는 제한 병합이 아니라 전체 병합입니다. 색인이 비었으므로
+		// 합칠 내용이 없고, 묘비 표시만 버립니다.
 		if _, err := conn.ExecContext(ctx, `INSERT INTO ex_fts(ex_fts) VALUES('optimize')`); err != nil {
 			return fmt.Errorf("전문 인덱스 병합: %w", err)
 		}
@@ -1170,8 +1151,8 @@ func (t *Traffic) compactIndex() error {
 	if err := conn.QueryRowContext(ctx, `PRAGMA auto_vacuum`).Scan(&mode); err != nil {
 		return err
 	}
-	// A legacy database has just been converted, so later deletions can reclaim
-	// space on their own instead of waiting for another purge.
+	// 옛 데이터베이스를 방금 바꿨습니다. 이후 삭제는 또 한 번의 비우기를
+	// 기다리지 않고 스스로 공간을 되돌립니다.
 	t.incrementalVacuum = mode == autoVacuumIncremental
 	if _, err := conn.ExecContext(ctx, `PRAGMA wal_checkpoint(TRUNCATE)`); err != nil {
 		return fmt.Errorf("WAL 자르기: %w", err)
@@ -1179,12 +1160,12 @@ func (t *Traffic) compactIndex() error {
 	return nil
 }
 
-// deleteWhere removes every trace of the exchanges matching the condition:
-// full-text index rows, bodies, blob references, and finally the index rows.
-// Order matters — each sub-select reads exchanges, so that table is emptied last.
+// deleteWhere 는 조건에 맞는 교환의 흔적을 모두 지웁니다. 전문 색인 행,
+// 본문, blob 참조, 마지막에 색인 행입니다. 순서가 중요합니다. 하위 SELECT 가
+// exchanges 를 읽으므로 그 테이블을 마지막에 비웁니다.
 func (t *Traffic) deleteWhere(tx *sql.Tx, where string, args ...any) (int64, error) {
 	if t.fts {
-		// ex_fts is contentless and addressed by rowid, hence the rowid sub-select.
+		// ex_fts 는 내용이 없고 rowid 로 가리킵니다. 그래서 rowid 하위 SELECT 입니다.
 		if _, err := tx.Exec(`DELETE FROM ex_fts WHERE rowid IN (SELECT rowid FROM exchanges WHERE `+where+`)`, args...); err != nil {
 			return 0, fmt.Errorf("전문 인덱스 삭제: %w", err)
 		}
@@ -1203,12 +1184,11 @@ func (t *Traffic) deleteWhere(tx *sql.Tx, where string, args ...any) (int64, err
 	return n, nil
 }
 
-// hostTrees returns the on-disk directory of every host matching the condition.
-// Exchanges recorded since bodies moved into SQLite have no directory at all, so
-// most of these paths simply will not exist — staging skips those. The lookup is
-// deliberately not restricted to rows with a path: a host whose index rows are
-// already gone can still have an orphaned directory, and deleting the host should
-// take that with it.
+// hostTrees 는 조건에 맞는 호스트의 디스크 디렉터리를 돌려줍니다.
+// 본문이 SQLite 로 들어간 뒤의 교환은 디렉터리가 없습니다. 그래서 이 경로
+// 대부분은 없고, 임시 옮기기는 그것을 건너뜁니다. 일부러 path 가 있는 행만
+// 보지 않습니다. 색인 행이 이미 없어도 고아 디렉터리가 남을 수 있고,
+// 호스트를 지우면 그것도 함께 가야 합니다.
 func (t *Traffic) hostTrees(where string, args ...any) ([]string, error) {
 	rows, err := t.db.Query(`SELECT DISTINCT host FROM exchanges WHERE `+where, args...)
 	if err != nil {
@@ -1246,12 +1226,11 @@ type hostDeleteStageMove struct {
 
 const hostDeleteStageJournalName = "journal.json"
 
-// stageTrees moves host directories aside onto the same filesystem. The rename is
-// atomic and instant, which buys two things the unlink cannot: the deletion stays
-// reversible until the transaction commits, and the tree stops being visible to
-// blob reference collection right away (legacyBlobRefs skips underscore-prefixed
-// directories, so anything under _delete_staging is already out of the live set).
-// An empty stageDir is returned when there was nothing to stage.
+// stageTrees 는 호스트 디렉터리를 같은 파일 시스템 옆으로 옮깁니다. rename 은
+// 원자적이고 즉시라서, unlink 가 못 하는 두 가지를 얻습니다. 트랜잭션이
+// 커밋되기 전까지 삭제를 되돌릴 수 있고, 트리가 blob 참조 수거에 바로
+// 안 보입니다(legacyBlobRefs 는 밑줄 디렉터리를 건너뛰므로 _delete_staging
+// 아래는 이미 살아 있는 집합 밖입니다). 옮길 것이 없으면 stageDir 은 빈 문자열입니다.
 func (t *Traffic) stageTrees(dirs []string) (stageDir string, moves []stagedTrafficPath, err error) {
 	return t.stageTreesForArchive(dirs, nil, 0, 0)
 }
@@ -1326,8 +1305,8 @@ func writeHostDeleteStageJournal(path string, journal hostDeleteStageJournal) er
 	return file.Close()
 }
 
-// restoreTrees puts staged directories back where they came from, newest move
-// first, and drops the staging directory once everything is home.
+// restoreTrees 는 임시로 옮긴 디렉터리를 원래 자리로 되돌립니다. 최근 이동이
+// 먼저이고, 모두 돌아오면 임시 디렉터리를 지웁니다.
 func restoreTrees(stageDir string, moves []stagedTrafficPath) error {
 	var errs []error
 	for i := len(moves) - 1; i >= 0; i-- {
@@ -1351,12 +1330,11 @@ func restoreTrees(stageDir string, moves []stagedTrafficPath) error {
 	return errors.Join(errs...)
 }
 
-// reapStage unlinks a committed staging directory in the background. This is the
-// step that used to stall the recorder: a legacy tree mirrors the URL path per
-// request and can hold hundreds of thousands of small files, and the whole unlink
-// ran while the write lock was held. The rows are already gone by now, so losing
-// this to a shutdown leaves garbage under _delete_staging, never inconsistent
-// state.
+// reapStage 는 커밋된 임시 디렉터리를 배경에서 지웁니다. 예전에는 이 단계가
+// 기록기를 멈췄습니다. 옛 트리는 요청마다 URL 경로를 그대로 둬서 작은 파일이
+// 수십만 개일 수 있고, unlink 전체가 쓰기 잠금을 잡은 채 돌았습니다. 행은
+// 이미 없습니다. 종료 때문에 이것을 잃으면 _delete_staging 아래 쓰레기가
+// 남을 뿐, 상태가 어긋나지는 않습니다.
 func (t *Traffic) reapStage(stageDir string) {
 	if stageDir == "" {
 		return
@@ -1368,11 +1346,11 @@ func (t *Traffic) reapStage(stageDir string) {
 	})
 }
 
-// DeleteHostsExact removes recorded exchanges for a set of EXACT hosts (the
-// batch path for the page's multi-select delete): index rows + each host's file
-// tree, then one blob-GC pass. Exact match — unlike DeleteHost's substring —
-// so picking "api.example.com" never sweeps "api.example.com.cn". Returns rows
-// deleted. Duplicate hosts are harmless (idempotent deletes, single tree pass).
+// DeleteHostsExact 는 정확히 그 호스트들의 교환을 지웁니다. 화면의 여러 개
+// 선택 삭제입니다. 색인 행과 호스트별 파일 트리, 그다음 blob 수거 한 번입니다.
+// DeleteHost 의 부분 문자열과 달리 정확 일치라, "api.example.com" 을 골라도
+// "api.example.com.cn" 은 쓸지 않습니다. 지운 행 수를 돌려줍니다.
+// 중복 호스트는 해가 없습니다. 삭제는 여러 번 해도 같고, 트리는 한 번만 봅니다.
 func (t *Traffic) DeleteHostsExact(hosts []string) (int64, error) {
 	stage, err := t.StageDeleteHostsExact(hosts)
 	if err != nil {
@@ -1385,12 +1363,12 @@ func (t *Traffic) DeleteHostsExact(hosts []string) (int64, error) {
 	return deleted, nil
 }
 
-// HostDeleteStage keeps the SQLite delete transaction open so a task deletion
-// can be coordinated with PostgreSQL: the traffic side is staged here and only
-// committed once the caller's own transaction has succeeded. The Traffic write
-// lock is held until Commit or Rollback, so no recorder can add rows or a blob
-// reference for a host that is mid-deletion. Rolling back is just a transaction
-// rollback now that nothing is moved on disk.
+// HostDeleteStage 는 SQLite 삭제 트랜잭션을 열어 둡니다. 작업 삭제를
+// PostgreSQL 과 맞추기 위해서입니다. 트래픽 쪽은 여기서 임시로 옮기고,
+// 호출자 트랜잭션이 성공한 뒤에만 커밋합니다. Commit 이나 Rollback 까지
+// Traffic 쓰기 잠금을 잡아서, 삭제 중인 호스트에 기록기가 행이나 blob
+// 참조를 더하지 못합니다. 디스크에서 옮긴 것이 없으면 되돌리기는
+// 트랜잭션 롤백만입니다.
 type HostDeleteStage struct {
 	traffic  *Traffic
 	tx       *sql.Tx
@@ -1400,7 +1378,7 @@ type HostDeleteStage struct {
 	done     bool
 }
 
-// Deleted reports the number of exchange rows selected by this stage.
+// Deleted 는 이 단계에서 고른 교환 행 수입니다.
 func (s *HostDeleteStage) Deleted() int64 {
 	if s == nil {
 		return 0
@@ -1408,15 +1386,15 @@ func (s *HostDeleteStage) Deleted() int64 {
 	return s.deleted
 }
 
-// StageDeleteHostsExact prepares a reversible exact-host deletion. Callers must
-// finish every successful stage with Commit or Rollback.
+// StageDeleteHostsExact 는 되돌릴 수 있는 정확 호스트 삭제를 준비합니다.
+// 성공한 단계는 Commit 이나 Rollback 으로 끝내야 합니다.
 func (t *Traffic) StageDeleteHostsExact(hosts []string) (*HostDeleteStage, error) {
 	return t.stageDeleteHostsExact(hosts, 0, 0)
 }
 
-// StageDeleteHostsExactForArchive ties the reversible traffic deletion to a
-// persistent task archive. Startup recovery uses archiveCommitted to decide
-// whether an interrupted stage must be completed or rolled back.
+// StageDeleteHostsExactForArchive 는 되돌릴 수 있는 트래픽 삭제를 영구
+// 작업 아카이브에 묶습니다. 시작 복구는 archiveCommitted 로, 끊긴 단계를
+// 끝낼지 되돌릴지 정합니다.
 func (t *Traffic) StageDeleteHostsExactForArchive(hosts []string, archiveID, taskID int64) (*HostDeleteStage, error) {
 	if archiveID <= 0 || taskID <= 0 {
 		return nil, errors.New("archive and task ids must be positive")
@@ -1449,9 +1427,9 @@ func (t *Traffic) stageDeleteHostsExact(hosts []string, archiveID, taskID int64)
 		unique = append(unique, host)
 	}
 
-	// Exact hosts are known up front, so their directories are derived directly
-	// rather than looked up: a host whose index rows are already gone can still
-	// own an orphaned directory that this deletion should take with it.
+	// 정확 호스트는 미리 알고 있으므로 디렉터리를 조회하지 않고 바로 만듭니다.
+	// 색인 행이 이미 없어도 고아 디렉터리가 남을 수 있고, 이 삭제가 그것을
+	// 함께 가져가야 합니다.
 	legacy := make([]string, 0, len(unique))
 	for _, h := range unique {
 		legacy = append(legacy, filepath.Join(t.dir, sanitize(h)))
@@ -1477,9 +1455,9 @@ func (t *Traffic) stageDeleteHostsExact(hosts []string, archiveID, taskID int64)
 	return stage, nil
 }
 
-// RecoverHostDeleteStages resolves filesystem moves left by a process exit.
-// SQLite rolls open transactions back on restart, while the supplied callback
-// identifies task archives whose PostgreSQL compaction already committed.
+// RecoverHostDeleteStages 는 프로세스가 죽으며 남긴 파일 이동을 정리합니다.
+// SQLite 는 재시작 때 열린 트랜잭션을 되돌리고, 넘긴 콜백은 PostgreSQL
+// 압축이 이미 커밋된 작업 아카이브를 가려 냅니다.
 func (t *Traffic) RecoverHostDeleteStages(archiveCommitted func(int64, int64) (bool, error)) error {
 	if t == nil {
 		return nil
@@ -1503,8 +1481,8 @@ func (t *Traffic) RecoverHostDeleteStages(archiveCommitted func(int64, int64) (b
 		stageDir := filepath.Join(parent, entry.Name())
 		raw, err := os.ReadFile(filepath.Join(stageDir, hostDeleteStageJournalName))
 		if os.IsNotExist(err) {
-			// Older versions did not persist enough information for lossless
-			// recovery. Keep the directory for manual inspection.
+			// 옛 버전은 손실 없이 복구할 만큼의 정보를 남기지 않았습니다.
+			// 디렉터리는 사람이 보게 그대로 둡니다.
 			continue
 		}
 		if err != nil {
@@ -1621,7 +1599,7 @@ func pathWithin(root, candidate string) bool {
 	return err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator))
 }
 
-// Rollback discards the staged deletion, leaving the traffic store untouched.
+// Rollback 은 임시 삭제를 버립니다. 트래픽 저장소는 그대로입니다.
 func (s *HostDeleteStage) Rollback() error {
 	if s == nil || s.done {
 		return nil
@@ -1647,23 +1625,23 @@ func (s *HostDeleteStage) rollbackLocked() error {
 	return errors.Join(errs...)
 }
 
-// Commit makes the staged deletion permanent. SQLite is committed only after
-// the caller has committed its PostgreSQL task deletion.
+// Commit 은 임시 삭제를 확정합니다. SQLite 는 호출자가 PostgreSQL 작업
+// 삭제를 커밋한 뒤에만 커밋됩니다.
 func (s *HostDeleteStage) Commit() error {
 	if s == nil || s.done {
 		return nil
 	}
 	if err := s.tx.Commit(); err != nil {
-		// A failed SQLite commit normally rolls the transaction back. Restore the
-		// trees so the traffic store remains internally consistent and recoverable.
+		// SQLite 커밋이 실패하면 보통 트랜잭션은 되돌아갑니다. 트리를 되돌려
+		// 트래픽 저장소가 안에서 맞고, 복구할 수 있게 합니다.
 		restoreErr := restoreTrees(s.stageDir, s.moves)
 		s.done = true
 		s.traffic.wmu.Unlock()
 		return errors.Join(fmt.Errorf("트래픽 인덱스 삭제 커밋: %w", err), restoreErr)
 	}
-	// Unlinking the staged trees is what used to hold the write lock for hours;
-	// it now runs in the background, while collection below only needs them to be
-	// out of the live tree — which the staging rename already guaranteed.
+	// 임시 트리를 지우는 일이 예전에는 쓰기 잠금을 몇 시간 잡았습니다.
+	// 지금은 배경에서 돌고, 아래 수거는 그것들이 살아 있는 트리 밖에만
+	// 있으면 됩니다. 임시 rename 이 이미 그것을 보장합니다.
 	s.traffic.reapStage(s.stageDir)
 	s.traffic.reclaim()
 	var errs []error
@@ -1675,9 +1653,9 @@ func (s *HostDeleteStage) Commit() error {
 	return errors.Join(errs...)
 }
 
-// indexBytes is the index's real footprint on disk: the database plus its
-// write-ahead log and shared-memory file, since those are what an operator sees
-// the data directory holding.
+// indexBytes 는 색인이 디스크에서 실제로 차지하는 크기입니다. 데이터베이스와
+// write-ahead 로그, 공유 메모리 파일입니다. 운영자가 데이터 디렉터리에서
+// 보는 것이 이것들이기 때문입니다.
 func (t *Traffic) indexBytes() int64 {
 	base := filepath.Join(t.dir, "_index", "index.sqlite")
 	var total int64
@@ -1689,31 +1667,30 @@ func (t *Traffic) indexBytes() int64 {
 	return total
 }
 
-// reclaim hands space freed by a deletion back to the filesystem. Deleting rows
-// only makes them invisible: SQLite chains their pages onto a freelist, and
-// deleting from the contentless_delete full-text index writes tombstones rather
-// than removing the postings they hide. Neither shrinks a single byte on disk,
-// and since bodies below maxInlineBody live in that same file, an install that
-// captures heavily ends up holding far more than the traffic it still has.
+// reclaim 은 삭제가 비운 공간을 파일 시스템으로 되돌립니다. 행을 지워도
+// 안 보이게만 됩니다. SQLite 는 그 페이지를 프리리스트에 매달고,
+// contentless_delete 전문 색인에서 지우면 숨긴 포스팅을 빼지 않고
+// 묘비 표시만 씁니다. 둘 다 디스크 바이트를 줄이지 않습니다. maxInlineBody
+// 보다 작은 본문이 같은 파일에 있으므로, 캡처가 많은 설치는 아직 있는
+// 트래픽보다 훨씬 많이 붙잡습니다.
 //
-// The work is done in the background, in bounded steps that drop the write lock
-// between them, because it is proportional to what was deleted — freeing several
-// gigabytes under one lock would stall record(), which go-mitmproxy calls before
-// it replies to the client, and so would stall the requests being recorded.
-// Safe to call with wmu held: the background pass simply waits for it.
+// 일은 배경에서, 단계마다 쓰기 잠금을 놓는 제한된 단계로 합니다. 지운
+// 양에 비례하기 때문입니다. 잠금 하나로 몇 기가바이트를 비우면 record() 가
+// 멈춥니다. go-mitmproxy 는 클라이언트에 답하기 전에 record() 를 부르므로
+// 기록 중인 요청도 멈춥니다. wmu 를 잡은 채 호출해도 안전합니다.
+// 배경 단계는 그 잠금을 기다릴 뿐입니다.
 //
-// Best-effort throughout. Failing to reclaim costs disk space, never
-// correctness, so errors are logged and the next deletion resumes the work.
+// 처음부터 최선을 다할 뿐입니다. 회수 실패는 디스크 공간만 비용이고
+// 정확성은 아니므로, 오류는 로그에 남기고 다음 삭제가 일을 이어갑니다.
 func (t *Traffic) reclaim() {
 	if !t.reclaiming.CompareAndSwap(false, true) {
-		return // one pass at a time; a second would only contend for the lock
+		return // 한 번에 한 단계. 둘째는 잠금만 다툼
 	}
 	t.reaping.Go(func() {
 		defer t.reclaiming.Store(false)
-		// One pinned connection for the whole pass: a long reclamation issues
-		// hundreds of statements, and letting the pool hand each one a different
-		// connection would both churn connections and split the freelist readings
-		// that decide when to stop away from the vacuum they measure.
+		// 단계 전체에 고정 연결 하나입니다. 긴 회수는 문장을 수백 개 내고,
+		// 풀이 매번 다른 연결을 주면 연결이 출렁이고, 언제 멈출지 정하는
+		// 프리리스트 읽기가 재는 vacuum 과 갈라집니다.
 		ctx := context.Background()
 		conn, err := t.db.Conn(ctx)
 		if err != nil {
@@ -1735,7 +1712,7 @@ func (t *Traffic) reclaim() {
 				break
 			}
 			if t.stopping() {
-				return // shutdown must not wait out the remaining budget
+				return // 종료가 남은 예산을 기다리면 안 됨
 			}
 			if step+1 >= reclaimMaxSteps {
 				log.Printf("[traffic] 인덱스 공간 회수를 끝내지 못했습니다(%d걸음 상한을 다 씀). 다음 삭제 때 이어 합니다", reclaimMaxSteps)
@@ -1746,9 +1723,9 @@ func (t *Traffic) reclaim() {
 				return
 			}
 		}
-		// Truncating the log is what makes the reclamation visible on disk: in WAL
-		// mode the freed pages are recorded there first, and a PASSIVE checkpoint
-		// would leave the log itself sitting at its high-water mark.
+		// 로그를 잘라야 회수가 디스크에 보입니다. WAL 모드에서는 빈 페이지가
+		// 먼저 거기에 기록되고, PASSIVE 체크포인트는 로그를 최고 수위에
+		// 그대로 둡니다.
 		t.wmu.Lock()
 		defer t.wmu.Unlock()
 		if _, err := conn.ExecContext(ctx, `PRAGMA wal_checkpoint(TRUNCATE)`); err != nil {
@@ -1757,13 +1734,13 @@ func (t *Traffic) reclaim() {
 	})
 }
 
-// reclaimChunk does one bounded step and reports whether it made progress, which
-// is what the caller loops on. merges carries the remaining full-text merge
-// budget and is spent down here. Callers must hold wmu.
+// reclaimChunk 는 제한된 단계 하나를 하고, 진행이 있었는지 알립니다.
+// 호출자가 그 값으로 루프를 돕니다. merges 는 남은 전문 병합 예산이고
+// 여기서 줄어듭니다. 호출자는 wmu 를 잡고 있어야 합니다.
 func (t *Traffic) reclaimChunk(ctx context.Context, conn *sql.Conn, merges *int) (bool, error) {
 	progressed := false
 	if t.fts && *merges > 0 {
-		// A negative rank is fts5's page budget for one incremental merge.
+		// 음수 rank 는 증분 병합 한 번의 fts5 페이지 예산입니다.
 		if _, err := conn.ExecContext(ctx, `INSERT INTO ex_fts(ex_fts, rank) VALUES('merge', ?)`, -reclaimMergePages); err != nil {
 			return false, fmt.Errorf("전문 인덱스 병합: %w", err)
 		}
@@ -1771,9 +1748,9 @@ func (t *Traffic) reclaimChunk(ctx context.Context, conn *sql.Conn, merges *int)
 		progressed = true
 	}
 	if !t.incrementalVacuum {
-		// incremental_vacuum is a silent no-op on a database created with
-		// auto_vacuum=0; only a full compaction can convert one. Merging the
-		// full-text index above still pays off, so stop here rather than earlier.
+		// auto_vacuum=0 으로 만든 데이터베이스에서 incremental_vacuum 은
+		// 조용히 아무 일도 안 합니다. 전체 압축만 바꿉니다. 위의 전문 색인
+		// 병합은 그래도 이득이라, 더 앞에서 멈추지 않고 여기서 멈춥니다.
 		return progressed, nil
 	}
 	var before, after int
@@ -1783,26 +1760,25 @@ func (t *Traffic) reclaimChunk(ctx context.Context, conn *sql.Conn, merges *int)
 	if before == 0 {
 		return progressed, nil
 	}
-	// The budget is a constant and PRAGMA arguments cannot be bound as parameters.
+	// 예산은 상수이고, PRAGMA 인자는 파라미터로 바인드할 수 없습니다.
 	if _, err := conn.ExecContext(ctx, fmt.Sprintf(`PRAGMA incremental_vacuum(%d)`, reclaimChunkPages)); err != nil {
 		return false, fmt.Errorf("인덱스 빈 페이지 회수: %w", err)
 	}
 	if err := conn.QueryRowContext(ctx, `PRAGMA freelist_count`).Scan(&after); err != nil {
 		return false, err
 	}
-	// Progress, not an empty freelist, is the right stopping condition:
-	// incremental_vacuum can only release pages it manages to move to the end of
-	// the file, so a residual freelist it cannot shrink is a normal outcome.
+	// 멈출 조건은 빈 프리리스트가 아니라 진행입니다. incremental_vacuum 은
+	// 파일 끝으로 옮긴 페이지만 놓을 수 있어서, 줄이지 못한 남은
+	// 프리리스트는 정상입니다.
 	return progressed || after < before, nil
 }
 
-// gcBlobs removes blobs that no remaining exchange references. Live references
-// come from blob_refs, so collection is one query plus a sweep of the blob
-// directory — no exchange body is ever read. Emptied bucket directories are
-// removed as well; the previous file-scanning collector deleted only files and
-// left the buckets behind permanently. Best-effort: walk errors only skip the
-// affected entries. Callers must hold wmu so this never races a concurrent
-// record() writing a fresh blob + reference.
+// gcBlobs 는 남은 교환이 가리키지 않는 blob 을 지웁니다. 살아 있는 참조는
+// blob_refs 에 있으므로, 수거는 질의 하나와 blob 디렉터리 순회입니다.
+// 교환 본문은 읽지 않습니다. 빈 버킷 디렉터리도 지웁니다. 예전 파일 스캔
+// 수거는 파일만 지우고 버킷을 영원히 남겼습니다. 최선을 다할 뿐입니다.
+// 순회 오류는 그 항목만 건너뜁니다. 호출자는 wmu 를 잡아, 동시에 도는
+// record() 가 새 blob 과 참조를 쓰는 것과 경합하지 않게 합니다.
 func (t *Traffic) gcBlobs() error {
 	refs := make(map[string]struct{})
 	rows, err := t.db.Query(`SELECT DISTINCT hash FROM blob_refs`)
@@ -1845,9 +1821,9 @@ func (t *Traffic) gcBlobs() error {
 	}); err != nil {
 		return err
 	}
-	// Deepest first, so a two-level bucket left by the old layout collapses fully.
-	// Remove fails harmlessly on a non-empty directory — exactly the guard needed
-	// to avoid deleting a bucket that still holds live blobs.
+	// 깊은 곳부터입니다. 옛 배치의 두 단계 버킷이 완전히 접히게 합니다.
+	// 비어 있지 않은 디렉터리에서 Remove 는 그냥 실패합니다. 살아 있는
+	// blob 이 있는 버킷을 지우지 않는 가드입니다.
 	sort.Slice(buckets, func(i, j int) bool { return len(buckets[i]) > len(buckets[j]) })
 	for _, b := range buckets {
 		os.Remove(b)
@@ -1855,11 +1831,11 @@ func (t *Traffic) gcBlobs() error {
 	return nil
 }
 
-// legacyBlobRefs adds hashes referenced by pre-SQLite exchanges, whose bodies are
-// still .http files on disk holding "@blob sha256:<hex>" pointers. Without this
-// the first collection after the upgrade would delete blobs that history still
-// points at. Skipped entirely once no legacy rows remain — the steady state — so
-// the tree walk is transitional rather than a permanent cost.
+// legacyBlobRefs 는 SQLite 이전 교환이 가리키는 hash 를 더합니다. 그 본문은
+// 아직 디스크의 .http 파일이고 "@blob sha256:<hex>" 포인터를 담습니다.
+// 이것이 없으면 업그레이드 뒤 첫 수거가 과거가 아직 가리키는 blob 을 지웁니다.
+// 레거시 행이 없으면 전부 건너뜁니다. 그게 정상 상태라, 트리 순회는
+// 영구 비용이 아니라 전환기 비용입니다.
 func (t *Traffic) legacyBlobRefs(refs map[string]struct{}) error {
 	var n int
 	if err := t.db.QueryRow(`SELECT COUNT(*) FROM exchanges WHERE path<>''`).Scan(&n); err != nil {
@@ -1871,10 +1847,10 @@ func (t *Traffic) legacyBlobRefs(refs map[string]struct{}) error {
 	blobRe := regexp.MustCompile(`@blob sha256:([0-9a-f]{64})`)
 	return filepath.WalkDir(t.dir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil || d == nil {
-			return nil // skip unreadable entries
+			return nil // 읽을 수 없는 항목은 건너뜀
 		}
 		if d.IsDir() {
-			// _blobs/_index/_ca never contain references; skip their subtrees.
+			// _blobs/_index/_ca 에는 참조가 없습니다. 그 하위 트리는 건너뜁니다.
 			if p != t.dir && strings.HasPrefix(d.Name(), "_") {
 				return filepath.SkipDir
 			}
@@ -1894,9 +1870,9 @@ func (t *Traffic) legacyBlobRefs(refs map[string]struct{}) error {
 	})
 }
 
-// query returns one page of exchange metadata filtered by host and/or a url
-// substring. Default page size is intentionally small (3) to keep tool results
-// lightweight and capped at 10; page is 0-based (page*limit offset).
+// query 는 호스트와 URL 부분 문자열로 거른 교환 메타데이터 한 페이지를
+// 돌려줍니다. 기본 페이지 크기는 일부러 작게(3) 해서 도구 결과를 가볍게
+// 두고, 상한은 10입니다. page 는 0부터입니다(page*limit 오프셋).
 func (t *Traffic) query(host, contains, bodyContains string, page, limit int) ([]ExchangeMeta, error) {
 	if limit <= 0 {
 		limit = 3
@@ -1917,9 +1893,9 @@ func (t *Traffic) query(host, contains, bodyContains string, page, limit int) ([
 		q += ` AND host=?`
 		args = append(args, hostName)
 		if port != "" {
-			// Recorded rows historically store URL.Hostname() (without the port),
-			// so constrain the original URL authority as a compatibility fallback.
-			// New and old captures therefore share the same search contract.
+			// 기록된 행은 예전부터 URL.Hostname()(포트 없음)을 저장합니다.
+			// 그래서 호환을 위해 원래 URL authority 도 조건에 넣습니다.
+			// 새 캡처와 옛 캡처가 같은 검색 계약을 공유합니다.
 			authority := net.JoinHostPort(hostName, port)
 			q += ` AND (url LIKE ? OR url LIKE ? OR url LIKE ?)`
 			args = append(args,
@@ -1962,10 +1938,9 @@ func (t *Traffic) query(host, contains, bodyContains string, page, limit int) ([
 	return out, rows.Err()
 }
 
-// normalizeSearchHost accepts the forms agents commonly have at hand while
-// keeping the stored host (URL.Hostname()) as the canonical host key. A port,
-// when supplied, is applied to the URL authority so captures from different
-// services on the same IP cannot be mixed.
+// normalizeSearchHost 는 에이전트가 보통 가진 형태를 받습니다. 저장된
+// 호스트(URL.Hostname())를 기준 키로 유지합니다. 포트가 있으면 URL
+// authority 에 적용해서, 같은 IP 의 다른 서비스 캡처가 섞이지 않게 합니다.
 func normalizeSearchHost(raw string) (host, port string, err error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -1998,8 +1973,8 @@ func normalizeSearchHost(raw string) (host, port string, err error) {
 	return strings.ToLower(host), port, nil
 }
 
-// Tools exposes traffic lookup to work agents so they query already-captured
-// traffic instead of re-curling the same resource (token + dedup win).
+// Tools 는 작업 에이전트에게 트래픽 조회를 엽니다. 같은 자원을 다시
+// 요청하지 않고 이미 잡은 트래픽을 보게 합니다. 토큰과 중복 제거에 이득입니다.
 func (t *Traffic) Tools() []actool.CoreTool {
 	allow := func(context.Context, json.RawMessage, permission.Context) permission.Decision {
 		return permission.Allowed()
@@ -2120,9 +2095,9 @@ func (t *Traffic) Tools() []actool.CoreTool {
 	return []actool.CoreTool{search, get, blob}
 }
 
-// SeedToolMetas returns the traffic tools built on a ZERO receiver, for seeding the
-// tools catalog (metadata only — Name/Description/InputSchema). The handlers close
-// over the nil receiver but are never invoked on this instance, so it is safe.
+// SeedToolMetas 는 영값 리시버로 만든 트래픽 도구를 돌려줍니다. 도구
+// 목록을 심을 때 씁니다(메타데이터만 — Name/Description/InputSchema).
+// 핸들러는 nil 리시버를 닫아 잡지만 이 인스턴스에서는 호출되지 않으므로 안전합니다.
 func SeedToolMetas() []actool.CoreTool { return (&Traffic{}).Tools() }
 
 func clip(s string, max int) string {
