@@ -104,7 +104,7 @@ func TestSideActualChatCheckpointToolResultAndTranscriptIsolation(t *testing.T) 
 			p.calls = 0
 			p.path = filepath.Join(dir, "nonexistent")
 			answer, err := (sidequestion.SideQuestionService{Provider: bound}).Answer(t.Context(), req, streaming, nil)
-			if err != nil || !answer.ToolUse || p.calls != 1 || !strings.Contains(answer.Text, "不能执行工具") { // han-allow 업스트림 프롬프트·픽스처
+			if err != nil || !answer.ToolUse || p.calls != 1 || !strings.Contains(answer.Text, "도구를 실행할 수 없습니다") {
 				t.Fatalf("tool denial %+v %v", answer, err)
 			}
 			after, err := os.ReadFile(store.MainPath("conv-987654"))

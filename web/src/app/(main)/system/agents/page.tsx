@@ -88,7 +88,7 @@ function AgentGridCard({
         </p>
         <div className="text-muted-foreground flex flex-wrap gap-1.5 text-[10px]">
           <span className="rounded border px-1.5 py-0.5">MCP {agent.mcp_count ?? 0}</span>
-          <span className="rounded border px-1.5 py-0.5">Skill {agent.skill_count ?? 0}</span>
+          <span className="rounded border px-1.5 py-0.5">스킬 {agent.skill_count ?? 0}</span>
           <span className="rounded border px-1.5 py-0.5">도구 {agent.tool_count ?? 0}</span>
         </div>
       </button>
@@ -105,7 +105,7 @@ function AgentGridCard({
           </AlertDialogTrigger>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Agent 삭제 "{agent.name}」？</AlertDialogTitle>
+              <AlertDialogTitle>「{agent.name}」 에이전트를 삭제할까요?</AlertDialogTitle>
               <AlertDialogDescription>
                 프롬프트, 변수, 표시 범위, 도구 연결도 함께 삭제됩니다. 이 작업은 되돌릴 수 없습니다.
               </AlertDialogDescription>
@@ -152,19 +152,19 @@ function CreateAgentDialog({ onCreated }: { onCreated: (key: string) => void }) 
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <Button size="sm">
-          <PlusIcon /> Agent 만들기
+          <PlusIcon /> 에이전트 만들기
         </Button>
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>사용자 지정 Agent 만들기</DialogTitle>
+          <DialogTitle>사용자 지정 에이전트 만들기</DialogTitle>
           <DialogDescription>
-            세션형 도우미를 만듭니다. key는 내부 식별자이며 만든 뒤 바꿀 수 없습니다. 이름과 설명은 구분용입니다.
+            세션형 도우미를 만듭니다. 키는 내부 식별자이며 만든 뒤 바꿀 수 없습니다. 이름과 설명은 구분용입니다.
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-2">
           <div className="grid gap-1.5">
-            <Label htmlFor="agent-key">Key</Label>
+            <Label htmlFor="agent-key">키</Label>
             <Input
               id="agent-key"
               placeholder="예: research_helper"
@@ -189,7 +189,7 @@ function CreateAgentDialog({ onCreated }: { onCreated: (key: string) => void }) 
             <Label htmlFor="agent-desc">설명</Label>
             <Textarea
               id="agent-desc"
-              placeholder="이 Agent가 무엇을 하는지 한 줄로 설명"
+              placeholder="이 에이전트가 무엇을 하는지 한 줄로 설명"
               rows={2}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
@@ -223,9 +223,9 @@ export default function AgentsPage() {
     <div className="flex flex-1 flex-col gap-4 md:gap-6">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight">Agent</h1>
+          <h1 className="text-xl font-semibold tracking-tight">에이전트</h1>
           <p className="text-muted-foreground text-sm">
-            내장 Agent의 프롬프트/설정, 그리고 사용자 지정 세션 Agent 만들기와 관리
+            내장 에이전트의 프롬프트/설정, 그리고 사용자 지정 세션 에이전트 만들기와 관리
           </p>
         </div>
         <CreateAgentDialog
@@ -238,12 +238,12 @@ export default function AgentsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Agent 목록</CardTitle>
+          <CardTitle>에이전트 목록</CardTitle>
           <CardDescription>총 {agents.length} 개</CardDescription>
         </CardHeader>
         <CardContent>
           {agents.length === 0 ? (
-            <p className="text-muted-foreground py-6 text-center text-sm">(아직 Agent 없음)</p>
+            <p className="text-muted-foreground py-6 text-center text-sm">(아직 에이전트 없음)</p>
           ) : (
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {agents.map((a) => (

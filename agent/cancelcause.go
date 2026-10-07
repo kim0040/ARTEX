@@ -31,7 +31,7 @@ func Causef(code, short, format string, args ...any) *AbortCause {
 var (
 	// 작업 전체의 실행 context.
 	AbortPausedByUser = cause("paused_by_user", "사용자가 작업을 일시정지했습니다",
-		"사용자가 작업 제어 인터페이스(POST /api/tasks/{id}/control, action=pause)로 작업을 일시정지했습니다. 이번 플래너/워커 실행은 능동적으로 취소됩니다. 실행 중이던 인텐트는 frontier(open)로 돌아가고, 작업을 재개하면 다시 집어 처음부터 실행합니다")
+		"사용자가 작업 제어 인터페이스(POST /api/tasks/{id}/control, action=pause)로 작업을 일시정지했습니다. 이번 플래너/워커 실행은 능동적으로 취소됩니다. 실행 중이던 인텐트는 frontier(open)로 돌아가고, 작업을 재개하면 다시 가져가며, 저장된 대화 기록이 있으면 이어서 실행합니다")
 	AbortPausedByOrchestrator = cause("paused_by_orchestrator", "오케스트레이션 에이전트가 작업을 일시정지했습니다",
 		"오케스트레이션 에이전트가 pause_task 도구로 이 작업을 일시정지했습니다. 이번 플래너/워커 실행은 능동적으로 취소됩니다. 실행 중이던 인텐트는 frontier(open)로 돌아가고, 재개하면 다시 실행합니다")
 	AbortTaskDeleted = cause("task_deleted", "작업이 삭제되었습니다",
@@ -47,7 +47,7 @@ var (
 	AbortKilledByPlanner = cause("killed_by_planner", "플래너가 이 인텐트를 종료했습니다",
 		"플래너가 kill_work로 이 인텐트를 능동적으로 종료했습니다. 보통 방향이 빗나갔거나 더 볼 가치가 없다는 뜻입니다. 인텐트는 stopped로 표시되고 자동으로 다시 집어가지 않습니다")
 	AbortWorkPausedByUser = cause("work_paused_by_user", "사용자가 이 워커 인텐트를 일시정지했습니다",
-		"사용자가 돌고 있던 워커를 일시정지했습니다. 이번 호출은 취소되고 인텐트는 paused가 됩니다. 이미 등록한 인텐트, 사실, 취약점, 활동 기록은 모두 남고, 재개하면 처음부터 다시 실행합니다")
+		"사용자가 돌고 있던 워커를 일시정지했습니다. 이번 호출은 취소되고 인텐트는 paused가 됩니다. 이미 등록한 인텐트, 사실, 취약점, 활동 기록은 모두 남고, 재개하면 저장된 대화 기록이 있을 때 이어서 실행합니다")
 	AbortWorkCancelledByUser = cause("work_cancelled_by_user", "사용자가 이 워커 인텐트를 삭제했습니다",
 		"사용자가 돌고 있던 워커를 삭제했습니다. 이번 호출은 취소됩니다. 워커가 쓰기 구간을 빠져나간 뒤, 서버는 사용자가 고른 삭제 방식대로 이 인텐트를 처리합니다. 가짜 삭제는 삭제됨으로만 표시하고 산출을 모두 남깁니다. 진짜 삭제는 이 인텐트와, 오직 이것만 받치고 있던 하위 노드를 함께 지웁니다")
 	AbortWorkFinished = cause("work_finished", "워커가 정상 종료되어 context를 해제했습니다",

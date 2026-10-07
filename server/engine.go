@@ -125,7 +125,7 @@ type Engine struct {
 
 	// 실행 하나 제어는 플래너가 워커를 끊고, 화면이 작업 전체를 멈추지 않고
 	// 의도 하나만 일시정지하거나 취소하게 합니다. done 채널은
-	// runWorkerStep이 쓰기를 멈추고 최종 상태를 확정한 뒤에만 닫힙니다.
+	// runWorkerStep이 쓰기를 멈추고 최종 상태를 확정한 뒤 결과 오류를 한 번 전달합니다.
 	workMu sync.Mutex
 	work   map[int64]*workExecution
 

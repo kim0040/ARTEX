@@ -1442,8 +1442,9 @@ func (m *Manager) SetTaskStatus(id, status string) error {
 // 작업 id 열이 없어서, 관련된 교환은 그 작업의 자산 행에 있는 호스트를
 // 정확히 맞춰 찾습니다. 파일은 DB 작업 전에 치워 둡니다. 트래픽은
 // PostgreSQL이 자산/앵커 쓰는 쪽을 막는 동안 치워 둡니다. 둘 다 DB
-// 실패 때 되돌리고, 확정된 뒤에만 없앱니다.
-// 초보용: 탐색 그래프의 작업을 지울 때, 파일과 기록 트래픽은 확정 뒤에만 없애고 실패하면 되돌립니다.
+// 커밋 전 DB 실패 때 되돌리고, DB 커밋 뒤 외부 파일·트래픽 정리를 확정합니다.
+// 초보용: DB 커밋 전 실패는 옮겨 둔 파일과 트래픽을 복원합니다. 커밋 후 정리가 실패하면
+// 작업 삭제는 이미 확정되어 있고 정리 오류를 돌려줍니다. 모든 실패가 전체 복원을 뜻하지 않습니다.
 func (m *Manager) DeleteTask(id string, opts DeleteTaskOptions) (DeleteTaskResult, error) {
 	result := DeleteTaskResult{Deleted: id}
 	n, err := strconv.ParseInt(id, 10, 64)

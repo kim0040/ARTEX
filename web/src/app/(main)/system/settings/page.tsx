@@ -73,9 +73,9 @@ export default function SystemSettingsPage() {
       .setSettings({ workers: n })
       .then((s) => {
         apply(s);
-        toast.success("동시 작업 agent 수를 저장했습니다(이후에 시작하는 작업부터 적용)");
+        toast.success("동시 작업 에이전트 수를 저장했습니다(이후 시작하는 작업부터 적용)");
       })
-      .catch((e) => toast.error("저장 실패:" + (e as Error).message))
+      .catch((e) => toast.error("저장 실패: " + (e as Error).message))
       .finally(() => setSavingWorkers(false));
   };
 
@@ -87,7 +87,7 @@ export default function SystemSettingsPage() {
         apply(s);
         toast.success("Python 인터프리터 설정을 저장했습니다");
       })
-      .catch((e) => toast.error("저장 실패:" + (e as Error).message))
+      .catch((e) => toast.error("저장 실패: " + (e as Error).message))
       .finally(() => setSaving(false));
   };
   const detectPython = () => {
@@ -132,11 +132,11 @@ export default function SystemSettingsPage() {
       .setSettings({ agent_traffic_binding: v })
       .then((s) => {
         apply(s);
-        toast.success(v ? "Agent 자동 트래픽 연결을 켰습니다" : "Agent 자동 트래픽 연결을 껐습니다");
+        toast.success(v ? "에이전트 자동 트래픽 연결을 켰습니다" : "에이전트 자동 트래픽 연결을 껐습니다");
       })
       .catch((e) => {
         setAgentTrafficBinding(!v);
-        toast.error(`저장 실패:${(e as Error).message}`);
+        toast.error(`저장 실패: ${(e as Error).message}`);
       })
       .finally(() => setSaving(false));
   };
@@ -159,7 +159,7 @@ export default function SystemSettingsPage() {
       })
       .catch((e) => {
         setNoaCompaction(!v); // 실패하면 되돌림
-        toast.error(`저장 실패:${(e as Error).message}`);
+        toast.error(`저장 실패: ${(e as Error).message}`);
       });
   };
 
@@ -173,7 +173,7 @@ export default function SystemSettingsPage() {
         toast.success("웹 검색 설정을 저장했습니다");
       })
       .catch((e) => {
-        toast.error("저장 실패:" + (e as Error).message);
+        toast.error("저장 실패: " + (e as Error).message);
         api
           .settings()
           .then(apply)
@@ -191,7 +191,7 @@ export default function SystemSettingsPage() {
         setBraveKeyInput("");
         toast.success("Brave API Key를 저장했습니다");
       })
-      .catch((e) => toast.error("저장 실패:" + (e as Error).message))
+      .catch((e) => toast.error("저장 실패: " + (e as Error).message))
       .finally(() => setSavingKey(false));
   };
 
@@ -204,7 +204,7 @@ export default function SystemSettingsPage() {
         setTavilyKeyInput("");
         toast.success("Tavily API Key를 저장했습니다");
       })
-      .catch((e) => toast.error("저장 실패:" + (e as Error).message))
+      .catch((e) => toast.error("저장 실패: " + (e as Error).message))
       .finally(() => setSavingTavilyKey(false));
   };
 
@@ -216,7 +216,7 @@ export default function SystemSettingsPage() {
         apply(s);
         toast.success(proxyInput.trim() ? "출구 프록시를 저장했습니다" : "출구 프록시를 지웠습니다(직접 연결로 변경)");
       })
-      .catch((e) => toast.error("저장 실패:" + (e as Error).message))
+      .catch((e) => toast.error("저장 실패: " + (e as Error).message))
       .finally(() => setSavingProxy(false));
   };
 
@@ -228,7 +228,7 @@ export default function SystemSettingsPage() {
         apply(s);
         toast.success(globalProxyInput.trim() ? "전역 프록시를 저장했습니다" : "전역 프록시를 지웠습니다(직접 연결로 변경)");
       })
-      .catch((e) => toast.error("저장 실패:" + (e as Error).message))
+      .catch((e) => toast.error("저장 실패: " + (e as Error).message))
       .finally(() => setSavingGlobalProxy(false));
   };
 
@@ -275,10 +275,9 @@ export default function SystemSettingsPage() {
               트래픽 캡처
             </CardTitle>
             <CardDescription>
-              켜면 모든 Agent의 HTTP 트래픽이 기록 프록시를 통해 전부 저장됩니다. Agent에게 traffic_search / traffic_get 도구와 프록시 설정을 넣고, 프롬프트에 프록시 설명을 포함합니다.
+              켜면 모든 에이전트의 HTTP 트래픽을 기록 프록시를 통해 저장합니다. 에이전트에 traffic_search / traffic_get 도구와 프록시 설정을 전달하고, 프롬프트에 프록시 설명을 포함합니다.
               <br />
-              끄면(기본값) 어떤 트래픽도 기록하지 않습니다: Agent
-              <b>하지 않습니다</b>프록시 설정과 트래픽 도구를 받고, 프롬프트도<b>포함하지 않음</b>프록시 관련 내용. 바꾸면 Agent를 바로 다시 만들어 적용합니다.
+              끄면(기본값) 트래픽을 기록하지 않습니다. 에이전트에 프록시 설정과 트래픽 도구를 전달하지 않고, 프롬프트에도 프록시 관련 내용을 포함하지 않습니다. 설정을 바꾸면 에이전트를 즉시 다시 만들어 적용합니다.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex items-center justify-between gap-4">
@@ -298,18 +297,18 @@ export default function SystemSettingsPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
               <RadioTowerIcon className="size-4" />
-              Agent 자동 트래픽 묶기
+              에이전트 자동 트래픽 묶기
             </CardTitle>
             <CardDescription id="agent-traffic-binding-description">
-              기본값은 꺼짐입니다. 켜면 발견이 저장될 때 실행되는 보고서 Agent가 기존 HTTP 요청/응답을 맞추고, 해당 트래픽을 연결한 뒤 보고서를 작성합니다.
-              <b>패킷과 추가 도구 호출을 보면 Token 사용량이 늘어납니다.</b>
+              기본값은 꺼짐입니다. 켜면 발견이 저장될 때 실행되는 보고서 에이전트가 기존 HTTP 요청/응답을 대조하고, 해당 트래픽을 연결한 뒤 보고서를 작성합니다.
+              <b>패킷 확인과 추가 도구 호출로 토큰 사용량이 늘어납니다.</b>
               <br />
-              TCP이거나 패킷을 잡지 못했거나 맞는 트래픽이 없어도 정상적으로 보고할 수 있습니다. 이 스위치는 트래픽 캡처, 사람이 묶기, 저장된 증거 보기에 영향을 주지 않습니다. 다음 라운드의 Agent부터 적용됩니다. 끄면 새로운 자동 묶기를 바로 거절합니다.
+              TCP이거나 패킷을 잡지 못했거나 일치하는 트래픽이 없어도 정상적으로 보고할 수 있습니다. 이 스위치는 트래픽 캡처, 수동 연결, 저장된 증거 보기에 영향을 주지 않습니다. 다음 라운드의 에이전트부터 적용됩니다. 끄면 새로운 자동 연결을 바로 거절합니다.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex items-center justify-between gap-4">
             <Label htmlFor="agent-traffic-binding" className="text-sm font-normal text-muted-foreground">
-              {agentTrafficBinding ? "켜짐 · Token 소비가 늘어남" : "꺼짐 · 사람이 계속 연결할 수 있음"}
+              {agentTrafficBinding ? "켜짐 · 토큰 소비가 늘어남" : "꺼짐 · 수동으로 계속 연결할 수 있음"}
             </Label>
             <Switch
               id="agent-traffic-binding"
@@ -328,13 +327,12 @@ export default function SystemSettingsPage() {
               전역 프록시
             </CardTitle>
             <CardDescription>
-              모든 Agent의<b>대상 트래픽</b>이 프록시로 외부에 나갑니다(출발 IP 숨김 / 경유 호스트). 지원 <b>http / https / socks5</b>, 포함 가능{" "}
-              <code>user:pass</code> 인증. 비워 두면 직접 연결.
+              모든 에이전트의 <b>대상 트래픽</b>이 프록시를 통해 외부로 나갑니다(출발 IP 숨김 / 경유 호스트). <b>http / https / socks5</b>를 지원하며,{' '}
+              <code>user:pass</code> 인증도 사용할 수 있습니다. 비워 두면 직접 연결됩니다.
               <br />
-              켜기<b>트래픽 캡처</b>일 때 이것은 기록 프록시의<b>업스트림</b>(트래픽은 그대로 전부 저장한 뒤, 이 프록시로 외부에 나갑니다). 캡처를 끄면, 바로
-              Agent의 bash / WebFetch 외부 통신에 넣습니다. 웹 검색 프록시, LLM 프록시와는 서로 독립입니다.
+              <b>트래픽 캡처</b>를 켜면 이 프록시는 기록 프록시의 <b>업스트림</b>으로 사용됩니다(트래픽을 모두 저장한 뒤 이 프록시를 통해 외부로 전송합니다). 캡처를 끄면 에이전트의 bash / WebFetch 외부 통신에 바로 사용합니다. 웹 검색 프록시와 LLM 프록시와는 독립적입니다.
               <br />
-              <b>안내</b>: socks5는<b>캡처 끄기</b>일 때는 각 명령줄 도구의 다음에 의존합니다 <code>ALL_PROXY</code> 지원(curl은 사용할 수 있고, 일부 도구는 무시할 수 있음). socks5를 주로 쓰면 트래픽 캡처를 켜는 것이 좋습니다. 이 경로는 MITM이 직접 연결하므로 도구는 알지 못하고 안정적으로 적용됩니다.
+              <b>안내</b>: 캡처를 끄면 socks5는 각 명령줄 도구가 <code>ALL_PROXY</code>를 지원하는지에 따라 동작합니다(curl은 사용할 수 있지만 일부 도구는 무시할 수 있습니다). socks5를 주로 쓰면 트래픽 캡처를 켜는 것이 좋습니다. 이 경로는 MITM이 직접 연결하므로 도구가 알지 못해도 안정적으로 적용됩니다.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-2">
@@ -355,7 +353,7 @@ export default function SystemSettingsPage() {
               </Button>
             </div>
             <p className="text-muted-foreground text-xs">
-              {globalProxyInput.trim() ? "설정됨 · 모든 대상 트래픽이 이 프록시로 외부에 나감" : "설정되지 않음 · 대상 트래픽이 밖으로 직접 연결"}
+              {globalProxyInput.trim() ? "설정됨 · 모든 대상 트래픽이 이 프록시를 통해 외부로 나감" : "설정되지 않음 · 대상 트래픽이 직접 연결됨"}
             </p>
           </CardContent>
         </Card>
@@ -367,17 +365,15 @@ export default function SystemSettingsPage() {
               동작 제한 넣기
             </CardTitle>
             <CardDescription>
-              켜면 각 작업의<b>동작 제한</b>(작업 개요의 「조작 제약」에서 관리하는 allow/deny 항목)을 해당 Agent
-              의 시스템 프롬프트에 넣어, 탐색 경계를 정합니다(예: 「현재 포트만 검사」「무차별 대입 금지」).
+              켜면 각 작업의 <b>동작 제한</b>(작업 개요의 「조작 제약」에서 관리하는 allow/deny 항목)을 해당 에이전트의 시스템 프롬프트에 넣어 탐색 범위를 정합니다(예: 「현재 포트만 검사」, 「무차별 대입 금지」).
               <br />
-              다음으로 넣는 것을 따로 조절할 수 있습니다 <b>플래너(planner)</b>및 <b>실행자(worker)</b>
-              . 기본값은 모두 켜짐입니다. 바꾸면 바로 적용됩니다(다음 라운드에 읽음). Agent를 다시 만들 필요가 없습니다. 끄면 그 Agent는 더 이상 제한을 보지 않습니다.
+              <b>플래너(planner)</b>와 <b>워커(worker)</b>에 제한을 전달할지 각각 설정할 수 있습니다. 기본값은 모두 켜짐입니다. 변경 사항은 다음 라운드부터 적용되며 에이전트를 다시 만들 필요는 없습니다. 끄면 해당 에이전트에는 더 이상 제한을 전달하지 않습니다.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
             <div className="flex items-center justify-between gap-4">
               <Label htmlFor="inject-planner" className="text-sm font-normal text-muted-foreground">
-                플래너(planner)에 넣기{injectPlanner ? " · 켜짐" : " · 꺼짐"}
+                플래너(planner)에 적용{injectPlanner ? " · 켜짐" : " · 꺼짐"}
               </Label>
               <Switch
                 id="inject-planner"
@@ -388,7 +384,7 @@ export default function SystemSettingsPage() {
             </div>
             <div className="flex items-center justify-between gap-4">
               <Label htmlFor="inject-worker" className="text-sm font-normal text-muted-foreground">
-                실행자(worker)에 넣기{injectWorker ? " · 켜짐" : " · 꺼짐"}
+                워커(worker)에 적용{injectWorker ? " · 켜짐" : " · 꺼짐"}
               </Label>
               <Switch
                 id="inject-worker"
@@ -407,11 +403,11 @@ export default function SystemSettingsPage() {
               실험 기능
             </CardTitle>
             <CardDescription>
-              아직 확인 중인 방식이며 기본값은 꺼짐입니다. Agent 행동을 바꾸거나 안정성에 영향을 줄 수 있으니, 영향을 이해한 뒤 사용하세요.
+              아직 검증 중인 기능이며 기본값은 꺼짐입니다. 에이전트 동작을 바꾸거나 안정성에 영향을 줄 수 있으므로, 영향을 이해한 뒤 사용하세요.
               <br />
-              <b>noa 컨텍스트 압축</b>: 모델이 긴 대화 기록을 스스로 압축합니다(norma v0.4.0). 켜면 플랫폼에 연결된 네 종류의 Agent(
-              <b>플래너 / 실행자 / 메인 에이전트 / 대화</b>)는 noa가 맥락을 맡아 내장 압축을 대신합니다.
-              압축 전 원문은 되짚을 수 있게 해당 작업의 작업 디렉터리에 보관됩니다. 전환은 바로 적용됩니다(이후 시작하는 실행부터이며, Agent를 다시 만들 필요는 없습니다).
+              <b>noa 컨텍스트 압축</b>: 모델이 긴 대화 기록을 스스로 압축합니다(norma v0.4.0). 켜면 플랫폼에 연결된 네 종류의 에이전트(
+              <b>플래너 / 워커 / 메인 에이전트 / 대화</b>)가 noa로 맥락을 관리하고 내장 압축을 대신합니다.
+              압축 전 원문은 되짚어 볼 수 있도록 해당 작업의 작업 디렉터리에 보관됩니다. 전환은 이후 시작하는 실행부터 적용되며 에이전트를 다시 만들 필요는 없습니다.
               끄면 곧바로 내장 압축으로 돌아갑니다.
             </CardDescription>
           </CardHeader>
@@ -435,19 +431,17 @@ export default function SystemSettingsPage() {
               웹 검색
             </CardTitle>
             <CardDescription>
-              이것은 웹 검색의<b>전체 스위치 + 출처 설정</b>. 켜야 다음에서 가능합니다<b>각 Agent의 설정</b>에서 쓸지 따로 고릅니다
-              <b>web_search</b>(제목/링크/요약만 돌려주고, 본문은 가져오지 않습니다. 가져오기는 WebFetch가 맡습니다). 웹 검색<b>거치지 않음</b>
-              기록 프록시. 트래픽 캡처와는 별개입니다.
+              웹 검색의 <b>전체 스위치와 출처 설정</b>입니다. 전체 스위치를 켜면 각 에이전트 설정에서 웹 검색 사용 여부를 따로 선택할 수 있습니다.
+              <b>web_search</b>는 제목·링크·요약만 반환하며 본문은 가져오지 않습니다. 본문 가져오기는 WebFetch가 담당합니다. 웹 검색은 기록 프록시를 거치지 않으며 트래픽 캡처와도 별개입니다.
               <br />
-              출처 선택 가능 <b>DuckDuckGo（ddgs）</b>(Key 불필요),<b>Brave(무료 버전)</b>(Brave API Key를 입력해야 함),{" "}
-              <b>Tavily</b>(Tavily API Key를 입력해야 함) 또는 <b>DeepSeek</b>(현재 LLM 설정을 재사용). 전체 스위치가 꺼지면, 각
-              Agent의 웹 검색 스위치를 쓸 수 없습니다.
+              출처는 <b>DuckDuckGo(ddgs)</b>(Key 불필요), <b>Brave(무료 버전)</b>(Brave API Key 필요), <b>Tavily</b>(Tavily API Key 필요),{' '}
+              <b>DeepSeek</b>(현재 LLM 설정 재사용) 중에서 선택합니다. 전체 스위치를 끄면 각 에이전트의 웹 검색 스위치를 사용할 수 없습니다.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
             <div className="flex items-center justify-between gap-4">
               <Label htmlFor="web-search" className="text-sm font-normal text-muted-foreground">
-                {webSearch ? "전체 스위치가 켜져 있습니다 · 각 에이전트 설정에서 따로 켤 수 있습니다" : "꺼짐 · 각 Agent가 웹 검색을 켤 수 없음"}
+                {webSearch ? "전체 스위치가 켜져 있습니다 · 각 에이전트 설정에서 따로 켤 수 있습니다" : "꺼짐 · 각 에이전트가 웹 검색을 켤 수 없음"}
               </Label>
               <Switch
                 id="web-search"
@@ -488,14 +482,13 @@ export default function SystemSettingsPage() {
               <div className="border-border/60 bg-muted/30 flex flex-col gap-2 rounded-md border p-3">
                 <p className="text-sm font-medium">DeepSeek 공식 웹 검색</p>
                 <p className="text-muted-foreground text-xs leading-relaxed">
-                  이 출처는 그대로 다시 사용<b>현재 활성 LLM 설정</b>. 그래서 이것은
-                  <b>DeepSeek 공식 모델만 지원</b>, 그리고 이 설정은<b>anthropic 프로토콜을 사용해야 함</b>
-                  — DeepSeek의 OpenAI 프로토콜 주소는 서버 검색을 지원하지 않습니다. LLM 설정을 바꾸면 이 출처가 동작하지 않을 수 있습니다.
+                  이 출처는 현재 활성 LLM 설정을 그대로 사용합니다. 따라서 <b>DeepSeek 공식 모델만 지원</b>하며, 이 설정은
+                  <b>anthropic 프로토콜을 사용해야 합니다</b>. DeepSeek의 OpenAI 프로토콜 주소는 서버 검색을 지원하지 않습니다. LLM 설정을 바꾸면 이 출처가 동작하지 않을 수 있습니다.
                 </p>
                 <p className="text-muted-foreground text-xs leading-relaxed">
-                  다른 출처와 달리, 검색은 <b>DeepSeek 서버에서 실행</b>: 검색할 때마다 모델 호출이 한 번 더 듭니다(Token
-                  비용이 생김). 검색 요청<b>위의 출구 프록시를 거치지 않음</b>, 또한<b>트래픽 기록에 포함하지 않음</b>; 반환 결과<b>제목과 링크만</b>
-                  (요약 없음). 본문이 필요하면 WebFetch가 가져옵니다.
+                  다른 출처와 달리 검색은 <b>DeepSeek 서버에서 실행</b>되므로 검색할 때마다 모델 호출이 한 번 더 발생합니다(토큰 비용이 발생합니다).
+                  검색 요청은 <b>위의 출구 프록시를 거치지 않고</b> <b>트래픽 기록에도 포함되지 않습니다</b>. 반환 결과에는 <b>제목과 링크만</b>
+                  포함되며 요약은 제공되지 않습니다. 본문이 필요하면 WebFetch가 가져옵니다.
                 </p>
                 <p className="text-muted-foreground text-xs leading-relaxed">
                   위 조건을 만족하는지는 직접 확인하세요. 시스템은 가로채지 않습니다. 아래 "검색 테스트" 버튼으로 실제로 한 번 실행해 확인할 수 있습니다.
@@ -621,7 +614,7 @@ export default function SystemSettingsPage() {
               사용자 지정 스크립트 · Python 인터프리터
             </CardTitle>
             <CardDescription>
-              사용자 지정 <b>script</b> 유형 도구가 Python을 이것으로 실행합니다. 켜면 자동으로 찾습니다(python3 우선). 여기에는 venv나 특정 버전의 절대 경로를 직접 넣을 수 있습니다. 비워 두면 실행할 때 자동으로 찾습니다.
+              사용자 지정 <b>script</b> 유형 도구는 이 Python 인터프리터로 실행합니다. 경로를 비워 두면 실행할 때 자동으로 찾으며, python3을 우선합니다. venv나 특정 버전의 절대 경로를 직접 지정할 수도 있습니다.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
@@ -647,11 +640,11 @@ export default function SystemSettingsPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
               <CpuIcon className="size-4" />
-              작업 동시 실행 · Work Agent 수
+              작업 동시 실행 · 워커 수
             </CardTitle>
             <CardDescription>
-              각 작업에서 동시에 실행되는 작업 agent 수입니다(기본 3). 숫자가 클수록 동시 확인이 많아지고 사용량도 늘어납니다. 수정 후
-              <b>이후에 시작하는 작업부터 적용</b>, 실행 중인 작업에는 영향이 없습니다.
+              각 작업에서 동시에 실행하는 워커 수입니다(기본 3). 숫자가 클수록 동시에 확인하는 작업이 많아지고 사용량도 늘어납니다. 변경 사항은
+              <b>이후 시작하는 작업부터 적용</b>되며 실행 중인 작업에는 영향을 주지 않습니다.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
@@ -679,9 +672,9 @@ export default function SystemSettingsPage() {
               세션 입력창 전송 키
             </CardTitle>
             <CardDescription>
-              대화 페이지와 작업 상세의 메인 에이전트 세션 입력창이 이 설정을 함께 씁니다. 고르면 바로 적용되며 저장할 필요가 없습니다.
+              대화 페이지와 작업 상세의 메인 에이전트 세션 입력창이 이 설정을 함께 사용합니다. 선택하면 즉시 적용되므로 저장할 필요가 없습니다.
               <br />
-              이 선호는<b>이 브라우저에만 있음</b>, 계정과 함께 동기화되지 않으며, 브라우저를 바꾸거나 사이트 데이터를 지우면 다시 설정해야 합니다.
+              이 설정은 <b>이 브라우저에만 저장</b>되며 계정과 동기화되지 않습니다. 브라우저를 바꾸거나 사이트 데이터를 삭제하면 다시 설정해야 합니다.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex items-center justify-between gap-4">

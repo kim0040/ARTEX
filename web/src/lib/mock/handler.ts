@@ -22,6 +22,7 @@ import type {
   FindingTraffic,
   FindingTrafficBinding,
   IntentAsset,
+  NotificationChannel,
   ScopeRow,
   Task,
   TaskArchive,
@@ -50,6 +51,11 @@ const mockTaskTemplates = structuredClone(D.taskTemplates);
 const mockTaskCategories = structuredClone(D.taskCategories);
 const mockConversations = structuredClone(D.conversations);
 const mockRetests: FindingRetest[] = [];
+// 알림 화면도 샘플 모드에서 열립니다. 채널은 메모리에만 보관하며 실제 전송하지 않습니다.
+const mockNotificationChannels: NotificationChannel[] = [];
+let nextMockNotificationID = 1;
+const mockNotifySettings = { notify_enabled: false, notify_public_base_url: "", notify_digest_interval_min: "30" };
+
 const mockRetestMessages: Record<number, Activity[]> = {};
 
 // ── 연결된 트래픽 증거(finding traffic) ─────────────────────────────────────────────
@@ -1012,6 +1018,37 @@ export async function mockHandle<T>(method: string, rawPath: string, body?: Body
 
 function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Record<string, unknown>): unknown {
   const task = q.get("task") ?? undefined;
+
+  if (path === "/notify/meta" && m === "GET") return {
+    kinds: ["dingtalk", "feishu", "wecom", "webhook", "telegram", "email"].map((kind) => ({
+      kind, default_rate_per_min: 10, secret_keys: [],
+    })),
+    enabled: mockNotifySettings.notify_enabled,
+    public_base_url: mockNotifySettings.notify_public_base_url,
+    digest_interval_min: mockNotifySettings.notify_digest_interval_min,
+    defaults: { digest_interval_min: 30 },
+    stats: { channels: mockNotificationChannels.length, channels_on: mockNotificationChannels.filter(c => c.enabled).length,
+      pending: 0, failed: 0, sent_today: 0, backlog_age_ms: 0 },
+  };
+  if (path === "/notify/channels" && m === "GET") return { channels: mockNotificationChannels };
+  if (path === "/notify/channels" && m === "POST") {
+    const now = new Date().toISOString();
+    const channel = { ...b, id: nextMockNotificationID++, created_at: now, updated_at: now,
+      secret_keys: [] } as unknown as NotificationChannel;
+    mockNotificationChannels.push(channel);
+    return { id: channel.id };
+  }
+  if (seg[0] === "notify" && seg[1] === "channels" && seg.length >= 3) {
+    const id = Number(seg[2]);
+    const channel = mockNotificationChannels.find(c => c.id === id);
+    if (!channel) throw new Error("샘플 알림 채널을 찾을 수 없습니다");
+    if (seg[3] === "test") throw new Error("데모 모드에서는 실제 알림을 전송하지 않습니다");
+    if (m === "PATCH") { Object.assign(channel, b, { updated_at: new Date().toISOString() }); return { id }; }
+    if (m === "DELETE") { mockNotificationChannels.splice(mockNotificationChannels.indexOf(channel), 1); return { ok: true }; }
+  }
+  if (path === "/notify/deliveries" && m === "GET") return { deliveries: [], total: 0, page: Number(q.get("page") ?? 1), page_size: 50 };
+  if (seg[0] === "notify" && seg[1] === "deliveries" && m === "POST") throw new Error("데모 모드에서는 실제 알림을 재전송하지 않습니다");
+
 
   if (path === "/chat/mentions" && m === "GET") {
     const kind = q.get("kind") ?? "";
@@ -2219,8 +2256,13 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
   if (path === "/traffic/hosts") return { hosts: D.trafficHosts };
   if (path === "/traffic") return D.traffic;
   if (path === "/traffic/exchange") return D.trafficDetail;
-  if (path === "/settings" && m === "GET") return D.settings;
-  if (path === "/settings" && m === "PUT") return { ...D.settings, ...b };
+  if (path === "/settings" && m === "GET") return { ...D.settings, ...mockNotifySettings };
+  if (path === "/settings" && m === "PUT") {
+    if (typeof b.notify_enabled === "boolean") mockNotifySettings.notify_enabled = b.notify_enabled;
+    if (typeof b.notify_public_base_url === "string") mockNotifySettings.notify_public_base_url = b.notify_public_base_url;
+    if (b.notify_digest_interval_min != null) mockNotifySettings.notify_digest_interval_min = String(b.notify_digest_interval_min);
+    return { ...D.settings, ...b, ...mockNotifySettings };
+  }
   if (path === "/settings/web-search/test") return { ok: true, count: 5, backend: D.settings.web_search_backend };
   if (path === "/settings/python/detect") return { python_interpreter: "/usr/bin/python3" };
   if (path === "/chat")

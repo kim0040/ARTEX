@@ -15,11 +15,8 @@ import (
 
 func TestCompanyScopeInputsAcceptStructuredAndLegacyRules(t *testing.T) {
 	var inputs companyScopeInputs
-	if err := json.Unmarshal([]byte(`[
-		"example.com",
-		{"kind":"icp","value":"京 ICP备 123号"}, // han-allow 프로토콜 원문
-		{"kind":"keyword","value":"Acme Security"}
-	]`), &inputs); err != nil {
+	raw := []byte(`["example.com", {"kind":"icp","value":"京 ICP备 123号"}, {"kind":"keyword","value":"Acme Security"}]`) // han-allow 프로토콜 원문
+	if err := json.Unmarshal(raw, &inputs); err != nil {
 		t.Fatal(err)
 	}
 	if len(inputs) != 3 {

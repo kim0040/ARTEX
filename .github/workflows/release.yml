@@ -19,8 +19,24 @@ jobs:
           cache-dependency-path: web/package-lock.json
       - run: npm ci
         working-directory: web
+      - run: npm run check:korean
+        working-directory: web
+      - run: npm run test:korean
+        working-directory: web
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - run: go mod download
+      - run: python3 scripts/generate-license-notices.py
       - run: npm run build:static
         working-directory: web
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dependency-notices
+          path: web/public/legal/DEPENDENCY-NOTICES.txt
       - uses: actions/upload-artifact@v4
         with:
           name: web-dist
@@ -48,6 +64,10 @@ jobs:
         with:
           name: web-dist
           path: server/webui/dist
+      - uses: actions/download-artifact@v4
+        with:
+          name: dependency-notices
+          path: web/public/legal
       - name: Build and package with build.sh
         env:
           ARTEX_TARGET_OS: ${{ matrix.goos }}
@@ -99,6 +119,8 @@ jobs:
   # ④ 여러 아키텍처 이미지를 Docker Hub에 푸시합니다(binaries가 만든 리눅스 바이너리를 재사용).
   #    이미지에는 도구와 바이너리만 넣습니다. arm64는 apt 층만 에뮬레이션하면 되어 빌드가 짧습니다.
   docker:
+    # 이미지 이름이 원 작성자 저장소에 고정되어 있으므로 공식 저장소에서만 실행합니다.
+    if: github.repository == 'Autumn-27/ARTEX'
     needs: binaries
     runs-on: ubuntu-latest
     steps:

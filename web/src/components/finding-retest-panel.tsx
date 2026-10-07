@@ -85,20 +85,20 @@ export function FindingRetestPanel({
       <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3">
         <div className="flex flex-col gap-1.5">
           <CardTitle>발견 재검사</CardTitle>
-          <CardDescription>별도 세션에서 현재 상태를 확인하고, 재테스트마다 결론과 증거를 남깁니다.</CardDescription>
+          <CardDescription>별도 세션에서 현재 상태를 확인하고, 재검사마다 결론과 증거를 남깁니다.</CardDescription>
         </div>
         {running?.conversation_id != null ? (
           <Button asChild variant="outline" size="sm">
             <Link href={`/chat?c=${running.conversation_id}`} title="진행 중인 재검사 세션 보기">
               <Spinner data-icon="inline-start" aria-hidden="true" />
-              재테스트 중
+              재검사 중
             </Link>
           </Button>
         ) : null}
         {!running && !readOnly ? (
           <Button size="sm" onClick={() => setOpen(true)} disabled={items === null || !!error}>
             <RotateCcwIcon data-icon="inline-start" />
-            재테스트 시작
+            재검사 시작
           </Button>
         ) : null}
       </CardHeader>
@@ -106,7 +106,7 @@ export function FindingRetestPanel({
         {error ? (
           <Alert variant="destructive">
             <AlertDescription>
-              재테스트 기록을 불러오지 못했습니다:{error}
+              재검사 기록을 불러오지 못했습니다:{error}
               <Button variant="outline" size="sm" onClick={() => void load()}>
                 다시 시도
               </Button>
@@ -117,8 +117,8 @@ export function FindingRetestPanel({
         {!error && items?.length === 0 ? (
           <Empty>
             <EmptyHeader>
-              <EmptyTitle>재테스트 기록 없음</EmptyTitle>
-              <EmptyDescription>수정 배포가 끝나면 재테스트를 시작하고 이전 증거와 새 증거를 비교할 수 있습니다.</EmptyDescription>
+              <EmptyTitle>재검사 기록 없음</EmptyTitle>
+              <EmptyDescription>수정 배포가 끝나면 재검사를 시작하고 이전 증거와 새 증거를 비교할 수 있습니다.</EmptyDescription>
             </EmptyHeader>
           </Empty>
         ) : null}
@@ -134,7 +134,7 @@ export function FindingRetestPanel({
                       : statusLabels[item.status]}
                   </Badge>
                   <span className="text-muted-foreground text-xs">
-                    #{item.id} · {new Date(item.created_at).toLocaleString("zh-CN")}
+                    #{item.id} · {new Date(item.created_at).toLocaleString("ko-KR")}
                   </span>
                   {item.conversation_id != null ? (
                     <Button asChild variant="ghost" size="sm" className="ml-auto">
@@ -157,7 +157,7 @@ export function FindingRetestPanel({
                 ) : null}
                 {item.status === "completed" && item.evidence ? (
                   <details className="min-w-0">
-                    <summary className="cursor-pointer text-sm">재테스트 증거</summary>
+                    <summary className="cursor-pointer text-sm">재검사 증거</summary>
                     <div className="mt-3 overflow-x-auto">
                       <Markdown text={item.evidence} />
                     </div>

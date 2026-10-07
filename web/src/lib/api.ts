@@ -113,6 +113,17 @@ function getToken(): string | null {
   return localStorage.getItem("artex_token");
 }
 
+// 상태 코드를 문구와 분리합니다. 번역이 달라져도 충돌 같은 처리를 판단할 수 있습니다.
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
 export async function http<T>(path: string, init?: RequestInit): Promise<T> {
   if (MOCK) return mockHandle<T>(init?.method ?? "GET", path, init?.body ?? null);
   const token = getToken();
@@ -130,10 +141,10 @@ export async function http<T>(path: string, init?: RequestInit): Promise<T> {
       document.cookie = "artex_token=; path=/; max-age=0";
       window.location.href = "/login";
     }
-    throw new Error("권한 없음");
+    throw new ApiError("로그인이 만료되었습니다. 다시 로그인하세요.", 401);
   }
   if (!r.ok) {
-    const fallback = `${init?.method ?? "GET"} ${path}: ${r.status}`;
+    const fallback = `요청을 처리하지 못했습니다 (${r.status}, ${init?.method ?? "GET"} ${path})`;
     let message = fallback;
     try {
       const payload = (await r.json()) as { error?: unknown };
@@ -143,7 +154,7 @@ export async function http<T>(path: string, init?: RequestInit): Promise<T> {
     } catch {
       // 비었거나 JSON이 아닌 오류 응답은 상태 코드 기준으로 돌아갑니다.
     }
-    throw new Error(message);
+    throw new ApiError(message, r.status);
   }
   if (r.status === 204) return undefined as T;
   return r.json();
@@ -361,7 +372,7 @@ export const api = {
       request_id: string;
     }>(`/tasks/${taskId}/intents/${intentId}/messages`, { message, request_id: requestId }),
   taskLLMResolution: (id: string) => get<TaskLLMResolutions>(`/tasks/${id}/llm/resolution`),
-  // 성공하지 못한 의도 하나를 다시 실행(blocked/exhausted/stopped): open으로 되돌리면 worker가 다시 맡아 처음부터 다시 실행합니다. （워커는 의도를 실행하는 역할입니다）
+  // 성공하지 못한 의도 하나를 다시 실행(blocked/exhausted/stopped): open으로 되돌리면 워커가 다시 가져가고, 저장된 대화 기록이 있으면 이어서 실행합니다. （워커는 의도를 실행하는 역할입니다）
   rerunIntent: (taskId: string, intentId: string) =>
     post<{ id: string; reopened: number }>(`/tasks/${taskId}/intents/${intentId}/rerun`),
   // 이 작업의 blocked 의도를 일괄로 다시 실행(네트워크/LLM이 한 번 끊겨 여러 개가 blocked일 때 한 번에 모두 재시도).
@@ -828,8 +839,7 @@ export const api = {
   // 채널은 여러 인스턴스 자원입니다(같은 유형으로 로봇을 여러 개 두고 각자 필터 규칙을 가짐). 그래서 따로 묶고,
   // 평평한 settings 키-값에 넣지 않습니다.
   notifyMeta: () => get<NotificationMeta>(`/notify/meta`),
-  notifyChannels: () =>
-    get<{ channels: NotificationChannel[] }>(`/notify/channels`).then((r) => arr(r.channels)),
+  notifyChannels: () => get<{ channels: NotificationChannel[] }>(`/notify/channels`).then((r) => arr(r.channels)),
   notifyCreateChannel: (payload: {
     name: string;
     kind: string;
@@ -1163,7 +1173,7 @@ export const api = {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     });
     const body = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(body?.error || `업로드 실패(${r.status})`);
+    if (!r.ok) throw new ApiError(body?.error || `업로드하지 못했습니다 (${r.status})`, r.status);
     return body;
   },
   deleteSkill: (name: string) => del<{ deleted: string }>(`/skills/${name}`),

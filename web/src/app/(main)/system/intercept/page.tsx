@@ -53,6 +53,7 @@ import {
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api } from "@/lib/api";
+import { toolDisplaySummary } from "@/lib/tool-display";
 import type {
   InterceptAction,
   InterceptRule,
@@ -316,7 +317,7 @@ function JudgeCard() {
               </Button>
             </div>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-              <JudgeStat label="승인 호출" value={usage.calls.toLocaleString()} />
+              <JudgeStat label="승인 호출" value={usage.calls.toLocaleString("ko-KR")} />
               <JudgeStat label="Token 입력" value={fmtTokens(usage.input_tokens)} />
               <JudgeStat label="출력 Token" value={fmtTokens(usage.output_tokens)} />
               <JudgeStat label="캐시 읽기" value={fmtTokens(usage.cache_read_tokens)} />
@@ -963,7 +964,7 @@ export default function InterceptPage() {
                             )}
                           </div>
                           {t.description && (
-                            <p className="text-[11px] text-muted-foreground line-clamp-1">{t.description}</p>
+                            <p className="text-[11px] text-muted-foreground line-clamp-1">{t.system ? toolDisplaySummary(t) : t.description}</p>
                           )}
                         </label>
                       </div>

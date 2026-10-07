@@ -42,12 +42,12 @@ import {
 } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 import type { Agent, SkillItem, MCPServer, SkillCall, MissingSkill } from "@/lib/types";
 
 function fmtTime(ts?: string) {
   if (!ts) return "호출한 적 없음";
-  return new Date(ts).toLocaleString("zh-CN", {
+  return new Date(ts).toLocaleString("ko-KR", {
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
@@ -177,23 +177,23 @@ function SkillsOverview({
   if (skills.length === 0) {
     return (
       <div className="flex h-full items-center justify-center">
-        <p className="text-sm text-muted-foreground">아직 Skill이 없습니다. 왼쪽의 "새로 만들기" 또는 "압축 파일 업로드"로 시작하세요</p>
+        <p className="text-sm text-muted-foreground">아직 스킬이 없습니다. 왼쪽의 "새로 만들기" 또는 "압축 파일 업로드"로 시작하세요.</p>
       </div>
     );
   }
 
   const stats: { label: string; value: React.ReactNode; hint?: string }[] = [
-    { label: "Skill 총수", value: skills.length, hint: `${agg.usedCount} 개 호출된 적 있음` },
+    { label: "스킬 총수", value: skills.length, hint: `${agg.usedCount}개 호출된 적 있음` },
     { label: "누적 호출", value: agg.totalCalls },
-    { label: "사용하지 않음", value: agg.neverUsed.length, hint: agg.neverUsed.length > 0 ? "어떤 agent도 불러온 적이 없음" : "모두 사용한 적 있음" },
-    { label: "미적중 호출", value: agg.missingCalls, hint: missing.length > 0 ? `${missing.length} 개 존재하지 않는 skill` : "없음" },
+    { label: "미사용 스킬", value: agg.neverUsed.length, hint: agg.neverUsed.length > 0 ? "어떤 에이전트도 불러온 적이 없음" : "모두 사용한 적 있음" },
+    { label: "누락 호출", value: agg.missingCalls, hint: missing.length > 0 ? `${missing.length}개 존재하지 않는 스킬` : "없음" },
   ];
 
   return (
     <div className="mx-auto w-full max-w-3xl space-y-6">
       <div>
         <h2 className="text-base font-semibold">스킬 라이브러리 전체 보기</h2>
-        <p className="text-muted-foreground text-sm">왼쪽에서 Skill을 골라 상세와 호출 기록을 보거나, 여기서 전체 사용 상황을 빠르게 살펴보세요.</p>
+        <p className="text-muted-foreground text-sm">왼쪽에서 스킬을 선택해 상세 정보와 호출 기록을 보고, 전체 사용 현황을 확인하세요.</p>
       </div>
 
       {/* 지표 카드 */}
@@ -212,7 +212,7 @@ function SkillsOverview({
         <Label className="text-xs text-muted-foreground">호출 순위</Label>
         {agg.ranked.length === 0 ? (
           <p className="text-muted-foreground rounded-lg border border-dashed p-4 text-center text-xs">
-            아직 Skill 호출 기록이 없습니다.
+            아직 스킬 호출 기록이 없습니다.
           </p>
         ) : (
           <div className="space-y-1.5">
@@ -265,11 +265,11 @@ function SkillsOverview({
         {/* 아직 안 씀(정리 가능 / 노출 필요) */}
         <div className="space-y-2">
           <Label className="text-xs text-muted-foreground">
-            사용하지 않은 Skill
+            사용하지 않은 스킬
             {agg.neverUsed.length > 0 && <span className="ml-1 font-normal">（{agg.neverUsed.length}）</span>}
           </Label>
           {agg.neverUsed.length === 0 ? (
-            <p className="text-muted-foreground text-xs">모든 Skill이 호출되었습니다.</p>
+            <p className="text-muted-foreground text-xs">모든 스킬이 호출되었습니다.</p>
           ) : (
             <div className="flex flex-wrap gap-1.5">
               {agg.neverUsed.map((s) => (
@@ -364,18 +364,18 @@ export default function SkillsPage() {
     setUploading(true);
     try {
       const r = await api.uploadSkill(file, overwrite);
-      toast.success(`Skill 설치됨:${r.name}（${r.files} 개 파일)`);
+      toast.success(`스킬을 설치했습니다: ${r.name} (${r.files}개 파일)`);
       load();
     } catch (e) {
       const msg = (e as Error).message;
       // 스킬이 이미 있으면 덮어쓰기를 제안합니다
-      if (!overwrite && msg.includes("已存在")) {
-        if (window.confirm(`${msg}\n\n같은 이름의 Skill을 덮어쓸까요?`)) {
+      if (!overwrite && e instanceof ApiError && e.status === 409) {
+        if (window.confirm(`같은 이름의 스킬이 이미 있습니다.\n\n기존 스킬을 덮어쓸까요?`)) {
           await uploadZip(file, true);
           return;
         }
       } else {
-        toast.error("업로드 실패:" + msg);
+        toast.error("업로드하지 못했습니다: " + msg);
       }
     } finally {
       setUploading(false);
@@ -494,7 +494,7 @@ export default function SkillsPage() {
   async function deletePath(skill: string, path: string) {
     try {
       await api.deleteSkillPath(skill, path);
-      toast.success(`삭제됨:${path}`);
+      toast.success(`삭제했습니다: ${path}`);
       if (selected?.skill === skill && selected.path === path) setSelected(null);
       load();
     } catch (e) {
@@ -505,7 +505,7 @@ export default function SkillsPage() {
   async function deleteSkill(name: string) {
     try {
       await api.deleteSkill(name);
-      toast.success(`Skill 삭제됨:${name}`);
+      toast.success(`스킬을 삭제했습니다: ${name}`);
       if (selected?.skill === name) setSelected(null);
       load();
     } catch (e) {
@@ -581,7 +581,7 @@ export default function SkillsPage() {
       });
       // 처음 보이기를 적용합니다(에이전트마다 보내고 기다리지 않음, 최선)
       await Promise.all(newVisibility.map((id) => api.toggleSkillVisibility(id, name, true)));
-      toast.success("Skill을 만들었습니다");
+      toast.success("스킬을 만들었습니다");
       setNewOpen(false);
       setNewName(""); setNewDesc(""); setNewLicense(""); setNewCompat(""); setNewInst("");
       setNewMcps([]); setNewVisibility([]);
@@ -706,8 +706,8 @@ export default function SkillsPage() {
     <div data-content-padding="false" className="flex flex-1 flex-col overflow-hidden">
       <div className="flex items-center gap-3 border-b px-4 py-2.5 lg:px-6">
         <div className="flex flex-col gap-0.5">
-          <h1 className="text-sm font-semibold leading-tight">Skill</h1>
-          <p className="text-muted-foreground text-xs">스킬 라이브러리 · agentskills.io 규격 · Agent 권한에 따라 표시</p>
+          <h1 className="text-sm font-semibold leading-tight">스킬</h1>
+          <p className="text-muted-foreground text-xs">스킬 라이브러리 · agentskills.io 규격 · 에이전트 권한에 따라 표시</p>
         </div>
         {/* 빈칸 목록: 에이전트가 이름으로 불렀지만 저장소에 없는 스킬. 무엇을 채워야 하는지 바로 알 수 있습니다. */}
         {missing.length > 0 && (
@@ -715,12 +715,12 @@ export default function SkillsPage() {
             <PopoverTrigger asChild>
               <Button size="sm" variant="outline" className="ml-auto">
                 <AlertTriangleIcon className="size-3.5 text-amber-500" />
-                {missing.length} 개 불일치 호출
+                {missing.length}개 불일치 호출
               </Button>
             </PopoverTrigger>
             <PopoverContent align="end" className="w-80">
               <p className="mb-2 text-xs text-muted-foreground">
-                Agent가 이름으로 호출했지만 스킬 라이브러리에 없는 skill입니다. 호출된 횟수순입니다.
+                에이전트가 이름으로 호출했지만 스킬 라이브러리에 없는 스킬입니다. 호출 횟수가 많은 순서로 표시합니다.
               </p>
               <div className="space-y-1">
                 {missing.map((m) => (
@@ -740,7 +740,7 @@ export default function SkillsPage() {
         <div className="flex w-64 shrink-0 flex-col border-r">
           <div className="flex flex-col gap-2 border-b p-2">
             <Button size="sm" variant="outline" className="w-full" onClick={() => setNewOpen(true)}>
-              <PlusIcon className="size-3.5" />Skill 만들기
+              <PlusIcon className="size-3.5" />스킬 만들기
             </Button>
             <input
               ref={uploadRef}
@@ -809,7 +809,7 @@ export default function SkillsPage() {
                           onClick={(e) => { e.stopPropagation(); startCreate(s.name, "", "dir"); }}>
                           <FolderPlusIcon className="size-3 text-muted-foreground" />
                         </Button>
-                        <Button size="icon" variant="ghost" className="size-5" title="Skill 삭제"
+                        <Button size="icon" variant="ghost" className="size-5" title="스킬 삭제"
                           onClick={(e) => { e.stopPropagation(); setPendingDelete({ kind: "skill", skill: s.name }); }}>
                           <Trash2Icon className="size-3 text-destructive" />
                         </Button>
@@ -829,7 +829,7 @@ export default function SkillsPage() {
               })}
 
               {skills.length === 0 && (
-                <p className="p-3 text-xs text-muted-foreground">아직 Skill이 없습니다. "새로 만들기"를 눌러 시작하세요</p>
+                <p className="p-3 text-xs text-muted-foreground">아직 스킬이 없습니다. "새로 만들기"를 눌러 시작하세요.</p>
               )}
             </div>
           </ScrollArea>
@@ -854,7 +854,7 @@ export default function SkillsPage() {
                 )}
                 <div className="mt-2 flex flex-wrap gap-2">
                   {selectedSkill.license && (
-                    <Badge variant="outline" className="text-xs font-normal">License: {selectedSkill.license}</Badge>
+                    <Badge variant="outline" className="text-xs font-normal">라이선스: {selectedSkill.license}</Badge>
                   )}
                   {selectedSkill.compatibility && (
                     <Badge variant="secondary" className="text-xs font-normal">{selectedSkill.compatibility}</Badge>
@@ -920,7 +920,7 @@ export default function SkillsPage() {
                   <div className="space-y-2">
                     <Label className="text-xs text-muted-foreground">
                       연결된 MCP
-                      <span className="ml-1 font-normal">(Skill을 불러올 때만 그 도구를 공개하고 잠금을 풉니다)</span>
+                      <span className="ml-1 font-normal">(스킬을 불러올 때만 도구를 공개하고 잠금을 해제합니다)</span>
                     </Label>
                     {mcpOptions.length === 0 ? (
                       <p className="text-xs text-muted-foreground">아직 MCP가 없습니다. "MCP" 페이지에서 추가하세요.</p>
@@ -940,7 +940,7 @@ export default function SkillsPage() {
                   </div>
 
                   <div className="space-y-2">
-                    <Label className="text-xs text-muted-foreground">표시 범위(Agent 권한별)</Label>
+                    <Label className="text-xs text-muted-foreground">표시 범위(에이전트 권한별)</Label>
                     <div className="space-y-2">
                       {agents.map((a) => (
                         <label key={a.key} className="flex cursor-pointer items-center gap-2 text-sm">
@@ -952,7 +952,7 @@ export default function SkillsPage() {
                         </label>
                       ))}
                       {agents.length === 0 && (
-                        <span className="text-xs text-muted-foreground">(아직 Agent 없음)</span>
+                        <span className="text-xs text-muted-foreground">(아직 에이전트가 없습니다)</span>
                       )}
                     </div>
                   </div>
@@ -990,15 +990,15 @@ export default function SkillsPage() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {pendingDelete?.kind === "skill" && `삭제 Skill「${pendingDelete.skill}」？`}
-              {pendingDelete?.kind === "dir" && `삭제 폴더「${pendingDelete.path}」？`}
-              {pendingDelete?.kind === "file" && `삭제 파일「${pendingDelete.path}」？`}
+              {pendingDelete?.kind === "skill" && `스킬 “${pendingDelete.skill}”을 삭제할까요?`}
+              {pendingDelete?.kind === "dir" && `폴더 “${pendingDelete.path}”를 삭제할까요?`}
+              {pendingDelete?.kind === "file" && `파일 “${pendingDelete.path}”을 삭제할까요?`}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {pendingDelete?.kind === "skill"
-                ? "그 Skill의 모든 파일, MCP 연결, 표시 설정을 삭제합니다. 이 작업은 되돌릴 수 없습니다."
+                ? "해당 스킬의 모든 파일, MCP 연결, 표시 설정을 삭제합니다. 이 작업은 되돌릴 수 없습니다."
                 : pendingDelete?.kind === "dir"
-                  ? "그 폴더 아래의 모든 파일도 함께 삭제됩니다. 이 작업은 되돌릴 수 없습니다."
+                  ? "해당 폴더 아래의 모든 파일도 함께 삭제됩니다. 이 작업은 되돌릴 수 없습니다."
                   : "이 동작은 되돌릴 수 없습니다."}
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -1018,7 +1018,7 @@ export default function SkillsPage() {
       <Sheet open={newOpen} onOpenChange={setNewOpen}>
         <SheetContent side="right" className="flex w-full flex-col gap-0 data-[side=right]:sm:max-w-xl">
           <SheetHeader className="px-4 pt-4">
-            <SheetTitle>Skill 만들기</SheetTitle>
+            <SheetTitle>스킬 만들기</SheetTitle>
           </SheetHeader>
           <Tabs defaultValue="basic" className="flex min-h-0 flex-1 flex-col">
             <TabsList className="mx-4 mt-3 shrink-0 justify-start">
@@ -1051,16 +1051,16 @@ export default function SkillsPage() {
               <div className="grid gap-1.5">
                 <Label htmlFor="sk-desc">설명 <span className="text-destructive">*</span></Label>
                 <Textarea id="sk-desc" rows={2} className="resize-none"
-                  placeholder="이 skill이 무엇을 하고, 언제 쓰는지."
+                  placeholder="이 스킬이 어떤 일을 하고 언제 사용하는지 설명하세요."
                   value={newDesc} onChange={(e) => setNewDesc(e.target.value)} />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="grid gap-1.5">
-                  <Label className="text-muted-foreground text-xs">license</Label>
+                  <Label className="text-muted-foreground text-xs">라이선스</Label>
                   <Input placeholder="MIT / Proprietary" value={newLicense} onChange={(e) => setNewLicense(e.target.value)} />
                 </div>
                 <div className="grid gap-1.5">
-                  <Label className="text-muted-foreground text-xs">compatibility</Label>
+                  <Label className="text-muted-foreground text-xs">호환성</Label>
                   <Input placeholder="sqlmap, python3이 필요합니다" value={newCompat} onChange={(e) => setNewCompat(e.target.value)} />
                 </div>
               </div>
@@ -1075,7 +1075,7 @@ export default function SkillsPage() {
 
             {/* 연결된 MCP */}
             <TabsContent value="mcp" className="overflow-y-auto px-4 pb-4 pt-4 data-[state=inactive]:hidden">
-              <p className="mb-3 text-xs text-muted-foreground">Skill을 불러올 때만 선택한 MCP의 도구를 공개하고 잠금을 풉니다.</p>
+              <p className="mb-3 text-xs text-muted-foreground">스킬을 불러올 때만 선택한 MCP의 도구를 공개하고 잠금을 해제합니다.</p>
               {mcpOptions.length === 0 ? (
                 <p className="text-xs text-muted-foreground">아직 MCP가 없습니다. "MCP" 페이지에서 추가하세요.</p>
               ) : (
@@ -1097,9 +1097,9 @@ export default function SkillsPage() {
 
             {/* 보이는 범위 */}
             <TabsContent value="visibility" className="overflow-y-auto px-4 pb-4 pt-4 data-[state=inactive]:hidden">
-              <p className="mb-3 text-xs text-muted-foreground">선택한 Agent는 만든 뒤 바로 이 Skill을 볼 수 있습니다.</p>
+              <p className="mb-3 text-xs text-muted-foreground">선택한 에이전트는 만든 뒤 이 스킬을 바로 볼 수 있습니다.</p>
               {agents.length === 0 ? (
-                <p className="text-xs text-muted-foreground">(아직 Agent 없음)</p>
+                <p className="text-xs text-muted-foreground">(아직 에이전트가 없습니다)</p>
               ) : (
                 <div className="flex flex-col gap-2">
                   {agents.map((a) => (

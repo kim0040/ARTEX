@@ -52,7 +52,7 @@ func TestMergeAllRunsGroupsInterleavedTasks(t *testing.T) {
 	if got := strings.Count(out.message, "GOAL_B"); got != 1 {
 		t.Fatalf("task #2 goal should appear once despite interleaving, got %d", got)
 	}
-	if !strings.Contains(out.message, "작업 2개") {
+	if !strings.Contains(out.message, "작업 총 2개") {
 		t.Fatalf("header should report 2 tasks: %q", out.message)
 	}
 	if got := strings.Count(out.message, "── 트리거 "); got != 4 {

@@ -47,6 +47,69 @@ func parseFinding(n *db.Node) findingView {
 
 var sevRank = map[string]int{"critical": 0, "high": 1, "medium": 2, "low": 3, "": 4}
 
+// 보고서가 사람이 읽는 자리에서만 쓰는 표시 이름이다. 저장소와 API는
+// 아래의 영문 코드를 그대로 유지해야 하므로, 이 표시는 렌더링 경계에
+// 둔다. 알려지지 않은 값은 labelOrRaw가 원문을 돌려준다.
+var displayLabels = map[string]map[string]string{
+	"severity": {
+		"critical": "심각",
+		"high":     "높음",
+		"medium":   "중간",
+		"low":      "낮음",
+	},
+	"finding_status": {
+		"pending":        "처리 대기",
+		"in_progress":    "처리 중",
+		"confirmed":      "확인됨",
+		"resolved":       "처리됨",
+		"fixed":          "수정됨",
+		"false_positive": "오탐",
+		"ignored":        "무시",
+		"duplicate":      "중복",
+		"risk_accepted":  "위험 수용",
+	},
+	"asset_type": {
+		"company":     "기업",
+		"root_domain": "루트 도메인",
+		"ip":          "IP",
+		"subdomain":   "서브도메인",
+		"app":         "앱",
+		"service":     "서비스",
+		"endpoint":    "엔드포인트",
+		"none":        "연결되지 않음",
+	},
+}
+
+// labelOrRaw는 표시할 때만 알려진 코드를 한국어로 바꾼다. 공백/대소문자
+// 차이만 있는 알려진 코드는 같은 코드로 취급하지만, 모르는 값은 입력
+// 문자열을 그대로 돌려줘서 새 코드나 운영 데이터가 사라지지 않게 한다.
+func labelOrRaw(domain, raw, emptyLabel string) string {
+	key := strings.ToLower(strings.TrimSpace(raw))
+	if key == "" {
+		return emptyLabel
+	}
+	if label, ok := displayLabels[domain][key]; ok {
+		return label
+	}
+	return raw
+}
+
+func severityLabel(raw string) string { return labelOrRaw("severity", raw, "정보") }
+
+func findingStatusLabel(raw string) string {
+	return labelOrRaw("finding_status", raw, "처리 대기")
+}
+
+func assetTypeLabel(raw string) string { return labelOrRaw("asset_type", raw, "미분류 자산") }
+
+func severityRank(raw string) int {
+	key := strings.ToLower(strings.TrimSpace(raw))
+	if rank, ok := sevRank[key]; ok {
+		return rank
+	}
+	return sevRank[""]
+}
+
 // Markdown 은 사람이 읽는 보고서 본문을 만듭니다.
 func Markdown(in Input) string {
 	var b strings.Builder
@@ -67,7 +130,7 @@ func Markdown(in Input) string {
 		if i > 0 {
 			b.WriteString(", ")
 		}
-		fmt.Fprintf(&b, "%s %d", t, in.AssetCounts[t])
+		fmt.Fprintf(&b, "%s %d", assetTypeLabel(t), in.AssetCounts[t])
 	}
 	b.WriteString("\n\n")
 
@@ -80,9 +143,9 @@ func Markdown(in Input) string {
 		for _, n := range in.Findings {
 			fs = append(fs, parseFinding(n))
 		}
-		sort.SliceStable(fs, func(i, j int) bool { return sevRank[fs[i].Severity] < sevRank[fs[j].Severity] })
+		sort.SliceStable(fs, func(i, j int) bool { return severityRank(fs[i].Severity) < severityRank(fs[j].Severity) })
 		for i, f := range fs {
-			fmt.Fprintf(&b, "### %d. [%s] %s\n\n", i+1, strings.ToUpper(nz(f.Severity, "info")), nz(f.Name, nz(f.VulnClass, "미분류")))
+			fmt.Fprintf(&b, "### %d. [%s] %s\n\n", i+1, severityLabel(f.Severity), nz(f.Name, nz(f.VulnClass, "미분류")))
 			fmt.Fprintf(&b, "%s\n\n", nz(f.Summary, ""))
 			if f.PoC != "" {
 				fmt.Fprintf(&b, "**PoC / 증거:**\n\n```\n%s\n```\n\n", f.PoC)

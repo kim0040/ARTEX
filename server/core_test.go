@@ -3,9 +3,12 @@ package server
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -15,16 +18,54 @@ import (
 	"github.com/Autumn-27/artex/db"
 )
 
+func useDedicatedCoreLifecycleDB(t *testing.T) {
+	t.Helper()
+	base, _, err := db.DSN()
+	if err != nil {
+		t.Skipf("postgres unavailable (%v) — skipping", err)
+	}
+	u, err := url.Parse(base)
+	if err != nil || (u.Hostname() != "127.0.0.1" && u.Hostname() != "localhost") {
+		t.Skipf("core lifecycle test requires local PostgreSQL DSN")
+	}
+	dbName := fmt.Sprintf("artex_core_lifecycle_%d", time.Now().UnixNano())
+	u.Path = "/" + dbName
+	t.Setenv("ARTEX_PG_DSN", u.String())
+	t.Cleanup(func() {
+		admin := *u
+		admin.Path = "/postgres"
+		sqlDB, err := sql.Open("pgx", admin.String())
+		if err != nil {
+			return
+		}
+		defer sqlDB.Close()
+		_, _ = sqlDB.Exec(`DROP DATABASE IF EXISTS "` + dbName + `"`)
+	})
+}
+
 // TestCoreTaskLifecyclePG는 PG로 옮긴 핵심(작업/탐색)을
 // 실제 HTTP mux로 봅니다. 만들기 → 목표 노드 심기 → 목록 → 삭제 연쇄.
 func TestCoreTaskLifecyclePG(t *testing.T) {
+	useDedicatedCoreLifecycleDB(t)
 	m, err := NewManager(t.TempDir(), "")
 	if err != nil {
 		t.Skipf("postgres unavailable (%v) — skipping", err)
 	}
-	defer m.Close()
 	td := t.TempDir()
-	s := New(context.Background(), m, td, td, td)
+	ctx, cancel := context.WithCancel(context.Background())
+	s := New(ctx, m, td, td, td)
+	var createdTaskID string
+	t.Cleanup(func() {
+		cancel()
+		if createdTaskID != "" {
+			s.engine.StopTask(createdTaskID)
+		}
+		s.archiveWG.Wait()
+		if s.side != nil {
+			<-s.side.done
+		}
+		_ = m.Close()
+	})
 	h := s.Handler()
 	tok, err := signJWT(s.jwtKey)
 	if err != nil {
@@ -67,6 +108,7 @@ func TestCoreTaskLifecyclePG(t *testing.T) {
 		t.Fatalf("create task: %d (%v)", code, out)
 	}
 	id, _ := out["id"].(string)
+	createdTaskID = id
 	expID := int64(out["exploration_id"].(float64))
 	if id == "" || expID == 0 {
 		t.Fatalf("bad task payload: %v", out)

@@ -56,9 +56,9 @@ func main() {
 
 func run() int {
 	var (
-		addr    = flag.String("addr", ":8787", "HTTP listen address")
-		dataDir = flag.String("data", filepath.Join(config.BaseDir(), "data"), "data directory for SQLite stores (default: data/ next to the executable)")
-		proxy   = flag.String("proxy", "127.0.0.1:8788", "traffic recording proxy address (empty to disable)")
+		addr    = flag.String("addr", ":8787", "화면과 API를 제공할 주소")
+		dataDir = flag.String("data", filepath.Join(config.BaseDir(), "data"), "SQLite 기록과 증거 디렉터리(기본: 실행 파일 옆 data/)")
+		proxy   = flag.String("proxy", "127.0.0.1:8788", "트래픽 기록 프록시 주소(빈 문자열이면 끔)")
 	)
 	flag.Parse()
 

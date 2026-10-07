@@ -28,25 +28,10 @@ update_docker(){
     || die "docker / docker compose 가 없습니다. 먼저 ./install.sh 로 설치하세요"
   [ -f .env ] || die ".env가 없습니다. 먼저 ./install.sh 로 처음 설치를 하세요"
 
-  # 선택: 올릴 이미지 태그. 비우면 .env의 ARTEX_TAG, 그것도 없으면 latest.
-  local tag; tag="$(ask '대상 이미지 태그(엔터면 .env / latest)' '')"
-  if [ -n "$tag" ]; then
-    if grep -q '^ARTEX_TAG=' .env; then
-      sed -i.bak "s|^ARTEX_TAG=.*|ARTEX_TAG=${tag}|" .env && rm -f .env.bak
-    else
-      printf '\nARTEX_TAG=%s\n' "$tag" >> .env
-    fi
-    ok "ARTEX_TAG를 ${tag}(으)로 두었습니다"
-  fi
-
-  # artex만 바꿉니다. postgres는 16-alpine으로 고정이라 같이 올리지 않습니다.
-  # 받아 봤자 대역만 쓰고, 메이저가 바뀌면 호환 위험도 있습니다.
-  # artex는 depends_on postgres라, 서비스 이름을 주고 up 하면 pg가 꺼져 있을 때만 켜고
-  # 이미 돌고 있으면 그대로 둡니다. 다시 만들지 않습니다.
-  info "새 이미지를 받습니다(artex만)…"
-  docker compose pull artex
-  info "다시 만들어 시작합니다(artex가 다시 뜰 때 스키마를 맞춥니다)…"
-  docker compose up -d artex
+  info "현재 한국어 소스로 이미지를 다시 만듭니다…"
+  bash ./build-docker.sh
+  info "한국어 학습판 컨테이너를 다시 시작합니다…"
+  docker compose -f docker-compose.yml -f docker-compose.ko.yml up -d artex
   ok "업데이트 완료 → http://localhost:8787"
   info "로그: docker compose logs -f artex"
   info "옛 이미지 정리(선택): docker image prune -f"
@@ -74,10 +59,10 @@ update_local(){
 
 echo "=============================="
 echo "  ARTEX 업데이트"
-echo "  1) Docker 업데이트(새 이미지를 받아 다시 만듦)"
+echo "  1) 현재 한국어 소스로 Docker 이미지 다시 빌드(새 이미지를 받아 다시 만듦)"
 echo "  2) 로컬 업데이트(go로 다시 컴파일)"
 echo "=============================="
-case "$(ask '선택' 1)" in
+case "$(ask '선택' 2)" in
   1) sync_repo; update_docker ;;
   2) sync_repo; update_local ;;
   *) die "잘못된 선택" ;;

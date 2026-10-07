@@ -45,9 +45,9 @@ install_docker(){
   else
     info "이미 있는 .env를 그대로 씁니다"
   fi
-  info "이미지를 받고 시작합니다…"
-  docker compose pull || true
-  docker compose up -d
+  info "현재 한국어 소스로 이미지를 만들고 시작합니다…"
+  bash ./build-docker.sh
+  docker compose -f docker-compose.yml -f docker-compose.ko.yml up -d
   ok "시작됨 → http://localhost:8787"
   info "로그: docker compose logs -f artex"
 }
@@ -57,7 +57,7 @@ install_local(){
   echo "데이터베이스 설치 방법:"
   echo "  1) 이미 있는 PostgreSQL에 연결"
   echo "  2) Docker로 PostgreSQL을 띄움(docker 필요)"
-  case "$(ask '선택' 1)" in
+  case "$(ask '선택' 2)" in
     2)
       ensure_docker
       local pw; pw="$(ask 'Postgres 비밀번호(엔터면 임의)' "$(rand)")"
@@ -112,10 +112,10 @@ JSON
 
 echo "=============================="
 echo "  ARTEX 설치"
-echo "  1) 전부 Docker로 설치"
+echo "  1) 현재 한국어 소스로 Docker 이미지 빌드·설치(Go·npm 필요)"
 echo "  2) 로컬 실행(go 컴파일)"
 echo "=============================="
-case "$(ask '선택' 1)" in
+case "$(ask '선택' 2)" in
   1) install_docker ;;
   2) install_local ;;
   *) die "잘못된 선택" ;;

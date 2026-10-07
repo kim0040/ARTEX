@@ -38,7 +38,7 @@ import { cn } from "@/lib/utils";
 
 function fmtTime(value?: string) {
   if (!value) return "—";
-  return new Date(value).toLocaleString("zh-CN", {
+  return new Date(value).toLocaleString("ko-KR", {
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
@@ -50,7 +50,7 @@ function fmtTime(value?: string) {
 function source(row: InterceptApprovalRow) {
   if (row.decision_source) return row.decision_source;
   if (row.rule_id) return "rule";
-  return row.reason?.startsWith("[模型]") ? "model" : "unknown"; // han-allow 프로토콜 토큰
+  return row.reason?.startsWith("[모델]") || row.reason?.startsWith("[模型]") ? "model" : "unknown"; // han-allow 프로토콜 토큰
 }
 
 function originLabel(row: InterceptApprovalRow) {
@@ -109,7 +109,7 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 function MatchCell({ row, showReason = true }: { row: InterceptApprovalRow; showReason?: boolean }) {
-  const reason = row.reason?.replace(/^\[模型\]\s*/, ""); // han-allow 프로토콜 접두사
+  const reason = row.reason?.replace(/^\[(?:모델|模型)\]\s*/, ""); // han-allow 프로토콜 접두사
   return (
     <div className="flex min-w-0 flex-col gap-1">
       {source(row) === "model" ? (
@@ -370,7 +370,7 @@ export function ApprovalDetail({
             <MatchCell row={current} showReason={false} />
           </div>
           <p className="whitespace-pre-wrap break-words text-sm leading-7 [overflow-wrap:anywhere]">
-            {current.reason?.replace(/^\[模型\]\s*/, "") || "승인 이유가 기록되지 않음" /* han-allow 프로토콜 접두사 */}
+            {current.reason?.replace(/^\[(?:모델|模型)\]\s*/, "") || "승인 이유가 기록되지 않음" /* han-allow 프로토콜 접두사 */}
           </p>
           {audit?.decision_reason ? <p className="text-sm">{audit.decision_reason}</p> : null}
           {audit?.effective_action ? <p className="text-sm">최종 동작:{actionLabels[audit.effective_action]}</p> : null}
@@ -484,7 +484,7 @@ export function ApprovalDetail({
               ) : null}
               <CodeBlock
                 label={`${initialLabel}：${actionLabels[audit.initial_action] ?? audit.initial_action}`}
-                text={audit.initial_reason.replace(/^\[模型\]\s*/, "") /* han-allow 프로토콜 접두사 */}
+                text={audit.initial_reason.replace(/^\[(?:모델|模型)\]\s*/, "") /* han-allow 프로토콜 접두사 */}
               />
               <CodeBlock
                 label="실행 출력"

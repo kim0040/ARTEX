@@ -62,7 +62,7 @@ function DialogContent({
       <DialogPrimitive.Content
         data-slot="dialog-content"
         // 대화상자를 닫는 유일한 조건: 누른 곳이 딤 배경(회색 배경) 자체이고, 그때 어떤 Radix 팝업 층도
-        // (Select 드롭다운 등)이 열려 있음. 그 외 "바깥 상호작용"은 모두 막음(Esc, 오른쪽 위 ✕는 여전히 닫을 수 있음):
+        // (Select 드롭다운 등)이 열려 있지 않을 때입니다. 그 외 "바깥 상호작용"은 모두 막음(Esc, 오른쪽 위 ✕는 여전히 닫을 수 있음):
         //  · 팝업 층 안의 옵션을 누름 → target이 딤 배경이 아님 → 막음;
         //  · 팝업 층이 열린 채 대화상자 밖/딤 배경을 눌러 접으려 함 → 팝업 층이 열려 있음 → 막음(팝업 층만 접고, 대화상자는 닫지 않음);
         //  · 팝업 층이 접힐 때 초점 이동을 Radix가 초점이 나간 것으로 잘못 봄 → target이 딤 배경이 아님 → 막음.
@@ -89,7 +89,7 @@ function DialogContent({
             >
               <XIcon
               />
-              <span className="sr-only">Close</span>
+              <span className="sr-only">닫기</span>
             </Button>
           </DialogPrimitive.Close>
         )}
@@ -128,7 +128,7 @@ function DialogFooter({
       {children}
       {showCloseButton && (
         <DialogPrimitive.Close asChild>
-          <Button variant="outline">Close</Button>
+          <Button variant="outline">닫기</Button>
         </DialogPrimitive.Close>
       )}
     </div>

@@ -12,7 +12,7 @@ import (
 
 // Repo는 배포 출처입니다. 설정 항목으로 만들지 않고 고정합니다. 업데이트 출처를 바꿀 수 있으면
 // 설정을 고칠 수 있는 사람에게 원격 코드 실행 통로가 됩니다. 침투 테스트 플랫폼에서는 그 구멍을 열면 안 됩니다.
-const Repo = "Autumn-27/artex"
+const Repo = "kim0040/ARTEX"
 
 // latestURL은 GitHub의 "최신 정식판" 인터페이스입니다. prerelease와 draft는 자동으로 건너뜁니다.
 const latestURL = "https://api.github.com/repos/" + Repo + "/releases/latest"

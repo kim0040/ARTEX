@@ -204,7 +204,7 @@ const TokenMetrics = React.forwardRef<
     labels?: "short" | "long";
   }
 >(({ input, cache, output, labels = "short", className, ...props }, ref) => {
-  const names = labels === "short" ? ["입력", "캐시", "출력"] : ["input", "cache", "output"];
+  const names = labels === "short" ? ["입력", "캐시", "출력"] : ["입력", "캐시 읽기", "출력"];
   const values = [input, cache, output];
   return (
     <span
@@ -228,17 +228,17 @@ TokenMetrics.displayName = "TokenMetrics";
 // fmtDuration은 지난 밀리초를 짧게 그립니다(90초 → 1분 30초).
 function fmtDuration(ms: number): string {
   const s = Math.floor(ms / 1000);
-  if (s < 60) return `${s}s`;
+  if (s < 60) return `${s}초`;
   const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m${String(s % 60).padStart(2, "0")}s`;
+  if (m < 60) return `${m}분 ${s % 60}초`;
   const h = Math.floor(m / 60);
-  return `${h}h${String(m % 60).padStart(2, "0")}m`;
+  return `${h}시간 ${m % 60}분`;
 }
 
 const roleMeta = {
   mainagent: { label: "메인 에이전트", icon: UserIcon },
-  planner: { label: "플래너 Planner", icon: BrainIcon },
-  worker: { label: "Workers", icon: RadioIcon },
+  planner: { label: "플래너", icon: BrainIcon },
+  worker: { label: "워커", icon: RadioIcon },
   system: { label: "시스템 감사", icon: HistoryIcon },
 } as const;
 
@@ -271,7 +271,7 @@ const PLANNER_ID = "s-planner";
 const PLANNER_SESSION: Session = {
   id: PLANNER_ID,
   role: "planner",
-  title: "플래너 Planner · 상황 판단",
+  title: "플래너 · 상황 판단",
   status: "running",
   live: true,
   last_activity: "",
@@ -328,7 +328,7 @@ function intentToSession(n: TaskNode): Session {
   return {
     id: n.id,
     role: "worker",
-    title: label || `Intent ${n.id}`,
+    title: label || `의도 ${n.id}`,
     status: state,
     live: !n.inherited && state === "running",
     last_activity: n.ts,
@@ -427,8 +427,8 @@ function SessionItem({
             size="icon-xs"
             onClick={onCancel}
             disabled={controlling}
-            title="이 의도 삭제(이유를 적어야 하며, 가짜 삭제/완전 삭제를 고를 수 있음)"
-            aria-label="이 의도 삭제(이유를 적어야 하며, 가짜 삭제/완전 삭제를 고를 수 있음)"
+            title="이 워커 의도 삭제(기록 보존 또는 전용 결과까지 완전 삭제)"
+            aria-label="이 워커 의도 삭제(기록 보존 또는 전용 결과까지 완전 삭제)"
             className="text-destructive hover:text-destructive"
           >
             <Trash2Icon />
@@ -497,7 +497,7 @@ export function SessionsTab({ taskId }: { taskId: string }) {
         id,
         role: "worker",
         intent_id: id,
-        title: `Worker #${id}`,
+        title: `워커 #${id}`,
         status: "done",
         live: false,
         last_activity: source.items[0]?.ts ?? "",
@@ -606,21 +606,21 @@ export function SessionsTab({ taskId }: { taskId: string }) {
         const res = await api.controlIntent(taskId, session.intent_id, action, reason, mode);
         if (action === "pause") {
           patchIntentState(session.intent_id, "paused");
-          toast.success(`Worker #${session.intent_id} 이(가) 일시정지되었습니다`);
+          toast.success(`워커 #${session.intent_id}을 일시정지했습니다`);
         } else if (action === "resume") {
           patchIntentState(session.intent_id, "open");
-          toast.success(`Worker #${session.intent_id} 이(가) 복구되어 다시 수령되기를 기다립니다`);
+          toast.success(`워커 #${session.intent_id}을 기존 기록에서 이어서 재개했습니다. 다시 실행 대기 중입니다`);
         } else if (mode === "hard") {
           // 진짜 삭제: 의도와 독점 하위가 물리적으로 제거됨. 그 행을 목록에서 뺌.
           patchIntentState(session.intent_id);
           const d = res.deleted;
           const extra = d ? `(포함 ${d.intents} 의도 / ${d.facts} 사실 / ${d.findings} 발견)` : "";
-          toast.success(`Worker #${session.intent_id} 및 전용 하위 항목이 완전히 삭제되었습니다${extra}`);
+          toast.success(`워커 #${session.intent_id}와 전용 하위 노드를 완전히 삭제했습니다. 공유 노드·목표·작업 루트 사실은 보존됩니다${extra}`);
           setCancelReason("");
         } else {
           // 표시만 삭제: 의도를 deleted로 두고 삭제 이유를 기록하며, 노드와 산출은 유지.
           patchIntentState(session.intent_id, "deleted");
-          toast.success(`Worker #${session.intent_id} 이(가) 삭제되었습니다(이유가 기록되었고, 플래너가 이를 바탕으로 다시 계획합니다)`);
+          toast.success(`워커 #${session.intent_id}을 삭제됨 상태로 표시했습니다. 기록과 산출물은 보존되며 삭제 이유를 플래너에 알렸습니다`);
           setCancelReason("");
         }
       } catch (error) {
@@ -1156,7 +1156,7 @@ export function SessionsTab({ taskId }: { taskId: string }) {
   const sessionMeta = React.useMemo(() => {
     const map = new Map<string, { title: string; json: unknown; deleted: boolean; deleteReason: string }>();
     for (const node of allIntents) {
-      let title = `Intent ${node.id}`;
+      let title = `의도 ${node.id}`;
       let parsedPayload: unknown = node.payload;
       // 표시만 삭제: 의도 state='deleted'. 삭제 이유는 독립 필드 delete_reason에 있습니다.
       const deleted = node.state === "deleted";
@@ -1540,7 +1540,7 @@ export function SessionsTab({ taskId }: { taskId: string }) {
         patchIntentState(intentId, result.state);
         setWorkerMessage("");
         setWorkerMessageRequestId("");
-        toast.success(`메시지를 워커 #${intentId}, 바로 계속 실행함`);
+        toast.success(`워커 #${intentId}에 메시지를 보냈고, 기존 기록에서 이어서 실행합니다`);
       })
       .catch((error) => {
         toast.error(`전송 실패:${(error as Error).message || "잠시 후 다시 시도하세요"}`);
@@ -1639,8 +1639,8 @@ export function SessionsTab({ taskId }: { taskId: string }) {
                   </div>
                 </TooltipTrigger>
                 <TooltipContent>
-                  입력 {taskTokens.input_tokens.toLocaleString()} · 출력 {taskTokens.output_tokens.toLocaleString()} · 캐시 읽기 {taskTokens.cache_read_tokens.toLocaleString()} · 캐시 쓰기{" "}
-                  {taskTokens.cache_write_tokens.toLocaleString()}
+                  입력 {taskTokens.input_tokens.toLocaleString("ko-KR")} · 출력 {taskTokens.output_tokens.toLocaleString("ko-KR")} · 캐시 읽기 {taskTokens.cache_read_tokens.toLocaleString("ko-KR")} · 캐시 쓰기{" "}
+                  {taskTokens.cache_write_tokens.toLocaleString("ko-KR")}
                 </TooltipContent>
               </Tooltip>
             )}
@@ -1734,7 +1734,7 @@ export function SessionsTab({ taskId }: { taskId: string }) {
         {/* 오른쪽: 대화 기록 */}
         <SideQuestionWorkspace
           side={side}
-          label={active.role === "worker" ? `Worker #${active.intent_id} · ${activeDisplayTitle}` : activeDisplayTitle}
+          label={active.role === "worker" ? `워커 #${active.intent_id} · ${activeDisplayTitle}` : activeDisplayTitle}
         >
           <div className="flex min-h-0 flex-1 min-w-0 flex-col overflow-hidden rounded-lg border bg-card">
             <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 border-b px-3 py-2 sm:px-4 sm:py-2.5">
@@ -1817,10 +1817,10 @@ export function SessionsTab({ taskId }: { taskId: string }) {
                       </span>
                     </TooltipTrigger>
                     <TooltipContent>
-                      입력 {activeTokens.input_tokens.toLocaleString()} · 출력{" "}
-                      {activeTokens.output_tokens.toLocaleString()} · 캐시 읽기{" "}
-                      {activeTokens.cache_read_tokens.toLocaleString()} · 캐시 쓰기{" "}
-                      {activeTokens.cache_write_tokens.toLocaleString()}
+                      입력 {activeTokens.input_tokens.toLocaleString("ko-KR")} · 출력{" "}
+                      {activeTokens.output_tokens.toLocaleString("ko-KR")} · 캐시 읽기{" "}
+                      {activeTokens.cache_read_tokens.toLocaleString("ko-KR")} · 캐시 쓰기{" "}
+                      {activeTokens.cache_write_tokens.toLocaleString("ko-KR")}
                     </TooltipContent>
                   </Tooltip>
                 )}
@@ -2115,17 +2115,15 @@ export function SessionsTab({ taskId }: { taskId: string }) {
         >
           <AlertDialogContent className="max-w-[min(32rem,calc(100vw-2rem))]">
             <AlertDialogHeader>
-              <AlertDialogTitle>워커 # 삭제{cancelIntent?.intent_id}？</AlertDialogTitle>
+              <AlertDialogTitle>워커 의도 #{cancelIntent?.intent_id}를 삭제할까요?</AlertDialogTitle>
               <AlertDialogDescription className="break-words whitespace-normal">
                 {deleteMode === "hard" ? (
                   <>
-                    <strong>완전 삭제</strong>이 의도를 완전히 제거하고, 다음도 함께 제거합니다<strong>이것만으로 유지</strong>
-                    의 하위 노드(잎까지 이어서, 고립된 데이터가 남지 않게 함). 공유 노드, 목표, 작업 루트 사실은 남습니다.
-                    <strong>이 작업은 복구할 수 없습니다.</strong>플래너는 삭제 알림을 받고 그에 따라 다시 계획합니다.
+                    <strong>완전 삭제</strong>를 선택하면 이 의도와 이 의도 하나만 부모로 둔 전용 자손 노드(다른 부모가 없는 의도·사실·발견)를 실제로 삭제합니다. 공유 노드, 목표, 작업 루트 사실은 보존하고 자산과 트래픽도 삭제하지 않습니다. 이 의도의 실행 기록과 보조 질문 세션은 정리되며 토큰 사용량 집계는 남습니다. <strong>삭제한 내용은 복구할 수 없습니다.</strong> 플래너에는 삭제 사실과 이유를 알립니다.
                   </>
                 ) : (
                   <>
-                    <strong>임시 삭제</strong>이 의도를 "삭제됨"으로 바꾸고 삭제 이유를 기록합니다. 의도 노드, 실행 기록, 이미 등록된 사실과 발견은<strong>모두 남습니다</strong>. 플래너는 "이 의도를 사용자가 삭제함 + 이유"를 받고 그에 맞춰 다시 계획합니다.
+                    <strong>삭제 표시</strong>를 선택하면 이 의도를 "삭제됨" 상태로 바꾸고 삭제 이유를 기록합니다. 의도·실행 기록·이미 등록된 사실과 발견은 보존하며, 보조 질문 세션만 정리합니다. 플래너에는 삭제 사실과 이유를 알립니다.
                   </>
                 )}
               </AlertDialogDescription>
@@ -2140,8 +2138,8 @@ export function SessionsTab({ taskId }: { taskId: string }) {
                     deleteMode === "soft" ? "border-primary bg-primary/5" : "hover:bg-accent",
                   )}
                 >
-                  <div className="font-medium">임시 삭제</div>
-                  <div className="text-xs text-muted-foreground">데이터를 남겨 나중에 추적</div>
+                  <div className="font-medium">삭제 표시</div>
+                  <div className="text-xs text-muted-foreground">기록과 산출물을 남겨 나중에 추적</div>
                 </button>
                 <button
                   type="button"
@@ -2177,7 +2175,7 @@ export function SessionsTab({ taskId }: { taskId: string }) {
                 onClick={() => cancelIntent && void controlWorker(cancelIntent, "cancel", cancelReason, deleteMode)}
               >
                 {controllingIntent ? <Loader2Icon className="animate-spin" /> : <Trash2Icon />}
-                {deleteMode === "hard" ? "완전 삭제" : "삭제 확인"}
+                {deleteMode === "hard" ? "완전 삭제" : "삭제 표시"}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
@@ -2188,13 +2186,13 @@ export function SessionsTab({ taskId }: { taskId: string }) {
             <AlertDialogHeader>
               <AlertDialogTitle>새 세션을 시작할까요?</AlertDialogTitle>
               <AlertDialogDescription className="break-words whitespace-normal">
-                현재 세션은 보관됩니다(언제든 다시 전환할 수 있음). 메인 에이전트는 깨끗한 컨텍스트로 이어갑니다. 작업의 그래프, 자산, 목표는 영향받지 않습니다.
+                현재 세션 기록은 그대로 보관됩니다. 새 메인 세션은 이전 대화를 이어받지 않고 처음부터 시작하지만, 작업의 그래프·자산·목표는 그대로 공유합니다.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel disabled={creatingMain}>취소</AlertDialogCancel>
               <AlertDialogAction disabled={creatingMain} onClick={() => void createMainSession()}>
-                {creatingMain ? "켜는 중…" : "새 세션 켜기"}
+                {creatingMain ? "시작 중…" : "새 세션 시작"}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

@@ -6,6 +6,7 @@ import * as React from "react";
 import { AppSidebar } from "@/app/(main)/_components/sidebar/app-sidebar";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { auth } from "@/lib/auth";
+import { MOCK } from "@/lib/mock/enabled";
 import { getClientCookie } from "@/lib/cookie.client";
 import {
   SIDEBAR_COLLAPSIBLE_VALUES,
@@ -79,6 +80,11 @@ export default function Layout({ children }: Readonly<{ children: ReactNode }>) 
           "min-w-0 overflow-x-hidden",
         )}
       >
+        {MOCK && (
+          <div role="note" className="border-b bg-muted/50 px-4 py-2 text-sm text-muted-foreground">
+            샘플 화면 · 표시된 데이터는 예시입니다. 실제 검사·알림 전송을 실행하지 않습니다.
+          </div>
+        )}
         <MainContent>{children}</MainContent>
       </SidebarInset>
     </SidebarProvider>

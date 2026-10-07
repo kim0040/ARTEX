@@ -41,7 +41,7 @@ const FINDING_STATUSES: FindingStatus[] = [
 ];
 
 function fmtTime(ts: string) {
-  return new Date(ts).toLocaleString("zh-CN");
+  return new Date(ts).toLocaleString("ko-KR");
 }
 
 // FieldRow는 오른쪽 상태 패널의 이름/값 한 줄입니다.

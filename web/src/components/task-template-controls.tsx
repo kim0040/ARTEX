@@ -321,8 +321,8 @@ function TaskTemplateManager({
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>템플릿 삭제 "{draft.name || "이름 없는 템플릿"}」？</AlertDialogTitle>
-            <AlertDialogDescription>이 템플릿으로 이미 만든 작업은 영향을 받지 않습니다.</AlertDialogDescription>
+            <AlertDialogTitle>템플릿 "{draft.name || "이름 없는 템플릿"}"을 삭제할까요?</AlertDialogTitle>
+            <AlertDialogDescription>템플릿만 삭제하며, 이 템플릿으로 이미 만든 작업에는 영향을 주지 않습니다.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleting}>취소</AlertDialogCancel>
@@ -511,8 +511,8 @@ export function TaskTemplateControls({
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>템플릿 사용 "{pendingTemplate?.name}」？</AlertDialogTitle>
-            <AlertDialogDescription>현재 입력한 설명과 목표는 템플릿 내용으로 바뀝니다.</AlertDialogDescription>
+            <AlertDialogTitle>템플릿 "{pendingTemplate?.name}"을 적용할까요?</AlertDialogTitle>
+            <AlertDialogDescription>현재 입력한 설명과 목표를 템플릿 내용으로 덮어씁니다. 계속하시겠습니까?</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>취소</AlertDialogCancel>

@@ -153,7 +153,8 @@ func renderPlannerTodos(items []actool.Todo) string {
 //	"goal_deleted" — 사람이 개요의 목표 관리에서 목표를 지웠습니다(Detail = 삭제된 목표 텍스트).
 //	"goal_edited"  — 사람이 개요의 목표 관리에서 목표를 고쳤습니다(OldGoal→NewGoal 텍스트).
 //	"cancelled" — 사람이 의도 IntentID 를 지웠습니다(Detail = 삭제 이유). 그 의도는
-//	            멈춘 것이지 지워진 것이 아니고, 이유가 사실로 붙습니다.
+//	            표시 삭제(soft)는 노드와 산출물을 남기고 delete_reason에 이유를 기록합니다.
+//	            영구 삭제(hard)는 노드를 실제로 지우므로 아래 Summary로 이전 요약을 전달합니다.
 type TriggerEvent struct {
 	Kind     string
 	IntentID int64

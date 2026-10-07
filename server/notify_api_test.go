@@ -434,7 +434,7 @@ func TestNotifyDigestBatchesMultipleFindingsIntoOneMessage(t *testing.T) {
 		t.Fatalf("요약 메시지에 건수/시간 창 문구가 없음:\n%s", text)
 	}
 	for i := 1; i <= 3; i++ {
-		if !strings.Contains(text, fmt.Sprintf("요약 발견(finding)%d", i)) {
+		if !strings.Contains(text, fmt.Sprintf("요약 발견\\(finding\\)%d", i)) {
 			t.Fatalf("요약 메시지에 %d번째 항목이 없음:\n%s", i, text)
 		}
 	}

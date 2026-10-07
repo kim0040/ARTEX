@@ -15,12 +15,21 @@ import (
 )
 
 func TestTaskTemplateHTTPCRUD(t *testing.T) {
+	useDedicatedCoreLifecycleDB(t)
 	m, err := NewManager(t.TempDir(), "")
 	if err != nil {
 		t.Skipf("postgres unavailable (%v) — skipping", err)
 	}
-	defer m.Close()
-	s := New(context.Background(), m, t.TempDir(), t.TempDir(), t.TempDir())
+	ctx, cancel := context.WithCancel(context.Background())
+	s := New(ctx, m, t.TempDir(), t.TempDir(), t.TempDir())
+	t.Cleanup(func() {
+		cancel()
+		s.archiveWG.Wait()
+		if s.side != nil {
+			<-s.side.done
+		}
+		_ = m.Close()
+	})
 	h := s.Handler()
 	token, err := signJWT(s.jwtKey)
 	if err != nil {
@@ -85,12 +94,21 @@ func TestTaskTemplateHTTPCRUD(t *testing.T) {
 }
 
 func TestConversationPatchReturnsPinState(t *testing.T) {
+	useDedicatedCoreLifecycleDB(t)
 	m, err := NewManager(t.TempDir(), "")
 	if err != nil {
 		t.Skipf("postgres unavailable (%v) — skipping", err)
 	}
-	defer m.Close()
-	s := New(context.Background(), m, t.TempDir(), t.TempDir(), t.TempDir())
+	ctx, cancel := context.WithCancel(context.Background())
+	s := New(ctx, m, t.TempDir(), t.TempDir(), t.TempDir())
+	t.Cleanup(func() {
+		cancel()
+		s.archiveWG.Wait()
+		if s.side != nil {
+			<-s.side.done
+		}
+		_ = m.Close()
+	})
 	conversation, err := m.pg.CreateConversation("mainagent", "pin through http", nil)
 	if err != nil {
 		t.Fatal(err)

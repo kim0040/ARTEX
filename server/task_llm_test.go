@@ -117,7 +117,7 @@ func TestIsQuotaExhaustedError(t *testing.T) {
 		`billing_hard_limit_reached`,
 		`billing_not_active`,
 		`HTTP status 402 Payment Required`,
-		`계정 잔액이 부족합니다. 충전해 주세요`,
+		`账户余额不足，请充值`, // han-allow 업스트림 provider 오류 fixture
 		`credit balance is too low`,
 	}
 	for _, message := range positive {

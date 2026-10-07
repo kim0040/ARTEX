@@ -55,12 +55,12 @@ function fmtRel(ts?: string | number): string {
   if (!ts) return "—";
   const ms = Date.now() - (typeof ts === "number" ? ts * 1000 : Date.parse(ts as string));
   const s = Math.floor(ms / 1000);
-  if (s < 60) return `${s}s 전`;
+  if (s < 60) return `${s}초 전`;
   const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m 전`;
+  if (m < 60) return `${m}분 전`;
   const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h 전`;
-  return `${Math.floor(h / 24)}d 전`;
+  if (h < 24) return `${h}시간 전`;
+  return `${Math.floor(h / 24)}일 전`;
 }
 
 function fmtTokens(n: number): string {
@@ -472,9 +472,8 @@ export default function DashboardPage() {
 
   // 활동 종류 이름
   function kindLabel(a: Activity): string {
-    if (a.kind === "tool_use") return a.tool ?? "tool_use";
-    if (a.kind === "tool_result") return "tool_result";
-    return a.kind;
+    if (a.kind === "tool_use") return a.tool ?? "도구 호출";
+    return ({ tool_result: "도구 결과", text: "설명", thinking: "추론", result: "요약" } as Record<string, string>)[a.kind] ?? a.kind;
   }
 
   function workerColor(w: string): string {
@@ -573,7 +572,7 @@ export default function DashboardPage() {
         <Card className="gap-1">
           <CardHeader className="pb-0">
             <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
-              <ZapIcon className="size-3" /> Token 사용량
+              <ZapIcon className="size-3" /> 토큰 사용량
             </div>
             <div className="text-2xl font-semibold tabular-nums">
               {fmtTokens(displayedTokens.input + displayedTokens.output) || "—"}
@@ -592,7 +591,7 @@ export default function DashboardPage() {
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-1.5 text-xs font-semibold">
             <ZapIcon className="size-3.5 text-muted-foreground" />
-            LLM Token 사용량
+            LLM 토큰 사용량
             {/* 데이터 출처 스위치: 예전=activity 통계(지난 작업 포함), 새 버전=llm_usage 계량 장부(더 정확, 켠 뒤만 포함) */}
             <div className="ml-1 flex gap-0.5 rounded-md border bg-muted/30 p-0.5">
               {(
@@ -607,8 +606,8 @@ export default function DashboardPage() {
                   onClick={() => setTokenVersion(v)}
                   title={
                     v === "new"
-                      ? "새 버전: llm_usage 측정 원장에서 옵니다. 호출마다 정확하고 중단 소모를 포함하며, 켠 뒤의 데이터만 다룹니다"
-                      : "이전 버전: activity 통계에서 옵니다(과거 작업 포함). 중단 소모는 집계하지 않고, 모델까지 정확히 나누지 못합니다"
+                      ? "새 버전: 호출 계량 기록 측정 원장에서 옵니다. 호출마다 정확하고 중단 소모를 포함하며, 켠 뒤의 데이터만 다룹니다"
+                      : "이전 버전: 활동 기록 통계에서 옵니다(과거 작업 포함). 중단 소모는 집계하지 않고, 모델까지 정확히 나누지 못합니다"
                   }
                   className={cn(
                     "rounded px-2 py-0.5 text-[9px] font-medium transition-colors",
@@ -622,7 +621,7 @@ export default function DashboardPage() {
               ))}
             </div>
             <span className="text-[10px] font-normal text-muted-foreground">
-              {tokenVersion === "new" ? "llm_usage" : "activity"}
+              {tokenVersion === "new" ? "호출 계량 기록" : "활동 기록"}
             </span>
           </div>
           {/* 프로필 탭 */}
@@ -872,7 +871,7 @@ export default function DashboardPage() {
               if (count === 0) return null;
               return (
                 <span key={kind} className="rounded border bg-muted/20 px-1.5 py-0.5 text-[9px] text-muted-foreground">
-                  {kind} <strong className="text-foreground/70">{count}</strong>
+                  {({ tool_use: "도구 호출", tool_result: "도구 결과", text: "설명", thinking: "추론", result: "요약" })[kind]} <strong className="text-foreground/70">{count}</strong>
                 </span>
               );
             })}
@@ -890,7 +889,7 @@ export default function DashboardPage() {
                       workerBg(a.worker),
                     )}
                   >
-                    {a.worker}
+                    {({ planner: "플래너", mainagent: "메인 에이전트", worker: "워커" } as Record<string, string>)[a.worker] ?? a.worker}
                   </span>
                   <div className="min-w-0 flex-1">
                     <div className="text-[11px] font-medium">{kindLabel(a)}</div>
@@ -898,7 +897,7 @@ export default function DashboardPage() {
                   </div>
                   <div className="shrink-0 text-right">
                     <Badge variant="outline" className="px-1.5 py-0 text-[9px] text-muted-foreground">
-                      {a.kind}
+                      {({ tool_use: "도구 호출", tool_result: "도구 결과", text: "설명", thinking: "추론", result: "요약" } as Record<string, string>)[a.kind] ?? a.kind}
                     </Badge>
                     <div className="mt-0.5 text-[9px] tabular-nums text-muted-foreground">{fmtRel(a.ts)}</div>
                   </div>

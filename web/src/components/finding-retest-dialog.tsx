@@ -55,10 +55,10 @@ export function FindingRetestDialog({ findingId, findingName, onClose, onStarted
     <Dialog open onOpenChange={(open) => !open && !submitLock.current && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>재테스트 발견 #{findingId}</DialogTitle>
+          <DialogTitle>재검사 발견 #{findingId}</DialogTitle>
           <DialogDescription className="break-words">
             {findingName ? <span className="mb-2 block">{findingName}</span> : null}
-            재테스트 Agent는 원래 증거와 테스트 제한을 읽고, 별도 세션에서 맞춰 확인합니다. 재테스트가 끝나고 수정이 확인되면 발견 상태가 자동으로 "수정됨"이 됩니다. 다른 결론은 원래 상태를 유지합니다.
+            재검사 Agent는 원래 증거와 테스트 제한을 읽고, 별도 세션에서 맞춰 확인합니다. 재검사가 끝나고 수정이 확인되면 발견 상태가 자동으로 "수정됨"이 됩니다. 다른 결론은 원래 상태를 유지합니다.
           </DialogDescription>
         </DialogHeader>
         <FieldGroup>

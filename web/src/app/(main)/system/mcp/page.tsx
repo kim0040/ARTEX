@@ -363,7 +363,7 @@ export default function MCPPage() {
     <div className="flex flex-1 flex-col gap-4 md:gap-6">
       <div>
         <h1 className="text-xl font-semibold tracking-tight">MCP</h1>
-        <p className="text-muted-foreground text-sm">외부 MCP 도구 서버 · Agent 권한에 따라 표시</p>
+        <p className="text-muted-foreground text-sm">외부 MCP 도구 서버 · 에이전트 권한에 따라 표시</p>
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -411,7 +411,7 @@ export default function MCPPage() {
                 {s.tools && s.tools.length > 0 ? `${s.tools.length} 개 도구` : "아직 도구를 찾지 못함"}
               </p>
               <div className="grid gap-2" onClick={(e) => e.stopPropagation()}>
-                <span className="text-muted-foreground text-xs">표시 범위(Agent 권한별)</span>
+                <span className="text-muted-foreground text-xs">표시 범위(에이전트 권한별)</span>
                 <div className="flex flex-wrap gap-x-4 gap-y-2">
                   {agents.map((a) => (
                     <label key={a.key} className="flex items-center gap-2 text-sm">

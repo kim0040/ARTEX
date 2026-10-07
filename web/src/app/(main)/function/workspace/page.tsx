@@ -51,7 +51,7 @@ function fmtSize(n: number): string {
   return `${(n / 1024 / 1024 / 1024).toFixed(1)} GB`;
 }
 function fmtTime(ms: number): string {
-  return new Date(ms).toLocaleString("zh-CN", {
+  return new Date(ms).toLocaleString("ko-KR", {
     year: "2-digit",
     month: "2-digit",
     day: "2-digit",
@@ -130,7 +130,7 @@ export default function WorkspacePage() {
   };
 
   const del = (e: WorkspaceEntry) => {
-    if (!window.confirm(`삭제 확인 ${e.dir ? "디렉터리" : "파일"} “${e.name}”？${e.dir ? "(그 아래의 모든 내용 포함)" : ""}`)) return;
+    if (!window.confirm(`${e.dir ? "디렉터리" : "파일"} "${e.name}"을 삭제할까요?${e.dir ? " (안의 모든 항목 포함)" : ""}`)) return;
     api
       .workspaceDelete(e.path)
       .then(() => {

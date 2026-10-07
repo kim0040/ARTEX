@@ -450,7 +450,7 @@ function DraftChat({
         <div className="bg-primary/10 flex size-12 items-center justify-center rounded-full">
           <Bot className="text-primary size-6" />
         </div>
-        <div className="text-sm font-medium">시작과 "{agent?.name ?? "Agent"}" 대화</div>
+        <div className="text-sm font-medium">"{agent?.name ?? "에이전트"}"와 대화를 시작하세요</div>
         {agent?.description && <p className="text-muted-foreground max-w-md text-xs">{agent.description}</p>}
       </div>
 
@@ -778,13 +778,13 @@ function ChatView({
         <SideQuestionButton side={side} />
         <div className="text-muted-foreground ml-auto flex min-w-0 max-w-full items-center justify-end gap-x-3 gap-y-1 text-xs max-sm:w-full max-sm:flex-wrap">
           {tokenTotal.turns > 0 && (
-            <span title="agent 루프 횟수(모델 호출 횟수)" className="tabular-nums">
+            <span title="에이전트 실행 횟수(모델 호출 횟수)" className="tabular-nums">
               {tokenTotal.turns} 라운드
             </span>
           )}
           {tokenTotal.any && (
-            <span title="input / cache(read) / output tokens" className="min-w-0 truncate tabular-nums">
-              input {fmtTokens(tokenTotal.i)} · cache {fmtTokens(tokenTotal.cr)} · output {fmtTokens(tokenTotal.o)}
+            <span title="입력 / 캐시 읽기 / 출력 토큰" className="min-w-0 truncate tabular-nums">
+              입력 {fmtTokens(tokenTotal.i)} · 캐시 읽기 {fmtTokens(tokenTotal.cr)} · 출력 {fmtTokens(tokenTotal.o)}
             </span>
           )}
         </div>
@@ -797,7 +797,7 @@ function ChatView({
         <div className="min-w-0 max-w-full px-4 py-3" ref={contentRef}>
           {messages.length === 0 && !running ? (
             <div className="text-muted-foreground py-10 text-center text-sm">
-              시작과 "{agent?.name ?? conv.agent_key}" 대화
+              "{agent?.name ?? conv.agent_key}"와 대화를 시작하세요
             </div>
           ) : (
             <>
@@ -816,7 +816,7 @@ function ChatView({
         onSend={send}
         disabled={running || sending}
         allowBtw
-        placeholder={running ? "Agent가 답하는 중입니다. /btw로 질문할 수 있습니다…" : "메시지를 입력하고, @로 기록을 인용하며, Enter로 보냅니다"}
+        placeholder={running ? "에이전트가 답하는 중입니다. /btw로 질문할 수 있습니다…" : "메시지를 입력하고, @로 기록을 인용하며, Enter로 보냅니다"}
         running={running}
         onStop={stop}
         stopDisabled={stopping}
@@ -931,7 +931,7 @@ const ConversationItem = React.memo(function ConversationItem({
             {pinned && <PinIcon className="text-primary size-3 shrink-0" aria-label="맨 위에 고정함" />}
             <div className="truncate text-sm">{conv.title || "새 대화"}</div>
             {conv.running ? (
-              <Badge variant="secondary" className="shrink-0 gap-1" title="Agent 실행 중">
+              <Badge variant="secondary" className="shrink-0 gap-1" title="에이전트 실행 중">
                 <Spinner className="size-3" aria-hidden="true" />
                 실행 중
               </Badge>
@@ -946,7 +946,7 @@ const ConversationItem = React.memo(function ConversationItem({
               </>
             )}
             <span className="shrink-0">
-              {new Date(conv.created_at).toLocaleDateString("zh-CN", {
+              {new Date(conv.created_at).toLocaleDateString("ko-KR", {
                 month: "numeric",
                 day: "numeric",
                 hour: "2-digit",
@@ -991,8 +991,8 @@ const ConversationItem = React.memo(function ConversationItem({
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>대화 삭제 "{conv.title || "새 대화"}」？</AlertDialogTitle>
-            <AlertDialogDescription>이 작업은 되돌릴 수 없습니다.</AlertDialogDescription>
+            <AlertDialogTitle>대화 "{conv.title || "새 대화"}"를 삭제할까요?</AlertDialogTitle>
+            <AlertDialogDescription>대화 메시지와 실행 기록을 함께 삭제합니다. 삭제한 내용은 되돌릴 수 없습니다.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>취소</AlertDialogCancel>
@@ -1211,7 +1211,7 @@ export default function ChatPage() {
     if (agentFilter !== null) keys.add(agentFilter);
     return [...keys]
       .map((key) => ({ key, name: agentByKey.get(key)?.name || key, count: counts.get(key) ?? 0 }))
-      .sort((a, b) => a.name.localeCompare(b.name, "zh-CN"));
+      .sort((a, b) => a.name.localeCompare(b.name, "ko-KR"));
   }, [convs, chatAgents, agentByKey, agentFilter]);
   const conversationCountLabel =
     agentFilter === null ? `총 ${convs.length} 개` : `${filteredConversations.length} / ${convs.length} 개`;
@@ -1364,11 +1364,11 @@ export default function ChatPage() {
             >
               <SelectTrigger size="sm" className="w-full min-w-0" aria-label="에이전트별 대화 필터">
                 <Bot />
-                <SelectValue placeholder="모든 Agent" />
+                <SelectValue placeholder="모든 에이전트" />
               </SelectTrigger>
               <SelectContent>
                 <SelectGroup>
-                  <SelectItem value="all">모든 Agent</SelectItem>
+                  <SelectItem value="all">모든 에이전트</SelectItem>
                   {agentFilterOptions.map((agent) => (
                     <SelectItem key={agent.key} value={`agent:${agent.key}`}>
                       {agent.name}（{agent.count}）
@@ -1545,8 +1545,8 @@ export default function ChatPage() {
       <AlertDialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>선택한 항목 삭제 {selectedConversationCount} 개 대화?</AlertDialogTitle>
-            <AlertDialogDescription>대화 메시지와 실행 기록이 함께 삭제됩니다. 이 작업은 되돌릴 수 없습니다.</AlertDialogDescription>
+            <AlertDialogTitle>선택한 대화 {selectedConversationCount}개를 삭제할까요?</AlertDialogTitle>
+            <AlertDialogDescription>선택한 대화 메시지와 실행 기록을 함께 삭제합니다. 삭제한 내용은 되돌릴 수 없습니다.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={bulkDeleting}>취소</AlertDialogCancel>

@@ -83,14 +83,14 @@ export function TrafficEvidenceViewer({
         ) : detail ? (
           <Tabs defaultValue="request">
             <TabsList>
-              <TabsTrigger value="request">요청 Request</TabsTrigger>
-              <TabsTrigger value="response">응답 Response</TabsTrigger>
+              <TabsTrigger value="request">요청</TabsTrigger>
+              <TabsTrigger value="response">응답</TabsTrigger>
             </TabsList>
             {(["request", "response"] as const).map((side) => (
               <TabsContent key={side} value={side}>
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="text-xs text-muted-foreground">
-                    본문 {detail[side].total.toLocaleString()} 바이트{detail[side].truncated ? " · 지금은 미리보기" : ""}
+                    본문 {detail[side].total.toLocaleString("ko-KR")} 바이트{detail[side].truncated ? " · 지금은 미리보기" : ""}
                   </span>
                   <Button
                     variant="outline"
@@ -162,8 +162,8 @@ export function CapturedTrafficViewer({ id, onClose }: { id: string | null; onCl
         ) : detail ? (
           <Tabs defaultValue="request">
             <TabsList>
-              <TabsTrigger value="request">요청 Request</TabsTrigger>
-              <TabsTrigger value="response">응답 Response</TabsTrigger>
+              <TabsTrigger value="request">요청</TabsTrigger>
+              <TabsTrigger value="response">응답</TabsTrigger>
             </TabsList>
             <TabsContent value="request">
               <HttpCodeBlock raw={detail.req} />

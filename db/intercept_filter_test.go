@@ -39,6 +39,9 @@ func TestInterceptApprovalFilters(t *testing.T) {
 					}
 					if source == "model" {
 						reason = "[模型] fixture" // han-allow 프로토콜 원문
+						if i%2 == 0 && (status == "denied" || status == "timeout") {
+							reason = "[모델] 샘플 판정"
+						}
 					}
 					id, err := d.CreateDecidedIntercept(ruleID, 0, task, "test", "Bash", []byte(`{"command":"fixture"}`), status, reason)
 					if err != nil {

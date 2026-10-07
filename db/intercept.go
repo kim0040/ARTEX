@@ -228,7 +228,7 @@ func scanInterceptApprovalRow(rows interface{ Scan(...any) error }, r *Intercept
 // decision_source가 없는 옛 행도 화면에 보이는 출처와 같게 맞춘다.
 const approvalDecisionSource = `COALESCE(NULLIF(ip.decision_source,''), CASE
  WHEN ip.rule_id IS NOT NULL THEN 'rule'
- WHEN ip.reason LIKE '` + "[模型]" + `%' THEN 'model' ELSE 'unknown' END)` // han-allow 프로토콜 접두사
+ WHEN ip.reason LIKE '[모델]%' OR ip.reason LIKE '` + "[模型]" + `%' THEN 'model' ELSE 'unknown' END)` // han-allow 프로토콜 접두사
 
 const approvalRowColumns = `ip.id, ip.rule_id, ip.conversation_id, ip.task_id, ip.agent_name,
        ip.tool_name, ip.tool_input, ip.status, ip.reason, ip.decided_at, ip.created_at, ` + approvalDecisionSource + `,
@@ -248,7 +248,8 @@ func interceptSource(ruleID int64, reason string) string {
 	if ruleID != 0 {
 		return "rule"
 	}
-	if strings.HasPrefix(reason, "[模型]") { // han-allow 프로토콜 원문
+	// 이전 기록의 원문 접두사도 읽습니다. 새 기록은 decision_source에 출처를 저장합니다.
+	if strings.HasPrefix(reason, "[모델]") || strings.HasPrefix(reason, "[模型]") { // han-allow 이전 기록 호환
 		return "model"
 	}
 	return "unknown"

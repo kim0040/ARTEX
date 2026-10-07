@@ -17,7 +17,7 @@ import type { CommandRecord, ToolStat } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 function fmtTime(ts: string) {
-  return new Date(ts).toLocaleString("zh-CN", {
+  return new Date(ts).toLocaleString("ko-KR", {
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
@@ -207,7 +207,7 @@ export default function CommandsPage() {
                 <TableRow>
                   <TableHead className="w-[130px]">시간</TableHead>
                   <TableHead className="w-[60px]">작업</TableHead>
-                  <TableHead className="w-[90px]">Worker</TableHead>
+                  <TableHead className="w-[90px]">워커</TableHead>
                   <TableHead className="w-[110px]">도구</TableHead>
                   <TableHead>입력</TableHead>
                   <TableHead className="w-[60px]">상태</TableHead>
@@ -362,7 +362,7 @@ export default function CommandsPage() {
               </SheetHeader>
               <div className="grid min-h-0 flex-1 grid-rows-2 divide-y">
                 <div className="flex min-h-0 min-w-0 flex-col">
-                  <div className="border-b px-5 py-2 text-xs font-medium text-muted-foreground">입력 Input</div>
+                  <div className="border-b px-5 py-2 text-xs font-medium text-muted-foreground">입력</div>
                   <div className="min-h-0 flex-1 overflow-auto">
                     <pre className="p-5 font-mono text-xs break-all whitespace-pre-wrap">
                       {toolInput(selected.command)}
@@ -370,7 +370,7 @@ export default function CommandsPage() {
                   </div>
                 </div>
                 <div className="flex min-h-0 min-w-0 flex-col">
-                  <div className="border-b px-5 py-2 text-xs font-medium text-muted-foreground">출력 Output</div>
+                  <div className="border-b px-5 py-2 text-xs font-medium text-muted-foreground">출력</div>
                   <div className="min-h-0 flex-1 overflow-auto">
                     <pre
                       className={cn(

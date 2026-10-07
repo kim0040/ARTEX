@@ -134,7 +134,7 @@ function TaskLLMControl({ task, profiles, onUpdated }: { task: Task; profiles: L
       } else {
         toast.success(
           result.reopened_intents > 0
-            ? `LLM 설정이 업데이트되었고, 복구됨 ${result.reopened_intents} 건의 한도로 막힌 의도`
+            ? `LLM 설정을 업데이트했습니다. 한도 부족으로 멈춘 의도 ${result.reopened_intents}개를 기존 기록에서 이어서 다시 실행 대기열에 넣었습니다`
             : "LLM 설정이 업데이트되었습니다",
         );
       }
@@ -281,7 +281,7 @@ function TaskDetailInner() {
     try {
       await api.controlTask(id, next ? "pause" : "resume");
       setPaused(next);
-      toast.success(next ? "탐색을 일시정지했습니다" : "탐색을 재개했습니다");
+      toast.success(next ? "탐색을 일시정지했습니다" : "기존 기록에서 탐색을 이어서 재개했습니다");
     } catch (e) {
       toast.error("동작 실패: " + (e as Error).message);
     }
@@ -321,7 +321,7 @@ function TaskDetailInner() {
   const canArchive = archiveLifecycleEligible && !task.archive_blocked_by_task_id;
   let archiveDisabledReason = task.queued ? "대기열에 있는 작업은 먼저 일시정지해야 합니다" : "실행 중인 작업은 먼저 일시정지해야 합니다";
   if (archiveLifecycleEligible && task.archive_blocked_by_task_id) {
-    archiveDisabledReason = `작업이 보관되지 않은 작업 #${task.archive_blocked_by_task_id} 을(를) 직접 상속합니다. 먼저 의존 작업을 보관하세요`;
+    archiveDisabledReason = `아직 보관하지 않은 작업 #${task.archive_blocked_by_task_id}의 내용을 직접 상속합니다. 먼저 의존 작업을 보관하세요`;
   }
   const engineMode = paused ? "paused" : (task.engine_mode ?? "idle");
   let controlVariant: "default" | "secondary" | "outline" = "outline";
@@ -334,7 +334,7 @@ function TaskDetailInner() {
   } else if (paused) {
     controlVariant = "default";
     controlIcon = <PlayIcon data-icon="inline-start" />;
-    controlLabel = "복구";
+    controlLabel = "재개";
   }
   const archiveTrigger = (
     <Button
@@ -372,9 +372,9 @@ function TaskDetailInner() {
               <AlertDialogTrigger asChild>{archiveTrigger}</AlertDialogTrigger>
               <AlertDialogContent>
                 <AlertDialogHeader>
-                  <AlertDialogTitle>보관 작업 #{task.id}？</AlertDialogTitle>
+                  <AlertDialogTitle>작업 #{task.id}을 보관할까요?</AlertDialogTitle>
                   <AlertDialogDescription>
-                    작업 그래프, 연결 기록, 전용 자산과 트래픽, 작업 파일, LLM 기록이 콜드 스토리지로 압축됩니다. 보관이 끝나면 작업 목록의 "보관됨" 페이지에서 복원할 수 있습니다.
+                    작업 그래프와 연결 기록, 전용 자산·트래픽, 작업 파일·LLM 기록을 로컬 보관 저장소로 압축합니다. 보관이 끝나면 작업 목록의 "보관됨"에서 복원할 수 있습니다.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>

@@ -92,7 +92,7 @@ function SidePanel({
         {side.snapshot ? (
           <>
             <p>{side.snapshot.model.model}</p>
-            <p>컨텍스트 업데이트 시각 {new Date(side.snapshot.captured_at).toLocaleString()}</p>
+            <p>컨텍스트 업데이트 시각 {new Date(side.snapshot.captured_at).toLocaleString("ko-KR")}</p>
           </>
         ) : (
           "메인 에이전트가 처음 실행된 뒤에 질문할 수 있습니다"
@@ -127,8 +127,8 @@ function SidePanel({
               <div className="flex flex-wrap items-center gap-2 text-muted-foreground text-xs">
                 <Badge variant="secondary">{status[item.status]}</Badge>
                 <span className="truncate">{item.model.model}</span>
-                <time dateTime={item.snapshot_at} title={new Date(item.snapshot_at).toLocaleString()}>
-                  컨텍스트 {new Date(item.snapshot_at).toLocaleTimeString()}
+                <time dateTime={item.snapshot_at} title={new Date(item.snapshot_at).toLocaleString("ko-KR")}>
+                  컨텍스트 {new Date(item.snapshot_at).toLocaleTimeString("ko-KR")}
                 </time>
               </div>
               {item.context?.estimated_input_tokens != null && (

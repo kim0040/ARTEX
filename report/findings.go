@@ -24,7 +24,7 @@ import (
 // 요약 보고서의 묶음과 같습니다.
 func sortFindingsForExport(fs []*db.DBFinding) {
 	sort.SliceStable(fs, func(i, j int) bool {
-		ri, rj := sevRank[fs[i].Severity], sevRank[fs[j].Severity]
+		ri, rj := severityRank(fs[i].Severity), severityRank(fs[j].Severity)
 		if ri != rj {
 			return ri < rj // sevRank가 작을수록 더 심각
 		}
@@ -48,10 +48,17 @@ func FindingsMarkdown(fs []*db.DBFinding, generatedAt time.Time) string {
 	fmt.Fprintf(&b, "- **생성 시각**: %s\n", generatedAt.Format("2006-01-02 15:04:05"))
 	fmt.Fprintf(&b, "- **발견 총수**: %d개\n\n", len(items))
 
-	// 요약: 심각도별 개수.
+	// 요약: 심각도별 개수. DB의 원시값은 저장한 그대로 두고, 알려진
+	// 대소문자 변형은 같은 등급으로 센다. 새 등급은 별도 행에 원문을 남긴다.
 	counts := map[string]int{}
+	unknownSeverities := map[string]int{}
 	for _, f := range items {
-		counts[f.Severity]++
+		key := strings.ToLower(strings.TrimSpace(f.Severity))
+		if _, ok := displayLabels["severity"][key]; ok {
+			counts[key]++
+		} else {
+			unknownSeverities[f.Severity]++
+		}
 	}
 	b.WriteString("## 요약\n\n")
 	b.WriteString("| 심각도 | 개수 |\n| --- | --- |\n")
@@ -59,6 +66,14 @@ func FindingsMarkdown(fs []*db.DBFinding, generatedAt time.Time) string {
 		{"critical", "심각"}, {"high", "높음"}, {"medium", "중간"}, {"low", "낮음"},
 	} {
 		fmt.Fprintf(&b, "| %s | %d |\n", s.label, counts[s.key])
+	}
+	unknownKeys := make([]string, 0, len(unknownSeverities))
+	for raw := range unknownSeverities {
+		unknownKeys = append(unknownKeys, raw)
+	}
+	sort.Slice(unknownKeys, func(i, j int) bool { return severityLabel(unknownKeys[i]) < severityLabel(unknownKeys[j]) })
+	for _, raw := range unknownKeys {
+		fmt.Fprintf(&b, "| %s | %d |\n", severityLabel(raw), unknownSeverities[raw])
 	}
 	b.WriteString("\n")
 
@@ -69,11 +84,11 @@ func FindingsMarkdown(fs []*db.DBFinding, generatedAt time.Time) string {
 
 	b.WriteString("## 취약점 상세\n\n")
 	for i, f := range items {
-		fmt.Fprintf(&b, "### %d. [%s] %s\n\n", i+1, strings.ToUpper(nz(f.Severity, "info")), findingTitle(f))
+		fmt.Fprintf(&b, "### %d. [%s] %s\n\n", i+1, severityLabel(f.Severity), findingTitle(f))
 		if f.VulnClass != "" {
 			fmt.Fprintf(&b, "- **분류**: %s\n", f.VulnClass)
 		}
-		fmt.Fprintf(&b, "- **상태**: %s\n", nz(f.Status, "pending"))
+		fmt.Fprintf(&b, "- **상태**: %s\n", findingStatusLabel(f.Status))
 		if desc := strings.TrimSpace(f.TaskDescription); desc != "" {
 			fmt.Fprintf(&b, "- **소속 작업**: %s\n", desc)
 		}
@@ -98,12 +113,12 @@ func FindingsMarkdown(fs []*db.DBFinding, generatedAt time.Time) string {
 // SingleFindingMarkdown은 취약점 하나를 독립 Markdown으로 만듭니다(「취약점 하나당 파일 하나」 묶음).
 func SingleFindingMarkdown(f *db.DBFinding, generatedAt time.Time) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "# [%s] %s\n\n", strings.ToUpper(nz(f.Severity, "info")), findingTitle(f))
+	fmt.Fprintf(&b, "# [%s] %s\n\n", severityLabel(f.Severity), findingTitle(f))
 	if f.VulnClass != "" {
 		fmt.Fprintf(&b, "- **분류**: %s\n", f.VulnClass)
 	}
-	fmt.Fprintf(&b, "- **심각도**: %s\n", nz(f.Severity, "info"))
-	fmt.Fprintf(&b, "- **상태**: %s\n", nz(f.Status, "pending"))
+	fmt.Fprintf(&b, "- **심각도**: %s\n", severityLabel(f.Severity))
+	fmt.Fprintf(&b, "- **상태**: %s\n", findingStatusLabel(f.Status))
 	if desc := strings.TrimSpace(f.TaskDescription); desc != "" {
 		fmt.Fprintf(&b, "- **소속 작업**: %s\n", desc)
 	}
@@ -127,10 +142,10 @@ func SingleFindingMarkdown(f *db.DBFinding, generatedAt time.Time) string {
 var unsafeFilenameChars = regexp.MustCompile(`[^\p{Han}\p{L}\p{N}._-]+`)
 
 // FindingFilename은 「취약점 하나당 파일 하나」용으로 안전한 .md 이름을 만듭니다.
-// 예: `critical_SQL주입_#123.md`. 경로 구분자와 제어 문자를 빼서 zip 안에
+// 예: `심각_SQL주입_#123.md`. 경로 구분자와 제어 문자를 빼서 zip 안에
 // 잘못된 경로가 들어가지 않게 합니다.
 func FindingFilename(f *db.DBFinding) string {
-	sev := nz(f.Severity, "info")
+	sev := severityLabel(f.Severity)
 	title := findingTitle(f)
 	name := fmt.Sprintf("%s_%s_#%d", sev, title, f.ID)
 	name = unsafeFilenameChars.ReplaceAllString(name, "_")
@@ -161,8 +176,8 @@ func FindingsCSV(fs []*db.DBFinding) []byte {
 			fmt.Sprintf("%d", f.ID),
 			findingTitle(f),
 			f.VulnClass,
-			nz(f.Severity, "info"),
-			nz(f.Status, "pending"),
+			severityLabel(f.Severity),
+			findingStatusLabel(f.Status),
 			f.TaskDescription,
 			f.CreatedAt.Format("2006-01-02 15:04:05"),
 			strings.TrimSpace(f.Summary),

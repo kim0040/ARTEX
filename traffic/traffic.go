@@ -217,7 +217,8 @@ func Open(dir, addr string) (*Traffic, error) {
 	// 바깥 프록시로 넘깁니다. 그 프록시가 대상에 못 가면 502 가 됩니다.
 	// nil 을 돌려주면 직접 접속입니다. 전역 출구가 설정되면(SetUpstreamProxy)
 	// 잡은 요청은 가로챈 것이든 투명 터널이든 그쪽으로 넘깁니다.
-	// 그래서 어떤 호스트도 진짜 출발 IP 를 흘리지 않습니다.
+	// 전역 출구 프록시가 설정된 경우에만 대상과의 직접 연결을 피합니다.
+	// 설정이 없으면 직접 연결하므로 대상은 이 프로세스의 출발 IP를 볼 수 있습니다.
 	p.SetUpstreamProxy(func(*http.Request) (*url.URL, error) { return t.upstream.Load(), nil })
 	// 실패 시 열림: 기본은 모든 호스트를 MITM 합니다. 다만 이전 요청이
 	// 깨지지 않고는 가로챌 수 없다고 보여 준 호스트는 예외입니다(maybePassthrough).

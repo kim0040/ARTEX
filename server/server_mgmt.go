@@ -160,7 +160,7 @@ func (s *Server) pgDeleteTask(w http.ResponseWriter, r *http.Request) {
 	drainCtx, cancelDrain := context.WithTimeout(r.Context(), taskDeleteDrainTimeout)
 	defer cancelDrain()
 	if err := s.waitTaskQuiescent(drainCtx, id); err != nil {
-		writeErr(w, http.StatusConflict, "작업에 아직 실행 중인 Agent가 있어 삭제가 취소되었습니다")
+		writeErr(w, http.StatusConflict, "작업에 아직 실행 중인 에이전트가 있어 삭제를 취소했습니다")
 		return
 	}
 
@@ -287,7 +287,7 @@ func (s *Server) pgUpdateAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if a.Builtin {
-		writeErr(w, 400, "내장 agent는 이름/설명을 수정할 수 없습니다")
+		writeErr(w, 400, "내장 에이전트는 이름/설명을 수정할 수 없습니다")
 		return
 	}
 	var req struct{ Name, Description string }
@@ -315,7 +315,7 @@ func (s *Server) pgDeleteAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if a.Builtin {
-		writeErr(w, 400, "내장 agent는 삭제할 수 없습니다")
+		writeErr(w, 400, "내장 에이전트는 삭제할 수 없습니다")
 		return
 	}
 	if err := pg.DeleteAgent(a.Key); err != nil {
@@ -342,7 +342,7 @@ func (s *Server) agentByKey(w http.ResponseWriter, r *http.Request) (*db.DB, *db
 		return nil, nil, false
 	}
 	if a == nil {
-		writeErr(w, 404, "agent 를 찾을 수 없습니다")
+		writeErr(w, 404, "에이전트를 찾을 수 없습니다")
 		return nil, nil, false
 	}
 	return pg, a, true
@@ -543,7 +543,7 @@ func (s *Server) pgResetPrompt(w http.ResponseWriter, r *http.Request) {
 	}
 	tmpl, has := agent.BuiltinPromptSeeds()[a.Key]
 	if !has {
-		writeErr(w, 400, "이 agent에는 내장 기본 프롬프트가 없어 복원할 수 없습니다")
+		writeErr(w, 400, "이 에이전트에는 내장 기본 프롬프트가 없어 복원할 수 없습니다")
 		return
 	}
 	ver, err := pg.ResetPromptToDefault(a.ID, tmpl)
@@ -1035,7 +1035,7 @@ func (s *Server) fsSkillUsage(w http.ResponseWriter, r *http.Request) {
 	}
 	name := r.PathValue("name")
 	if !validSkillName(name) {
-		writeErr(w, 400, "잘못된 skill 이름")
+		writeErr(w, 400, "스킬 이름이 올바르지 않습니다")
 		return
 	}
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
@@ -1088,7 +1088,7 @@ func (s *Server) fsCreateSkill(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !validSkillName(body.Name) {
-		writeErr(w, 400, "skill 이름은 1–64자의 소문자, 숫자, 하이픈만 쓸 수 있고, 하이픈으로 시작하거나 끝나거나 두 번 연속일 수 없습니다")
+		writeErr(w, 400, "스킬 이름은 1–64자의 소문자, 숫자, 하이픈만 쓸 수 있고, 하이픈으로 시작하거나 끝나거나 두 번 연속일 수 없습니다")
 		return
 	}
 	if strings.TrimSpace(body.Description) == "" {
@@ -1097,7 +1097,7 @@ func (s *Server) fsCreateSkill(w http.ResponseWriter, r *http.Request) {
 	}
 	skillPath := filepath.Join(s.skillDir, body.Name)
 	if _, err := os.Stat(skillPath); err == nil {
-		writeErr(w, 409, "skill 이 이미 있습니다")
+		writeErr(w, 409, "스킬이 이미 있습니다")
 		return
 	}
 	if err := os.MkdirAll(skillPath, 0o755); err != nil {
@@ -1147,7 +1147,7 @@ func (s *Server) fsCreateSkill(w http.ResponseWriter, r *http.Request) {
 func (s *Server) fsUpdateSkillMeta(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	if !validSkillName(name) {
-		writeErr(w, 400, "skill 이름이 올바르지 않습니다")
+		writeErr(w, 400, "스킬 이름이 올바르지 않습니다")
 		return
 	}
 	var body struct {
@@ -1163,7 +1163,7 @@ func (s *Server) fsUpdateSkillMeta(w http.ResponseWriter, r *http.Request) {
 	skillMD := filepath.Join(s.skillDir, name, "SKILL.md")
 	raw, err := os.ReadFile(skillMD)
 	if err != nil {
-		writeErr(w, 404, "skill 을 찾을 수 없습니다")
+		writeErr(w, 404, "스킬을 찾을 수 없습니다")
 		return
 	}
 	updated, err := rewriteSkillFrontmatter(raw, body.MCPs, body.Description, body.License, body.Compatibility)
@@ -1184,7 +1184,7 @@ func (s *Server) fsUpdateSkillMeta(w http.ResponseWriter, r *http.Request) {
 func rewriteSkillFrontmatter(content []byte, mcps *[]string, description, license, compatibility *string) ([]byte, error) {
 	lines := strings.Split(string(content), "\n")
 	if len(lines) < 2 || strings.TrimSpace(lines[0]) != "---" {
-		return nil, fmt.Errorf("SKILL.md has no YAML frontmatter")
+		return nil, fmt.Errorf("SKILL.md에 YAML 프론트매터가 없습니다")
 	}
 	fmEnd := -1
 	for i := 1; i < len(lines); i++ {
@@ -1194,7 +1194,7 @@ func rewriteSkillFrontmatter(content []byte, mcps *[]string, description, licens
 		}
 	}
 	if fmEnd < 0 {
-		return nil, fmt.Errorf("SKILL.md frontmatter is not closed")
+		return nil, fmt.Errorf("SKILL.md의 프론트매터가 닫히지 않았습니다")
 	}
 	// 프론트매터의 기존 키와 값을 모읍니다(모르는 키는 유지).
 	type kv struct{ k, v string }
@@ -1352,15 +1352,15 @@ func (s *Server) fsUploadSkill(w http.ResponseWriter, r *http.Request) {
 		name = strings.TrimSuffix(base, path.Ext(base))
 	}
 	if !validSkillName(name) {
-		writeErr(w, 400, "skill 이름이 유효하지 않습니다(SKILL.md의 name 필드에서 가져옴): "+name+
-			"（64자 이하, 글자로 시작, 소문자/숫자/하이픈 또는 한글 등 비 ASCII 글자만 사용할 수 있으며, 공백·점·경로 구분자는 사용할 수 없습니다）")
+		writeErr(w, 400, "스킬 이름이 유효하지 않습니다(SKILL.md의 name 필드에서 가져옴): "+name+
+			" (64자 이하, 글자로 시작, 소문자·숫자·하이픈 또는 한글 등 ASCII가 아닌 글자만 사용할 수 있으며, 공백·점·경로 구분자는 사용할 수 없습니다)")
 		return
 	}
 
 	skillPath := filepath.Join(s.skillDir, name)
 	overwrite := r.URL.Query().Get("overwrite") == "true"
 	if _, err := os.Stat(skillPath); err == nil && !overwrite {
-		writeErr(w, 409, "skill이 이미 있습니다: "+name+"（덮어쓰려면 확인한 뒤 다시 시도하세요）")
+		writeErr(w, 409, "스킬이 이미 있습니다: "+name+". 덮어쓰려면 확인한 뒤 다시 시도하세요.")
 		return
 	}
 
@@ -1461,7 +1461,7 @@ func (s *Server) fsDeleteSkill(w http.ResponseWriter, r *http.Request) {
 	}
 	name := r.PathValue("name")
 	if !validSkillName(name) {
-		writeErr(w, 400, "skill 이름이 올바르지 않습니다")
+		writeErr(w, 400, "스킬 이름이 올바르지 않습니다")
 		return
 	}
 	if err := pg.DeleteSkillVisibility(name); err != nil {
@@ -1512,31 +1512,31 @@ func skillRelPath(file string) (string, string) {
 	// 1. 글자 검사. 정규화 전입니다. 널 바이트, 백슬래시,
 	//    %, 제어 문자, 유니코드로 비슷해 보이는 문자를 막습니다. CJK 이름은 통과합니다.
 	if file == "" || len(file) > maxSkillPathLen {
-		return "", "invalid path: empty or too long"
+		return "", "경로가 올바르지 않습니다: 비어 있거나 너무 깁니다"
 	}
 	if !utf8.ValidString(file) {
-		return "", "invalid path: not valid UTF-8"
+		return "", "경로가 올바르지 않습니다: UTF-8 인코딩이 아닙니다"
 	}
 	for _, r := range file {
 		if !skillPathRune(r) {
-			return "", "invalid path: illegal character " + strconv.QuoteRune(r)
+			return "", "경로가 올바르지 않습니다: 사용할 수 없는 문자 " + strconv.QuoteRune(r)
 		}
 	}
 	// 2. ".."를 명시적으로 거절합니다. 위의 허용 목록으로는 인코딩 우회가 이미
 	//    불가능하지만, 의도가 보이게 이 검사를 남깁니다.
 	if strings.Contains(file, "..") {
-		return "", "invalid path: '..' not allowed"
+		return "", "경로가 올바르지 않습니다: '..'은 사용할 수 없습니다"
 	}
 	// 3. 앞의 슬래시와 빈 구간(슬래시 두 번)을 거절합니다.
 	//    앞의 슬래시는 filepath.Clean 뒤에도 절대 경로로 남습니다.
 	if strings.HasPrefix(file, "/") || strings.Contains(file, "//") {
-		return "", "invalid path: must be relative with no empty segments"
+		return "", "경로가 올바르지 않습니다: 상대 경로여야 하며 빈 경로 구간을 포함할 수 없습니다"
 	}
 	// 4. 정규화한 뒤 Clean 이후를 마지막으로 다시 확인합니다.
 	//    filepath.Clean은 남는 구분자를 없애고 점 하나를 풉니다.
 	clean := filepath.Clean(file)
 	if clean == "." || filepath.IsAbs(clean) || strings.HasPrefix(clean, "..") {
-		return "", "invalid path"
+		return "", "경로가 올바르지 않습니다"
 	}
 	return clean, ""
 }
@@ -1569,12 +1569,12 @@ func walkSkillFiles(root string) ([]string, error) {
 func (s *Server) fsListFiles(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	if !validSkillName(name) {
-		writeErr(w, 400, "skill 이름이 올바르지 않습니다")
+		writeErr(w, 400, "스킬 이름이 올바르지 않습니다")
 		return
 	}
 	dirPath := filepath.Join(s.skillDir, name)
 	if _, err := os.Stat(dirPath); os.IsNotExist(err) {
-		writeErr(w, 404, "skill 을 찾을 수 없습니다")
+		writeErr(w, 404, "스킬을 찾을 수 없습니다")
 		return
 	}
 	files, err := walkSkillFiles(dirPath)
@@ -1591,7 +1591,7 @@ func (s *Server) fsListFiles(w http.ResponseWriter, r *http.Request) {
 func (s *Server) fsReadFile(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	if !validSkillName(name) {
-		writeErr(w, 400, "skill 이름이 올바르지 않습니다")
+		writeErr(w, 400, "스킬 이름이 올바르지 않습니다")
 		return
 	}
 	file, errMsg := skillRelPath(r.PathValue("file"))
@@ -1614,7 +1614,7 @@ func (s *Server) fsReadFile(w http.ResponseWriter, r *http.Request) {
 func (s *Server) fsWriteFile(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	if !validSkillName(name) {
-		writeErr(w, 400, "skill 이름이 올바르지 않습니다")
+		writeErr(w, 400, "스킬 이름이 올바르지 않습니다")
 		return
 	}
 	file, errMsg := skillRelPath(r.PathValue("file"))
@@ -1631,7 +1631,7 @@ func (s *Server) fsWriteFile(w http.ResponseWriter, r *http.Request) {
 	}
 	skillPath := filepath.Join(s.skillDir, name)
 	if _, err := os.Stat(skillPath); os.IsNotExist(err) {
-		writeErr(w, 404, "skill 을 찾을 수 없습니다")
+		writeErr(w, 404, "스킬을 찾을 수 없습니다")
 		return
 	}
 	fullPath := filepath.Join(skillPath, file)
@@ -1650,7 +1650,7 @@ func (s *Server) fsWriteFile(w http.ResponseWriter, r *http.Request) {
 func (s *Server) fsCreateDir(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	if !validSkillName(name) {
-		writeErr(w, 400, "skill 이름이 올바르지 않습니다")
+		writeErr(w, 400, "스킬 이름이 올바르지 않습니다")
 		return
 	}
 	var body struct {
@@ -1667,7 +1667,7 @@ func (s *Server) fsCreateDir(w http.ResponseWriter, r *http.Request) {
 	}
 	skillPath := filepath.Join(s.skillDir, name)
 	if _, err := os.Stat(skillPath); os.IsNotExist(err) {
-		writeErr(w, 404, "skill 을 찾을 수 없습니다")
+		writeErr(w, 404, "스킬을 찾을 수 없습니다")
 		return
 	}
 	if err := os.MkdirAll(filepath.Join(skillPath, dir), 0o755); err != nil {
@@ -1680,7 +1680,7 @@ func (s *Server) fsCreateDir(w http.ResponseWriter, r *http.Request) {
 func (s *Server) fsDeletePath(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	if !validSkillName(name) {
-		writeErr(w, 400, "skill 이름이 올바르지 않습니다")
+		writeErr(w, 400, "스킬 이름이 올바르지 않습니다")
 		return
 	}
 	file, errMsg := skillRelPath(r.PathValue("file"))
@@ -1690,7 +1690,7 @@ func (s *Server) fsDeletePath(w http.ResponseWriter, r *http.Request) {
 	}
 	fullPath := filepath.Join(s.skillDir, name, file)
 	if _, err := os.Stat(fullPath); os.IsNotExist(err) {
-		writeErr(w, 404, "not found")
+		writeErr(w, 404, "파일을 찾을 수 없습니다")
 		return
 	}
 	if err := os.RemoveAll(fullPath); err != nil {
@@ -2158,7 +2158,7 @@ func validateTemplate(tmpl string, catalog []db.PromptVar) string {
 	}
 	for _, name := range templateFields(t) {
 		if !allowed[name] {
-			return "변수 {{." + name + "}} 이(가) 해당 agent 허용 목록에 없습니다"
+			return "변수 {{." + name + "}} 이(가) 해당 에이전트 허용 목록에 없습니다"
 		}
 	}
 	return ""

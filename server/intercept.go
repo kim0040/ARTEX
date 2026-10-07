@@ -240,7 +240,7 @@ func (s *Server) interceptGetOne(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if p == nil {
-		writeErr(w, 404, "not found")
+		writeErr(w, 404, "대기 항목을 찾을 수 없습니다")
 		return
 	}
 	writeJSON(w, 200, p)
@@ -525,7 +525,7 @@ func (s *Server) interceptDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if detail == nil {
-		writeErr(w, 404, "not found")
+		writeErr(w, 404, "승인 기록을 찾을 수 없습니다")
 		return
 	}
 	writeJSON(w, 200, detail)

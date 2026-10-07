@@ -478,7 +478,7 @@ export function AssetsTab({ taskId }: { taskId: string }) {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
           <h2 className="font-medium text-sm">테스트 자산</h2>
-          <p className="text-muted-foreground text-xs">현재 작업에 연결된 항목은 총 {totalAll} 항목 자산</p>
+          <p className="text-muted-foreground text-xs">현재 작업에 연결된 자산은 총 {totalAll}개입니다.</p>
         </div>
         <Button size="sm" onClick={() => setAddOpen(true)}>
           <PlusIcon data-icon="inline-start" />

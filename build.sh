@@ -1,23 +1,23 @@
 #!/usr/bin/env bash
-# ARTEX cross-platform release builder.
+# ARTEX 크로스 플랫폼 릴리스 빌더.
 #
-# The default mode builds one target and embeds the already-exported frontend.
-# `./build.sh --release` builds and packages all supported desktop/server targets.
+# 기본 모드는 하나의 대상을 빌드하고 이미 내보낸 프론트엔드를 넣습니다.
+# `./build.sh --release`는 지원하는 모든 데스크톱/서버 대상을 빌드하고 묶습니다.
 #
-# Environment variables:
-#   ARTEX_TARGET_OS=linux             One target OS in single-target mode.
-#   ARTEX_TARGET_ARCH=amd64           One target arch in single-target mode.
-#   ARTEX_TARGETS=linux/amd64,...     Comma-separated targets for multi-target mode.
-#   ARTEX_BUILD_VERSION=v0.3.3        Version embedded in the binary and archive name.
-#   ARTEX_OUTPUT=/path/to/artex       Explicit binary path in single-target mode.
-#   ARTEX_OUTPUT_DIR=dist             Directory for default binary paths.
-#   ARTEX_PACKAGE=1                   Create a zip archive for each target.
-#   ARTEX_PACKAGE_DIR=dist            Directory for release archives.
-#   ARTEX_COMPRESS=off                UPX mode: off, auto, or required.
-#   ARTEX_UPX_ARGS="--best --lzma"    Arguments passed to UPX.
-#   ARTEX_SKIP_FRONTEND=1             Reuse server/webui/dist (for CI artifact builds).
-#   ARTEX_SKIP_NPM_CI=1               Skip npm ci while rebuilding the frontend.
-#   ARTEX_GOSUMDB=sum.golang.org      Go checksum database.
+# 환경 변수:
+#   ARTEX_TARGET_OS=linux             단일 대상 모드에서 빌드할 운영체제.
+#   ARTEX_TARGET_ARCH=amd64           단일 대상 모드에서 빌드할 아키텍처.
+#   ARTEX_TARGETS=linux/amd64,...     여러 대상을 쉼표로 구분한 목록.
+#   ARTEX_BUILD_VERSION=v0.3.3        바이너리와 압축 파일 이름에 넣을 버전.
+#   ARTEX_OUTPUT=/path/to/artex       단일 대상 모드에서 사용할 바이너리 경로.
+#   ARTEX_OUTPUT_DIR=dist             기본 바이너리 경로의 상위 디렉터리.
+#   ARTEX_PACKAGE=1                   대상별 zip 압축 파일을 만듦.
+#   ARTEX_PACKAGE_DIR=dist            릴리스 압축 파일을 둘 디렉터리.
+#   ARTEX_COMPRESS=off                UPX 모드: off, auto, required.
+#   ARTEX_UPX_ARGS="--best --lzma"    UPX에 넘길 인자.
+#   ARTEX_SKIP_FRONTEND=1             server/webui/dist를 재사용함(CI 산출물 빌드용).
+#   ARTEX_SKIP_NPM_CI=1               프론트엔드를 다시 빌드할 때 npm ci를 건너뜀.
+#   ARTEX_GOSUMDB=sum.golang.org      Go 체크섬 데이터베이스.
 set -euo pipefail
 
 cd "$(cd "$(dirname "$0")" && pwd)"
@@ -97,7 +97,7 @@ if [ -z "${ARTEX_BUILD_VERSION:-}" ]; then
     ARTEX_BUILD_VERSION="dev"
   fi
 fi
-# Release tags are commonly passed as v0.3.3; keep the binary version consistent.
+# 릴리스 태그는 보통 v0.3.3 형태로 전달되므로 바이너리 버전은 접두사를 빼고 맞춥니다.
 ARTEX_BUILD_VERSION="${ARTEX_BUILD_VERSION#v}"
 ARTEX_OUTPUT_DIR="${ARTEX_OUTPUT_DIR:-dist}"
 ARTEX_PACKAGE_DIR="${ARTEX_PACKAGE_DIR:-$ARTEX_OUTPUT_DIR}"
@@ -161,6 +161,41 @@ compress_binary() {
   ok "UPX 압축 완료: $binary (${before} -> ${after} bytes)"
 }
 
+write_package_documents() {
+  local package_root="$1"
+  [ -f LICENSE ] || die "패키지에 넣을 LICENSE가 없습니다"
+  [ -f web/LICENSE ] || die "패키지에 넣을 web/LICENSE가 없습니다"
+
+  cp LICENSE "$package_root/LICENSE"
+
+  if [ -f web/public/legal/DEPENDENCY-NOTICES.txt ]; then
+    cp web/public/legal/DEPENDENCY-NOTICES.txt "$package_root/DEPENDENCY-NOTICES.txt"
+  fi
+  if [ -f scripts/package-source.py ]; then
+    command -v python3 >/dev/null 2>&1 || die "대응 소스 묶음 생성에 Python 3가 필요합니다"
+    python3 scripts/package-source.py "$package_root/SOURCE.tar.gz"
+  fi
+
+  # 두 라이선스 원문은 구분선만 덧붙여 하나의 안내 파일에 그대로 담습니다.
+  {
+    printf '%s\n\n' '===== LICENSE ====='
+    cat LICENSE
+    printf '\n\n%s\n\n' '===== web/LICENSE ====='
+    cat web/LICENSE
+  } > "$package_root/THIRD-PARTY-LICENSE.txt"
+
+  # NOTICE와 안내 문서는 아직 없는 체크아웃에서도 빌드할 수 있게 선택적으로 넣습니다.
+  local doc
+  for doc in NOTICE.md docs/초보자-길잡이.md docs/포크-라이선스-안내.md docs/한글화-검증.md; do
+    if [ -f "$doc" ]; then
+      case "$doc" in
+        docs/*) mkdir -p "$package_root/docs" ;;
+      esac
+      cp "$doc" "$package_root/$doc"
+    fi
+  done
+}
+
 package_binary() {
   binary="$1"
   goos="$2"
@@ -169,7 +204,7 @@ package_binary() {
   package_root="${ARTEX_PACKAGE_DIR}/${package_name}"
   archive="${ARTEX_PACKAGE_DIR}/${package_name}.zip"
 
-  command -v zip >/dev/null 2>&1 || die "묶으려면 zip이 필요합니다"
+  command -v python3 >/dev/null 2>&1 || die "한글 파일명을 보존해 묶으려면 Python 3가 필요합니다"
   rm -rf "$package_root" "$archive"
   mkdir -p "$package_root"
   cp "$binary" "$package_root/"
@@ -185,7 +220,8 @@ package_binary() {
   cp -R skills "$package_root/"
   cp config.example.json "$package_root/"
   if [ -f README.md ]; then cp README.md "$package_root/"; fi
-  (cd "$ARTEX_PACKAGE_DIR" && zip -q -r -9 "$(basename "$archive")" "$(basename "$package_root")")
+  write_package_documents "$package_root"
+  python3 scripts/package-zip.py "$package_root" "$archive"
   rm -rf "$package_root"
   ok "릴리스 압축 파일: $archive"
 }

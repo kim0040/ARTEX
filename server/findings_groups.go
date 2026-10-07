@@ -115,7 +115,7 @@ func (s *Server) deepenFinding(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, "설명은 필수입니다")
 		return
 	case utf8.RuneCountInString(description) > maxFindingFollowUpRunes:
-		writeErr(w, 400, fmt.Sprintf("description must be at most %d characters", maxFindingFollowUpRunes))
+		writeErr(w, 400, fmt.Sprintf("description은 최대 %d자까지 입력할 수 있습니다", maxFindingFollowUpRunes))
 		return
 	}
 

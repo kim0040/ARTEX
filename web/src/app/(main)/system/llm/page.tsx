@@ -77,9 +77,9 @@ type Health = { label: string; cls: string; hint?: string };
 function healthOf(p: LLMProfile, m?: LLMPoolMember): Health {
   if (!p.api_key_hint) {
     return {
-      label: "Key가 설정되지 않음",
+      label: "키가 설정되지 않음",
       cls: "border-muted-foreground/40 text-muted-foreground",
-      hint: "API Key를 입력하지 않아 호출할 수 없습니다",
+      hint: "API 키를 입력하지 않아 호출할 수 없습니다",
     };
   }
   if (m?.state === "tripped") {
@@ -165,7 +165,7 @@ function PoolSheet({
             <ZapIcon className="size-4" /> LLM 순환 · 장애 조치
           </SheetTitle>
           <SheetDescription>
-            켜면,<b>모델을 지정하지 않음</b>의 Agent가 현재 설정에서 쓸 수 없으면(잔액 부족 / Key 무효 / 속도 제한 /
+            켜면,<b>모델을 지정하지 않음</b>의 에이전트가 현재 설정에서 쓸 수 없으면(잔액 부족 / 키 무효 / 속도 제한 /
             서비스 오류) 다음 설정으로 자동 전환합니다.
           </SheetDescription>
         </SheetHeader>
@@ -190,7 +190,7 @@ function PoolSheet({
                 <div className="grid gap-0.5">
                   <Label className="text-sm">지정한 모델이 실패할 때도 폴백</Label>
                   <p className="text-muted-foreground text-xs">
-                    기본값은 꺼짐: Agent나 작업이 설정을 지정하면 그것만 씁니다. 실패하면 그대로 실패합니다(다른 모델로 조용히 바꾸지 않습니다). 켜면 지정한 설정이 실패할 때도 아래 순환 목록으로 넘어갑니다.
+                    기본값은 꺼짐: 에이전트나 작업이 설정을 지정하면 그것만 씁니다. 실패하면 그대로 실패합니다(다른 모델로 조용히 바꾸지 않습니다). 켜면 지정한 설정이 실패할 때도 아래 순환 목록으로 넘어갑니다.
                   </p>
                 </div>
                 <Switch
@@ -214,7 +214,7 @@ function PoolSheet({
                 </div>
                 {inChain.length < 2 && (
                   <p className="text-muted-foreground text-xs">
-                    사용 가능한 설정은 현재 {inChain.length} 개뿐입니다. 순환이 적용되지 않습니다. API Key를 입력했고 순환에 참여하는 설정이 최소 2개 필요합니다.
+                    사용 가능한 설정은 현재 {inChain.length} 개뿐입니다. 순환이 적용되지 않습니다. API 키를 입력했고 순환에 참여하는 설정이 최소 2개 필요합니다.
                   </p>
                 )}
                 {chain.map((m) => {
@@ -281,7 +281,7 @@ function PoolSheet({
               </div>
 
               <div className="rounded-lg border border-dashed p-3 text-muted-foreground text-xs leading-relaxed">
-                활성 설정은 항상 1순위입니다. 나머지는 우선순위가 높은 순입니다(각 설정에서 지정). 설정이 실패하면 쿨다운에 들어갑니다(60s → 5min → 30min). 쿨다운 동안은 건너뛰고, 회복되면 자동으로 돌아옵니다. 컨텍스트 창에 현재 요청이 들어가지 않는 설정은 건너뜁니다. 모델을 지정한 Agent와 작업은 기본적으로 순환에 참여하지 않습니다.
+                활성 설정은 항상 1순위입니다. 나머지는 우선순위가 높은 순입니다(각 설정에서 지정). 설정이 실패하면 쿨다운에 들어갑니다(60초 → 5분 → 30분). 쿨다운 동안은 건너뛰고, 회복되면 자동으로 돌아옵니다. 컨텍스트 창에 현재 요청이 들어가지 않는 설정은 건너뜁니다. 모델을 지정한 에이전트와 작업은 기본적으로 순환에 참여하지 않습니다.
               </div>
             </>
           )}
@@ -472,7 +472,7 @@ function ProfileSheet({
           <SheetDescription>
             {isNew
               ? "만든 뒤에는 자동으로 활성화되지 않습니다. 카드에서 「활성화로 설정」을 눌러 켜세요."
-              : "수정한 뒤 저장을 누르세요. 활성 설정은 저장 후 모든 Agent에 바로 적용됩니다."}
+              : "수정한 뒤 저장을 누르세요. 활성 설정은 저장 후 모든 에이전트에 바로 적용됩니다."}
           </SheetDescription>
         </SheetHeader>
 
@@ -591,7 +591,7 @@ function ProfileSheet({
           </div>
 
           <div className="grid gap-2">
-            <Label htmlFor="p-api-key">API Key</Label>
+            <Label htmlFor="p-api-key">API 키</Label>
             <Input
               id="p-api-key"
               type="password"
@@ -624,7 +624,7 @@ function ProfileSheet({
             </div>
           </div>
           <p className="-mt-2 text-muted-foreground text-xs">
-            속도 제한 0은 제한 없음이며 모든 Agent가 함께 씁니다. 컨텍스트 창 단위는 K(천 token)입니다. 0은 기본 200K, 상한은 1000(즉 1M)입니다. 너무 높게 두면 압축이 시작되지 않습니다.
+            속도 제한 0은 제한 없음이며 모든 에이전트가 함께 씁니다. 컨텍스트 창 단위는 K(천 token)입니다. 0은 기본 200K, 상한은 1000(즉 1M)입니다. 너무 높게 두면 압축이 시작되지 않습니다.
           </p>
 
           <div className="grid gap-3 rounded-lg border p-3">
@@ -649,7 +649,7 @@ function ProfileSheet({
               <div className="grid gap-0.5">
                 <Label className="text-sm">순환에 참여하지 않음</Label>
                 <p className="text-muted-foreground text-xs">
-                  켜면 장애 조치 대상으로 쓰이지 않습니다(Agent나 작업이 직접 지정하면 여전히 쓸 수 있습니다). 어떤 Agent만 쓰고, 다른 곳이 실패할 때 소모되지 않게 하려는 비싼 설정에 맞습니다.
+                  켜면 장애 조치 대상으로 쓰이지 않습니다(에이전트나 작업이 직접 지정하면 여전히 쓸 수 있습니다). 특정 에이전트만 쓰고, 다른 곳이 실패할 때 소모되지 않게 하려는 비싼 설정에 맞습니다.
                 </p>
               </div>
               <Switch checked={poolExclude} onCheckedChange={setPoolExclude} aria-label="순회에 넣지 않음" />
@@ -846,7 +846,7 @@ export default function LLMPage() {
         <div>
           <h1 className="font-semibold text-xl tracking-tight">LLM</h1>
           <p className="text-muted-foreground text-sm">
-            모든 Agent가 함께 쓰는 형식 / 모델 / 속도 제한 설정입니다. 카드를 눌러 편집하세요. 별표가 현재 활성 설정입니다.
+            모든 에이전트가 함께 쓰는 형식 / 모델 / 속도 제한 설정입니다. 카드를 눌러 편집하세요. 별표가 현재 활성 설정입니다.
           </p>
         </div>
         <div className="flex items-center gap-2">

@@ -145,13 +145,13 @@ func (t *Traffic) ImportArchive(dir string) (int64, error) {
 		return 0, err
 	}
 	if snapshot.Version != 1 {
-		return 0, fmt.Errorf("unsupported traffic archive version %d", snapshot.Version)
+		return 0, fmt.Errorf("지원하지 않는 트래픽 보관 버전입니다: %d", snapshot.Version)
 	}
 	t.wmu.Lock()
 	defer t.wmu.Unlock()
 	for _, hash := range snapshot.Blobs {
 		if !blobHashRe.MatchString(hash) {
-			return 0, fmt.Errorf("invalid archived traffic blob %q", hash)
+			return 0, fmt.Errorf("보관된 트래픽 blob이 올바르지 않습니다: %q", hash)
 		}
 		data, err := os.ReadFile(filepath.Join(dir, "blobs", hash+".bin"))
 		if err != nil {
@@ -159,7 +159,7 @@ func (t *Traffic) ImportArchive(dir string) (int64, error) {
 		}
 		sum := sha256.Sum256(data)
 		if hex.EncodeToString(sum[:]) != hash {
-			return 0, fmt.Errorf("traffic blob checksum mismatch: %s", hash)
+			return 0, fmt.Errorf("트래픽 blob 체크섬이 일치하지 않습니다: %s", hash)
 		}
 		destination := filepath.Join(t.dir, "_blobs", "sha256", hash[:2], hash+".bin")
 		if _, err := os.Stat(destination); os.IsNotExist(err) {

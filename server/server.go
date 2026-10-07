@@ -1165,7 +1165,7 @@ func (s *Server) controlIntent(w http.ResponseWriter, r *http.Request) {
 }
 
 // rerunIntent는 성공하지 못한 의도 하나(blocked/exhausted/stopped)를 다시 실행한다: open으로 되돌리고, 워커
-// 다시 클레임하고 처음부터 재실행한다(그래프에 이미 기록된 fact/finding/asset은 유지). 작업이 이미 종료 상태이거나 일시정지라면 함께 되살린다.
+// 다시 클레임하고 이전 대화 기록이 있으면 이어서 실행한다(그래프에 이미 기록된 fact/finding/asset은 유지). 작업이 이미 종료 상태이거나 일시정지라면 함께 되살린다.
 // 「오류가 난 work에서 계속 실행을 클릭」할 때 쓴다. 네트워크/LLM 흔들림으로 blocked가 된 뒤 한 번에 재시도할 수 있다.
 func restoreRerunIntent(t *Task, before *db.Node) error {
 	if t == nil || before == nil {
@@ -1332,7 +1332,7 @@ func (s *Server) setLLM(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.saveLLMConfig(cfg); err != nil {
-		writeErr(w, 500, "persist provider failed: "+err.Error())
+		writeErr(w, 500, "공급자 저장에 실패했습니다: "+err.Error())
 		return
 	}
 	s.invalidateProfileAgents()
@@ -1730,7 +1730,7 @@ func (s *Server) taskCoverage(w http.ResponseWriter, r *http.Request) {
 	}
 	as := s.m.Assets()
 	if as == nil {
-		writeErr(w, 503, "asset store가 활성화되지 않았습니다")
+		writeErr(w, 503, "자산 저장소가 활성화되지 않았습니다")
 		return
 	}
 	// 자산 커버리지 기능이 꺼지면 → 즉시 {enabled:false}를 반환하고, 프론트엔드는 이에 따라 커버리지 카드/진행을 숨긴다.
@@ -1758,7 +1758,7 @@ func (s *Server) taskCoverageGraph(w http.ResponseWriter, r *http.Request) {
 	}
 	as := s.m.Assets()
 	if as == nil {
-		writeErr(w, 503, "asset store가 활성화되지 않았습니다")
+		writeErr(w, 503, "자산 저장소가 활성화되지 않았습니다")
 		return
 	}
 	taskID, _ := strconv.ParseInt(t.ID, 10, 64)
@@ -1814,7 +1814,7 @@ func (s *Server) taskScopeList(w http.ResponseWriter, r *http.Request) {
 	}
 	as := s.m.Assets()
 	if as == nil {
-		writeErr(w, 503, "asset store가 활성화되지 않았습니다")
+		writeErr(w, 503, "자산 저장소가 활성화되지 않았습니다")
 		return
 	}
 	taskID, _ := strconv.ParseInt(t.ID, 10, 64)
@@ -1834,7 +1834,7 @@ func (s *Server) taskScopeAdd(w http.ResponseWriter, r *http.Request) {
 	}
 	as := s.m.Assets()
 	if as == nil {
-		writeErr(w, 503, "asset store가 활성화되지 않았습니다")
+		writeErr(w, 503, "자산 저장소가 활성화되지 않았습니다")
 		return
 	}
 	var body struct {
@@ -1863,7 +1863,7 @@ func (s *Server) taskScopeDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	as := s.m.Assets()
 	if as == nil {
-		writeErr(w, 503, "asset store가 활성화되지 않았습니다")
+		writeErr(w, 503, "자산 저장소가 활성화되지 않았습니다")
 		return
 	}
 	taskID, _ := strconv.ParseInt(t.ID, 10, 64)
@@ -2111,7 +2111,7 @@ func (s *Server) findingsExport(w http.ResponseWriter, r *http.Request) {
 	case "filtered", "":
 		filter = findingFilterFromQuery(q)
 	default:
-		writeErr(w, 400, "bad scope: "+scope)
+		writeErr(w, 400, "scope가 올바르지 않습니다: "+scope)
 		return
 	}
 
@@ -2174,7 +2174,7 @@ func (s *Server) findingsExport(w http.ResponseWriter, r *http.Request) {
 		enc.SetIndent("", "  ")
 		_ = enc.Encode(out)
 	default:
-		writeErr(w, 400, "bad format: "+format)
+		writeErr(w, 400, "format이 올바르지 않습니다: "+format)
 	}
 }
 
@@ -2258,7 +2258,7 @@ func (s *Server) patchFinding(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.Status != nil {
 		if !db.ValidFindingStatus(*body.Status) {
-			writeErr(w, 400, "bad status: "+*body.Status)
+			writeErr(w, 400, "status가 올바르지 않습니다: "+*body.Status)
 			return
 		}
 		// 알림이 있는 경로를 탄다. 상태 갱신과 「상태 변경 푸시 이벤트」가 같은 트랜잭션에 저장되고,
@@ -2279,7 +2279,7 @@ func (s *Server) patchFinding(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.Severity != nil {
 		if !db.ValidSeverity(*body.Severity) {
-			writeErr(w, 400, "bad severity: "+*body.Severity)
+			writeErr(w, 400, "severity가 올바르지 않습니다: "+*body.Severity)
 			return
 		}
 		n, err := s.m.pg.SetFindingSeverity(id, *body.Severity)
@@ -3169,7 +3169,7 @@ func (s *Server) deleteTrafficHosts(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if len(hosts) == 0 {
-		writeErr(w, 400, "missing hosts")
+		writeErr(w, 400, "hosts 항목이 필요합니다")
 		return
 	}
 	n, err := tr.DeleteHostsExact(hosts)

@@ -49,7 +49,7 @@ import { api } from "@/lib/api";
 import type { LLMRecordItem, LLMRecordDetail, LLMTask } from "@/lib/types";
 
 function fmtTime(ts: string) {
-  return new Date(ts).toLocaleString("zh-CN", {
+  return new Date(ts).toLocaleString("ko-KR", {
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
@@ -270,14 +270,14 @@ export default function LLMRecordsPage() {
         <div className="relative max-w-sm flex-1">
           <SearchIcon className="absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="Session ID 검색..."
+            placeholder="세션 ID 검색..."
             value={session}
             onChange={(e) => setSession(e.target.value)}
             className="h-8 pl-8"
           />
         </div>
         <Input
-          placeholder="Model"
+          placeholder="모델"
           className="h-8 w-48"
           value={model}
           onChange={(e) => setModel(e.target.value)}
@@ -382,11 +382,11 @@ export default function LLMRecordsPage() {
                 <TableRow>
                   <TableHead className="w-[130px]">시간</TableHead>
                   <TableHead className="w-[60px]">작업</TableHead>
-                  <TableHead className="w-[90px]">Worker</TableHead>
-                  <TableHead className="w-[100px]">Profile</TableHead>
-                  <TableHead className="w-[140px]">Model</TableHead>
+                  <TableHead className="w-[90px]">워커</TableHead>
+                  <TableHead className="w-[100px]">프로필</TableHead>
+                  <TableHead className="w-[140px]">모델</TableHead>
                   <TableHead className="w-[70px]">지연</TableHead>
-                  <TableHead className="w-[90px]">Tokens</TableHead>
+                  <TableHead className="w-[90px]">토큰</TableHead>
                   <TableHead className="w-[60px]">상태</TableHead>
                 </TableRow>
               </TableHeader>
@@ -442,9 +442,9 @@ export default function LLMRecordsPage() {
                       </TableCell>
                       <TableCell>
                         {rec.status === "ok" ? (
-                          <Badge variant="secondary" className="text-xs text-emerald-600">OK</Badge>
+                          <Badge variant="secondary" className="text-xs text-emerald-600">정상</Badge>
                         ) : (
-                          <Badge variant="destructive" className="text-xs">Error</Badge>
+                          <Badge variant="destructive" className="text-xs">오류</Badge>
                         )}
                       </TableCell>
                     </TableRow>
@@ -481,9 +481,9 @@ export default function LLMRecordsPage() {
                 {fmtLatency(selected.latency_ms)}
               </span>
               {selected.status === "ok" ? (
-                <Badge variant="secondary" className="text-xs text-emerald-600">OK</Badge>
+                <Badge variant="secondary" className="text-xs text-emerald-600">정상</Badge>
               ) : (
-                <Badge variant="destructive" className="text-xs">Error</Badge>
+                <Badge variant="destructive" className="text-xs">오류</Badge>
               )}
               {/* 원문 보기 스위치. 예전 기록에는 원문이 없습니다. 그때는 조용히 되돌리지 않고 끄어둡니다.
                   「원문과 해석이 같다」처럼 보이지 않게 하기 위해서입니다. */}
@@ -492,7 +492,7 @@ export default function LLMRecordsPage() {
                 size="sm"
                 className="ml-auto h-7 shrink-0 text-xs"
                 disabled={!hasRaw}
-                title={hasRaw ? "provider와 실제로 주고받은 HTTP 원문 보기" : "이 기록은 이 기능이 생기기 전에 녹화되어 원문이 없습니다"}
+                title={hasRaw ? "제공자(provider)와 실제로 주고받은 HTTP 원문 보기" : "이 기록은 이 기능이 생기기 전에 녹화되어 원문이 없습니다"}
                 onClick={() => setRawView((v) => !v)}
               >
                 원문
@@ -510,7 +510,7 @@ export default function LLMRecordsPage() {
             <div className="grid min-h-0 flex-1 grid-cols-2 divide-x">
               <div className="flex min-h-0 min-w-0 flex-col">
                 <div className="flex items-center gap-2 border-b py-0.5 pr-1.5 pl-3 text-[11px] font-medium text-muted-foreground">
-                  <span>Request{showRaw && " · 원문"}</span>
+                  <span>요청{showRaw && " · 원문"}</span>
                   <CopyButton text={reqText || ""} />
                 </div>
                 <div className="min-h-0 flex-1 overflow-auto">
@@ -528,7 +528,7 @@ export default function LLMRecordsPage() {
               </div>
               <div className="flex min-h-0 min-w-0 flex-col">
                 <div className="flex items-center gap-2 border-b py-0.5 pr-1.5 pl-3 text-[11px] font-medium text-muted-foreground">
-                  <span>Response{showRaw && " · 원문(SSE)"}</span>
+                  <span>응답{showRaw && " · 원문(SSE)"}</span>
                   <CopyButton text={respText || ""} />
                 </div>
                 <div className="min-h-0 flex-1 overflow-auto">
@@ -555,7 +555,7 @@ export default function LLMRecordsPage() {
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>작업 삭제 "{pickedTask}"의 모든 LLM 대화?</AlertDialogTitle>
+            <AlertDialogTitle>「{pickedTask}」 작업의 모든 LLM 대화를 삭제할까요?</AlertDialogTitle>
             <AlertDialogDescription>
               이 작업의 모든 LLM 호출 기록(요청/응답 원문 포함)을 영구 삭제합니다. 이 작업은 되돌릴 수 없습니다.
             </AlertDialogDescription>

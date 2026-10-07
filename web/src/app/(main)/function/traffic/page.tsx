@@ -49,7 +49,7 @@ import type { TrafficDetail, TrafficExchange, TrafficHost, TrafficResp } from "@
 import { cn } from "@/lib/utils";
 
 function fmtTime(ts: string) {
-  return new Date(ts).toLocaleString("zh-CN", {
+  return new Date(ts).toLocaleString("ko-KR", {
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
@@ -745,8 +745,8 @@ export default function TrafficPage() {
               </SheetHeader>
               <Tabs defaultValue="request" className="min-h-0 flex-1 gap-0">
                 <TabsList className="mx-5 mt-4 grid w-auto grid-cols-2">
-                  <TabsTrigger value="request">요청 Request</TabsTrigger>
-                  <TabsTrigger value="response">응답 Response</TabsTrigger>
+                  <TabsTrigger value="request">요청</TabsTrigger>
+                  <TabsTrigger value="response">응답</TabsTrigger>
                 </TabsList>
                 <TabsContent value="request" className="min-h-0 overflow-auto">
                   {detailLoading ? (

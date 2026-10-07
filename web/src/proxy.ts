@@ -1,18 +1,21 @@
-import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { NextResponse } from "next/server";
 
 const AUTH_PAGES = ["/login", "/setup"];
+// 출처와 라이선스는 로그인 전에도 읽을 수 있어야 합니다.
+const PUBLIC_PAGES = ["/about", "/legal"];
 
 export function proxy(request: NextRequest) {
-  // Mock demo: 진짜 로그인이 없어, 모든 페이지를 통과시킵니다(클라이언트 auth 가드도 통과시킴).
+  // 샘플 화면: 진짜 로그인이 없어, 모든 페이지를 통과시킵니다(클라이언트 auth 가드도 통과시킴).
   if (process.env.NEXT_PUBLIC_MOCK === "1") return NextResponse.next();
 
   const { pathname } = request.nextUrl;
   const token = request.cookies.get("artex_token")?.value;
   const isAuthPage = AUTH_PAGES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+  const isPublicPage = PUBLIC_PAGES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 
   // 로그인 안 됨 → 로그인 페이지로 이동
-  if (!token && !isAuthPage) {
+  if (!token && !isAuthPage && !isPublicPage) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
@@ -26,5 +29,7 @@ export function proxy(request: NextRequest) {
 
 export const config = {
   // Next.js 내부 라우트, API 라우트, favicon, public/ 아래 정적 파일(이미지, 글꼴 등)은 건너뜀
-  matcher: ["/((?!_next/static|_next/image|favicon\\.ico|api/|.*\\.(?:png|jpg|jpeg|gif|webp|svg|ico|woff2?|ttf|otf)$).*)"],
+  matcher: [
+    "/((?!_next/static|_next/image|favicon\\.ico|api/|.*\\.(?:png|jpg|jpeg|gif|webp|svg|ico|woff2?|ttf|otf)$).*)",
+  ],
 };

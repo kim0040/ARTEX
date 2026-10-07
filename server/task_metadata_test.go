@@ -7,24 +7,31 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"strconv"
 	"strings"
 	"testing"
 )
 
 func TestTaskMetadataPatchReturnsRenameAndPin(t *testing.T) {
+	useDedicatedCoreLifecycleDB(t)
 	m, err := NewManager(t.TempDir(), "")
 	if err != nil {
 		t.Skipf("postgres unavailable (%v) — skipping", err)
 	}
-	defer m.Close()
 	task, err := m.CreateTask("metadata patch", "goal", nil, 0, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	taskID, _ := strconv.ParseInt(task.ID, 10, 64)
-	defer func() { _ = m.pg.DeleteTask(taskID) }()
-	s := New(context.Background(), m, t.TempDir(), t.TempDir(), t.TempDir())
+	ctx, cancel := context.WithCancel(context.Background())
+	s := New(ctx, m, t.TempDir(), t.TempDir(), t.TempDir())
+	t.Cleanup(func() {
+		cancel()
+		s.engine.StopTask(task.ID)
+		s.archiveWG.Wait()
+		if s.side != nil {
+			<-s.side.done
+		}
+		_ = m.Close()
+	})
 	token, err := signJWT(s.jwtKey)
 	if err != nil {
 		t.Fatal(err)
@@ -61,12 +68,21 @@ func TestTaskMetadataPatchReturnsRenameAndPin(t *testing.T) {
 }
 
 func TestConversationBatchDeleteReportsMissing(t *testing.T) {
+	useDedicatedCoreLifecycleDB(t)
 	m, err := NewManager(t.TempDir(), "")
 	if err != nil {
 		t.Skipf("postgres unavailable (%v) — skipping", err)
 	}
-	defer m.Close()
-	s := New(context.Background(), m, t.TempDir(), t.TempDir(), t.TempDir())
+	ctx, cancel := context.WithCancel(context.Background())
+	s := New(ctx, m, t.TempDir(), t.TempDir(), t.TempDir())
+	t.Cleanup(func() {
+		cancel()
+		s.archiveWG.Wait()
+		if s.side != nil {
+			<-s.side.done
+		}
+		_ = m.Close()
+	})
 	first, err := m.pg.CreateConversation("mainagent", "batch-http-first", nil)
 	if err != nil {
 		t.Fatal(err)

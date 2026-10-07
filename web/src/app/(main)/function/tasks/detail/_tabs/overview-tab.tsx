@@ -321,7 +321,7 @@ export function OverviewTab({ taskId }: { taskId: string }) {
       return next;
     });
 
-  // 한 건 다시 실행: open으로 되돌림(로컬 state를 낙관적으로 갱신, 3초 주기 조회가 대비). worker가 다시 맡아 처음부터 다시 실행합니다. （워커는 의도를 실행하는 역할입니다）
+  // 한 건 다시 실행: open으로 되돌림(로컬 state를 낙관적으로 갱신, 3초 주기 조회가 대비). 워커가 다시 가져가고, 저장된 대화 기록이 있으면 이어서 실행합니다. （워커는 의도를 실행하는 역할입니다）
   const rerunOne = async (id: string) => {
     markRerun(id, true);
     try {
@@ -916,7 +916,7 @@ export function OverviewTab({ taskId }: { taskId: string }) {
             <div className="text-xs text-muted-foreground">최근 활동</div>
             <div className="mt-1 inline-flex items-center gap-1 text-sm">
               <ClockIcon className="size-3.5" />
-              {task?.last_activity ? new Date(task.last_activity).toLocaleTimeString("zh-CN") : "—"}
+              {task?.last_activity ? new Date(task.last_activity).toLocaleTimeString("ko-KR") : "—"}
             </div>
           </div>
           <div>
@@ -930,7 +930,7 @@ export function OverviewTab({ taskId }: { taskId: string }) {
               <div className="text-xs text-muted-foreground">완료 시각</div>
               <div className="mt-1 inline-flex items-center gap-1 text-sm">
                 <ClockIcon className="size-3.5" />
-                {new Date(task.completed_unix * 1000).toLocaleString("zh-CN")}
+                {new Date(task.completed_unix * 1000).toLocaleString("ko-KR")}
               </div>
             </div>
           ) : null}
@@ -1001,7 +1001,7 @@ export function OverviewTab({ taskId }: { taskId: string }) {
       </div>
 
       {/* 막힌 의도(blocked) — 오류가 나거나 막힌(예: LLM 네트워크 문제) 의도. 한 번에 다시 실행할 수 있습니다. open으로 되돌리면
-          worker가 다시 맡아 처음부터 다시 실행합니다(그래프에 이미 기록된 데이터는 유지). 작업이 이미 끝났거나 일시정지라면 자동으로 다시 깨웁니다. （워커는 의도를 실행하는 역할이고, 탐색 그래프는 그 과정이 쌓이는 그림입니다） */}
+          워커가 다시 가져가고, 저장된 대화 기록이 있으면 이어서 실행합니다(그래프에 이미 기록된 데이터는 유지). 작업이 이미 끝났거나 일시정지라면 자동으로 다시 깨웁니다. （워커는 의도를 실행하는 역할이고, 탐색 그래프는 그 과정이 쌓이는 그림입니다） */}
       {blocked.length > 0 && (
         <Card className="border-red-500/30">
           <CardHeader className="flex-row items-center justify-between gap-2 space-y-0">

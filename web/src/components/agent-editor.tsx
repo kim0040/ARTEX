@@ -25,6 +25,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Markdown } from "@/components/markdown";
 import { api } from "@/lib/api";
+import { toolDisplaySummary } from "@/lib/tool-display";
 import { cn } from "@/lib/utils";
 import type { Agent, AgentDetail, AgentTrigger, MCPServer, PromptVar, PromptVersion, Settings, SkillItem, Tool } from "@/lib/types";
 
@@ -33,7 +34,7 @@ import type { Agent, AgentDetail, AgentTrigger, MCPServer, PromptVar, PromptVers
 const TRAFFIC_TOOL_KEYS = new Set(["traffic_search", "traffic_get"]);
 
 // AgentEditor는 에이전트 하나의 탭 편집기입니다. 에이전트 화면의
-// 서랍(딥 링크에서는 전체 페이지로 재사용). Tabs: 설정과 프롬프트 / MCP / Skill /
+// 서랍(딥 링크에서는 전체 페이지로 재사용). 탭: 설정과 프롬프트 / MCP / 스킬 /
 // 도구. 설정과 프롬프트는 예전처럼 저장하고, 보이기와 도구 연결은 바로 바뀝니다.
 export function AgentEditor({ agentKey, onSaved }: { agentKey: string; onSaved?: () => void }) {
   const [detail, setDetail] = React.useState<AgentDetail | null>(null);
@@ -227,7 +228,7 @@ export function AgentEditor({ agentKey, onSaved }: { agentKey: string; onSaved?:
     applyVis(
       mcpVisible,
       on ? skillVisible.filter((x) => x !== name) : [...skillVisible, name],
-      `${on ? "취소했습니다" : "켜짐"} Skill「${name}」에 보임`,
+      `스킬 「${name}」을 ${on ? "숨겼습니다" : "표시했습니다"}.`,
     );
   }
   async function toggleTool(t: Tool) {
@@ -242,7 +243,7 @@ export function AgentEditor({ agentKey, onSaved }: { agentKey: string; onSaved?:
         agents: nextAgents,
         enabled: t.enabled,
       });
-      toast.success(`${on ? "연결을 끊음" : "연결함"}도구 「${t.key}」`);
+      toast.success(`도구 「${t.key}」의 연결을 ${on ? "해제했습니다" : "저장했습니다"}.`);
       onSaved?.(); // 목록을 새로고침해 카드의 도구 개수가 맞춰지게 함
     } catch (e) {
       toast.error("도구 연결 저장 실패:" + (e as Error).message);
@@ -252,7 +253,7 @@ export function AgentEditor({ agentKey, onSaved }: { agentKey: string; onSaved?:
   }
 
   if (loaded && !detail) {
-    return <div className="text-muted-foreground p-6 text-center text-sm">Agent를 찾지 못했습니다:{agentKey}</div>;
+    return <div className="text-muted-foreground p-6 text-center text-sm">에이전트를 찾지 못했습니다: {agentKey}</div>;
   }
   // 대화형 메인 에이전트와 고정 예산
   // 목표 분해에는 이 설정이 의미 없습니다. 다른 에이전트(워커, 사용자 조수)는 따릅니다.
@@ -273,8 +274,8 @@ export function AgentEditor({ agentKey, onSaved }: { agentKey: string; onSaved?:
         <TabsTrigger value="prompt">설정과 프롬프트</TabsTrigger>
         <TabsTrigger value="wrapup">마무리 프롬프트</TabsTrigger>
         <TabsTrigger value="mcp">MCP</TabsTrigger>
-        <TabsTrigger value="skill">Skill</TabsTrigger>
-        <TabsTrigger value="tools">Tools</TabsTrigger>
+        <TabsTrigger value="skill">스킬</TabsTrigger>
+        <TabsTrigger value="tools">도구</TabsTrigger>
         {isCustom && <TabsTrigger value="triggers">트리거</TabsTrigger>}
       </TabsList>
 
@@ -301,7 +302,7 @@ export function AgentEditor({ agentKey, onSaved }: { agentKey: string; onSaved?:
                       </SelectContent>
                     </Select>
                     <span className="text-muted-foreground max-w-md text-xs">
-                      이 Agent에 고정 LLM 설정을 연결합니다(「설정 저장」을 눌러야 적용됨). 우선순위: Agent 연결 &gt; 작업/세션 지정 &gt; 전역 활성.
+                      이 에이전트에 고정 LLM 설정을 연결합니다(「설정 저장」을 눌러야 적용됨). 우선순위: 에이전트 연결 &gt; 작업/세션 지정 &gt; 전역 활성.
                     </span>
                   </div>
                 </div>
@@ -337,7 +338,7 @@ export function AgentEditor({ agentKey, onSaved }: { agentKey: string; onSaved?:
                     <Label htmlFor="web-search" className="text-sm">웹 검색</Label>
                     <span className="text-muted-foreground text-xs">
                       {webSearchGlobalOn
-                        ? "이 Agent를 켠 뒤(위의 저장을 눌러야 적용), web_search로 웹을 검색할 수 있습니다"
+                        ? "이 에이전트를 켠 뒤(위의 저장을 눌러야 적용), web_search로 웹을 검색할 수 있습니다"
                         : "먼저 「시스템 설정」에서 네트워크 검색을 켜고 백엔드를 설정해야 여기서 켤 수 있습니다"}
                     </span>
                   </div>
@@ -353,7 +354,7 @@ export function AgentEditor({ agentKey, onSaved }: { agentKey: string; onSaved?:
                   <div className="grid gap-0.5">
                     <Label htmlFor="interactive-shell" className="text-sm">대화형 Shell</Label>
                     <span className="text-muted-foreground text-xs">
-                      이 Agent에 켠 뒤(위의 저장을 눌러야 적용됨), 오래 유지되는 PTY 세션 도구(shell_open/send/read/close/list)로 msfconsole/ssh/REPL 같은 대화형 프로그램을 다룰 수 있습니다
+                      이 에이전트를 켠 뒤(위의 저장을 눌러야 적용됨), 오래 유지되는 PTY 세션 도구(shell_open/send/read/close/list)로 msfconsole/ssh/REPL 같은 대화형 프로그램을 다룰 수 있습니다
                     </span>
                   </div>
                 </div>
@@ -423,7 +424,7 @@ export function AgentEditor({ agentKey, onSaved }: { agentKey: string; onSaved?:
                   <span className="text-muted-foreground truncate flex-1">{ver.note}</span>
                   {ver.ts && (
                     <span className="text-muted-foreground/60 shrink-0 tabular-nums">
-                      {new Date(ver.ts).toLocaleDateString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                      {new Date(ver.ts).toLocaleDateString("ko-KR", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}
                     </span>
                   )}
                   <Button variant="ghost" size="icon-sm" className="size-6 shrink-0" onClick={() => setViewVer(ver)}>
@@ -456,7 +457,7 @@ export function AgentEditor({ agentKey, onSaved }: { agentKey: string; onSaved?:
                   {viewVer?.note || "(메모 없음)"}
                   {viewVer?.ts && (
                     <span className="ml-2 text-muted-foreground/60">
-                      {new Date(viewVer.ts).toLocaleString("zh-CN")}
+                      {new Date(viewVer.ts).toLocaleString("ko-KR")}
                     </span>
                   )}
                 </DialogDescription>
@@ -503,7 +504,7 @@ export function AgentEditor({ agentKey, onSaved }: { agentKey: string; onSaved?:
       <TabsContent value="wrapup" className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
         <div className="grid gap-3">
           <p className="text-muted-foreground text-xs leading-relaxed">
-            이 Agent가 다음 때문에<b>시간 초과</b>또는<b>단계 수를 모두 씀</b>종료될 때, 시스템이 이 「마무리 프롬프트」를 넣어 마무리 한 번을 돌립니다:
+            이 에이전트가 <b>시간 초과</b> 또는 <b>단계 수를 모두 사용해</b> 종료될 때, 시스템이 이 「마무리 프롬프트」를 넣어 마무리 한 번을 돌립니다:
             이미 알아냈지만 아직 저장하지 않은 내용을 먼저 기록하고, 요약 한 줄을 냅니다(흐지부지한 끝을 피합니다). 비우면 내장 기본값을 씁니다.
           </p>
           <div className="flex items-center gap-2">
@@ -591,7 +592,7 @@ export function AgentEditor({ agentKey, onSaved }: { agentKey: string; onSaved?:
 
       {/* MCP 보이는 범위 */}
       <TabsContent value="mcp" className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
-        <p className="text-muted-foreground mb-3 text-xs">이 Agent가 볼 수 있는 MCP 서버를 선택하세요.</p>
+        <p className="text-muted-foreground mb-3 text-xs">이 에이전트가 볼 수 있는 MCP 서버를 선택하세요.</p>
         <div className="grid gap-2">
           {mcp.map((m) => (
             <label key={m.id} className="flex items-center gap-2 rounded-md border p-2 text-sm">
@@ -604,9 +605,9 @@ export function AgentEditor({ agentKey, onSaved }: { agentKey: string; onSaved?:
         </div>
       </TabsContent>
 
-      {/* Skill 보이는 범위 */}
+      {/* 스킬 보이는 범위 */}
       <TabsContent value="skill" className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
-        <p className="text-muted-foreground mb-3 text-xs">이 Agent가 볼 수 있는 Skill을 선택하세요.</p>
+        <p className="text-muted-foreground mb-3 text-xs">이 에이전트가 볼 수 있는 스킬을 선택하세요.</p>
         <div className="grid gap-2">
           {skills.map((s) => (
             <label key={s.name} className="flex items-center gap-2 rounded-md border p-2 text-sm">
@@ -615,13 +616,13 @@ export function AgentEditor({ agentKey, onSaved }: { agentKey: string; onSaved?:
               {s.description && <span className="text-muted-foreground ml-auto truncate text-xs">{s.description}</span>}
             </label>
           ))}
-          {skills.length === 0 && <span className="text-muted-foreground text-xs">(아직 Skill 없음)</span>}
+          {skills.length === 0 && <span className="text-muted-foreground text-xs">(아직 스킬 없음)</span>}
         </div>
       </TabsContent>
 
       {/* Tools 연결 */}
       <TabsContent value="tools" className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
-        <p className="text-muted-foreground mb-3 text-xs">이 Agent에 묶을 내장 도구를 선택하세요.</p>
+        <p className="text-muted-foreground mb-3 text-xs">이 에이전트에 묶을 내장 도구를 선택하세요.</p>
         <div className="grid gap-2">
           {tools.map((t) => {
             const isTraffic = TRAFFIC_TOOL_KEYS.has(t.key);
@@ -651,7 +652,7 @@ export function AgentEditor({ agentKey, onSaved }: { agentKey: string; onSaved?:
                 ) : (
                   t.description && (
                     <span className="text-muted-foreground ml-auto line-clamp-1 max-w-[55%] text-xs">
-                      {t.description}
+                      {toolDisplaySummary(t)}
                     </span>
                   )
                 )}
@@ -914,7 +915,7 @@ function AgentTriggersTab({ agentKey, agent }: { agentKey: string; agent?: Agent
   return (
     <div className="grid gap-4">
       <p className="text-muted-foreground text-xs">
-        트리거가 이 사용자 지정 Agent를 자동으로 실행합니다. 트리거될 때마다<b>세션을 하나 만들어 실행</b>(「대화」 페이지에서 보입니다).
+        트리거가 이 사용자 지정 에이전트를 자동으로 실행합니다. 트리거될 때마다 <b>세션을 하나 만들어 실행</b>(「대화」 페이지에서 보입니다).
         트리거 조건을 여러 개 고를 수 있습니다. 시스템이 「이번 트리거 이유 + 관련 작업/finding/목표」를 당신이 쓴 기본 메시지 뒤에 자동으로 붙입니다.
       </p>
 
@@ -1073,7 +1074,7 @@ function AgentTriggersTab({ agentKey, agent }: { agentKey: string; agent?: Agent
                         onCheckedChange={() => toggleTool(tool.key)} />
                       <span className="min-w-0">
                         <span className="font-medium">{tool.key}</span>
-                        {tool.description && <span className="text-muted-foreground line-clamp-1"> {tool.description}</span>}
+                        {tool.description && <span className="text-muted-foreground line-clamp-1"> {toolDisplaySummary(tool)}</span>}
                       </span>
                     </label>
                   ))}

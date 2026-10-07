@@ -216,7 +216,7 @@ function deleteDetails(result: DeleteCounts): string[] {
 
 function deleteSummary(result: DeleteTaskResult): string {
   const details = deleteDetails(result);
-  return details.length > 0 ? `작업이 삭제됨(${details.join("，")}）` : "작업을 삭제했습니다";
+  return details.length > 0 ? `작업을 삭제했습니다(${details.join(", ")})` : "작업을 삭제했습니다";
 }
 
 // fmtDateTime은 유닉스 초를 짧은 로컬 날짜-시간으로 그립니다
@@ -651,7 +651,7 @@ export default function TasksPage() {
           return next;
         });
         const details = deleteDetails(total);
-        const summary = `삭제됨 ${deleted.length} 개 작업` + (details.length > 0 ? `（${details.join("，")}）` : "");
+        const summary = `작업 ${deleted.length}개를 삭제했습니다` + (details.length > 0 ? `(${details.join(", ")})` : "");
         if (warnings.length > 0) {
           toast.warning(`${summary}; 일부 외부 데이터 정리가 끝나지 않음:${warnings.join("；")}`);
         } else {
@@ -970,7 +970,7 @@ export default function TasksPage() {
                       align="right"
                       onSort={sortTasksBy}
                     />
-                    <TableHead className="text-right">Token</TableHead>
+                    <TableHead className="text-right">토큰</TableHead>
                     <TableHead className="sticky right-0 z-10 bg-card text-right shadow-[-1px_0_0_0_hsl(var(--border))]">
                       동작
                     </TableHead>
@@ -1468,7 +1468,7 @@ function archiveBlockReason(task: Task): string {
   if (task.queued) return "대기열에 있는 작업은 먼저 일시정지해야 합니다";
   if (!ARCHIVABLE_STATUSES.has(task.status)) return "실행 중이거나 아직 끝나지 않은 작업은 먼저 일시정지해야 합니다";
   if (task.archive_blocked_by_task_id) {
-    return `작업이 보관되지 않은 작업 #${task.archive_blocked_by_task_id} 을(를) 직접 상속합니다. 먼저 의존 작업을 보관하세요`;
+    return `아직 보관하지 않은 작업 #${task.archive_blocked_by_task_id}의 내용을 직접 상속합니다. 먼저 의존 작업을 보관하세요`;
   }
   return "";
 }
@@ -1489,9 +1489,9 @@ function ArchiveConfirmDialog({
       <AlertDialogTrigger asChild>{trigger}</AlertDialogTrigger>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>{count === 1 ? "작업 보관" : `보관 ${count} 개 작업`}</AlertDialogTitle>
+          <AlertDialogTitle>{count === 1 ? "작업을 보관할까요?" : `작업 ${count}개를 보관할까요?`}</AlertDialogTitle>
           <AlertDialogDescription className="[overflow-wrap:anywhere]">
-            보관하면 작업 일정이 멈춥니다. 그래프, LLM 기록, 파일, 전용 자산과 트래픽을 로컬 콜드 스토리지로 압축합니다. 보관이 끝나면 "보관됨"에서 복원할 수 있습니다.
+            보관하면 작업 실행을 멈추고 그래프, LLM 기록, 파일, 전용 자산과 트래픽을 로컬 보관 저장소로 압축합니다. 보관이 끝나면 "보관됨"에서 복원할 수 있습니다.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
@@ -1595,7 +1595,7 @@ function archiveDate(value?: string): string {
   if (!value) return "—";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "—";
-  return date.toLocaleString();
+  return date.toLocaleString("ko-KR");
 }
 
 function ArchiveDeleteDialog({
@@ -1616,9 +1616,9 @@ function ArchiveDeleteDialog({
       <AlertDialogTrigger asChild>{trigger}</AlertDialogTrigger>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>영구 삭제 {archives.length} 개 작업을 보관할까요?</AlertDialogTitle>
+          <AlertDialogTitle>보관된 작업 {archives.length}개를 영구 삭제할까요?</AlertDialogTitle>
           <AlertDialogDescription className="[overflow-wrap:anywhere]">
-            약 다음을 영구 삭제 {formatArchiveBytes(bytes)} 의 보관 패키지 및 {rows.toLocaleString()} 건의 연결 데이터 스냅샷. 이 작업은 복구할 수 없습니다.
+            보관 패키지 약 {formatArchiveBytes(bytes)}와 연결 데이터 {rows.toLocaleString("ko-KR")}건의 스냅샷을 영구 삭제합니다. 삭제한 내용은 되돌릴 수 없습니다.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
@@ -1932,7 +1932,7 @@ function TaskArchivesPanel({ onChanged }: { onChanged: () => void }) {
                     >
                       {archiveCompressionLabel(archive)}
                     </TableCell>
-                    <TableCell className="text-xs tabular-nums">{archiveDataTotal(archive).toLocaleString()}</TableCell>
+                    <TableCell className="text-xs tabular-nums">{archiveDataTotal(archive).toLocaleString("ko-KR")}</TableCell>
                     <TableCell>
                       <div className="flex min-w-0 flex-col gap-1.5">
                         <ArchiveStateBadge state={archive.state} />
@@ -2130,7 +2130,7 @@ function DeleteOptionFields({
           />
           <FieldContent>
             <FieldLabel htmlFor={`delete-llm-records-${idPrefix}`}>LLM 요청/응답 기록</FieldLabel>
-            <FieldDescription>이 작업에서 기록한 LLM 요청, 응답, Token, 오류 상세를 영구 삭제합니다.</FieldDescription>
+            <FieldDescription>이 작업의 LLM 요청·응답·오류 상세를 영구 삭제합니다. 별도로 집계한 토큰 사용량은 보존합니다.</FieldDescription>
           </FieldContent>
         </Field>
       </FieldGroup>
@@ -2174,7 +2174,7 @@ function DeleteTaskDialog({
       </AlertDialogTrigger>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>작업 삭제 확인 #{task.id}？</AlertDialogTitle>
+          <AlertDialogTitle>작업 #{task.id}를 삭제할까요?</AlertDialogTitle>
           <AlertDialogDescription className="break-words">
             {task.description ? (
               <>
@@ -2187,7 +2187,7 @@ function DeleteTaskDialog({
             ) : (
               "이 작업"
             )}
-            의 실행 기록과 탐색 경로는 영구 삭제됩니다.
+            의 실행 기록과 탐색 경로를 영구 삭제합니다. 아래 정리 옵션도 함께 적용됩니다.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <DeleteOptionFields idPrefix={task.id} options={options} onOptionsChange={setOptions} disabled={deleting} />
@@ -2329,9 +2329,9 @@ function BulkDeleteTasksDialog({
       </AlertDialogTrigger>
       <AlertDialogContent className="max-h-[85vh] overflow-y-auto">
         <AlertDialogHeader>
-          <AlertDialogTitle>선택한 항목 삭제 확인 {ids.length} 개 작업?</AlertDialogTitle>
+          <AlertDialogTitle>선택한 작업 {ids.length}개를 삭제할까요?</AlertDialogTitle>
           <AlertDialogDescription>
-            이 작업들의 실행 기록과 탐색 경로는 영구 삭제됩니다. 아래 정리 옵션은 선택한 작업에 같이 적용됩니다.
+            선택한 작업의 실행 기록과 탐색 경로를 영구 삭제합니다. 아래 정리 옵션도 함께 적용됩니다.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <div className="text-muted-foreground flex flex-wrap gap-1 text-xs">
@@ -3035,7 +3035,7 @@ function CategoryManagementSheet({
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>분류 삭제 "{selectedCategory?.name || "이름 없는 분류"}」？</AlertDialogTitle>
+            <AlertDialogTitle>분류 "{selectedCategory?.name || "이름 없는 분류"}"를 삭제할까요?</AlertDialogTitle>
             <AlertDialogDescription>
               분류를 삭제하면 그 안의 {selectedCategory?.task_count ?? 0} 개 작업은 자동으로 "미분류"로 이동합니다. 작업 데이터는 삭제되지 않습니다.
             </AlertDialogDescription>
@@ -3238,7 +3238,7 @@ function CreateTaskSheet({
                 onCategoryCreated={onCategoriesChanged}
                 portalContainer={sheetContentRef}
               />
-              <FieldDescription>선택 사항, 분류 하나. 작업 목록 필터와 보관에 쓰며 Agent 실행에는 영향이 없습니다.</FieldDescription>
+              <FieldDescription>선택 사항인 분류입니다. 작업 목록 필터와 보관에 쓰며 에이전트 실행에는 영향이 없습니다.</FieldDescription>
             </Field>
             <div className="grid gap-2">
               <Label htmlFor="description">설명</Label>
@@ -3307,7 +3307,7 @@ function CreateTaskSheet({
                 portalContainer={sheetContentRef}
               />
               <FieldDescription>
-                작업을 만들 때 선택한 기업의 현재 자산을 "테스트 자산"에 넣고, 도메인, IP, CIDR, ICP, 기업 키워드를 Agent의 범위 맥락으로 줍니다. 의도를 자동으로 만들거나 실행 목표를 강제로 바꾸지는 않습니다.
+                작업을 만들 때 선택한 기업의 현재 자산을 "테스트 자산"에 넣고, 도메인, IP, CIDR, ICP, 기업 키워드를 에이전트의 범위 맥락으로 줍니다. 의도를 자동으로 만들거나 실행 목표를 강제로 바꾸지는 않습니다.
               </FieldDescription>
             </Field>
             <Field>
@@ -3349,11 +3349,11 @@ function CreateTaskSheet({
                     onChange={(e) => setTimeoutMin(e.target.value)}
                   />
                   <p className="text-muted-foreground text-xs">
-                    시간이 되면 정상 마무리를 시작합니다(각 agent가 결과를 기록하고 planner가 최종 판정). 작업은 timeout 최종 상태가 됩니다.
+                    시간이 되면 정상 마무리를 시작합니다(각 에이전트가 결과를 기록하고 플래너가 최종 판정). 작업은 시간 초과 상태가 됩니다.
                   </p>
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="heartbeat-min">planner 하트비트(분)</Label>
+                  <Label htmlFor="heartbeat-min">플래너 하트비트(분)</Label>
                   <Input
                     id="heartbeat-min"
                     type="number"
@@ -3364,7 +3364,7 @@ function CreateTaskSheet({
                     onChange={(e) => setHeartbeatMin(e.target.value)}
                   />
                   <p className="text-muted-foreground text-xs">
-                    이전 계획이 끝나거나 작업이 시작된 뒤 이 시간이 지나고 그 사이 다른 시작이 없으면, 계획을 한 번 자동으로 시작합니다(멈춤 대비 + 실행 중인 worker 점검). 최소 10분입니다.
+                    이전 계획이 끝나거나 작업이 시작된 뒤 이 시간이 지나고 그 사이 다른 시작이 없으면, 계획을 한 번 자동으로 시작합니다(멈춤 대비 및 실행 중인 워커 점검). 최소 10분입니다.
                   </p>
                 </div>
                 <div className="grid gap-2">
@@ -3377,7 +3377,7 @@ function CreateTaskSheet({
                     첫 의도(설명+목표)를 바로 보내기
                   </label>
                   <p className="text-muted-foreground text-xs">
-                    켜면 만드는 즉시 "설명+목표"를 의도 하나로 보냅니다. worker는 첫 계획을 기다리지 않고 바로 실행하고, 끝난 뒤 planner가 이어서 판정하고 보완합니다. CTF처럼 work 하나로 끝나는 경우가 많으면 켜 두는 것을 권합니다. 끄면 먼저 계획하고 실행하는 기본 흐름을 따릅니다.
+                    켜면 만드는 즉시 "설명+목표"를 의도 하나로 보냅니다. 워커는 첫 계획을 기다리지 않고 바로 실행하고, 끝난 뒤 플래너가 이어서 판정하고 보완합니다. CTF처럼 의도 하나로 끝나는 경우가 많으면 켜 두는 것을 권합니다. 끄면 먼저 계획하고 실행하는 기본 흐름을 따릅니다.
                   </p>
                 </div>
                 <div className="grid gap-2">
@@ -3390,7 +3390,7 @@ function CreateTaskSheet({
                     자산 커버리지 기능
                   </label>
                   <p className="text-muted-foreground text-xs">
-                    기본값은 켜짐: 테스트 커버리지를 계산해 보여주고, 현황 지도에 테스트 진행을 표시하며, 테스트 범위를 자동으로 쌓습니다. 끄면 커버리지를 계산하거나 보여 주지 않습니다. 현황 지도는 자산만 보여주고 진행은 표시하지 않으며, agent도 범위 도구를 받지 않습니다. 꺼도 "기업 자산 범위 연결"에는 영향이 없습니다.
+                    기본값은 켜짐: 테스트 커버리지를 계산해 보여주고, 현황 지도에 테스트 진행을 표시하며, 테스트 범위를 자동으로 쌓습니다. 끄면 커버리지를 계산하거나 보여 주지 않습니다. 현황 지도는 자산만 보여주고 진행은 표시하지 않으며, 에이전트도 범위 도구를 받지 않습니다. 꺼도 "기업 자산 범위 연결"에는 영향이 없습니다.
                   </p>
                 </div>
               </CollapsibleContent>

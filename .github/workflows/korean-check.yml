@@ -1,0 +1,27 @@
+name: 한국어 문구와 표시 검사
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  korean:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+        working-directory: web
+      - run: npm run check:korean
+        working-directory: web
+      - run: npm run test:korean
+        working-directory: web
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+      - run: go test ./learncheck ./report ./selfupdate

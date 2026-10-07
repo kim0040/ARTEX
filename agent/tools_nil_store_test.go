@@ -43,7 +43,7 @@ func TestExplorationToolRefusesWithoutTask(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !res.IsError || !strings.Contains(res.Flatten(), "任务上下文") { // han-allow 업스트림 프롬프트·픽스처
+	if !res.IsError || !strings.Contains(res.Flatten(), "작업 맥락(탐색 그래프)") {
 		t.Fatalf("want an explanatory tool error, got IsError=%v %q", res.IsError, res.Flatten())
 	}
 }

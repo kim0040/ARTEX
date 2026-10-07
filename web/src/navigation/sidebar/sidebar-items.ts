@@ -89,9 +89,9 @@ export const sidebarItems: NavGroup[] = [
     label: "시스템",
     items: [
       { id: "llm", title: "LLM", url: "/system/llm", icon: Brain },
-      { id: "agents", title: "Agent", url: "/system/agents", icon: Bot },
+      { id: "agents", title: "에이전트", url: "/system/agents", icon: Bot },
       { id: "mcp", title: "MCP", url: "/system/mcp", icon: Plug },
-      { id: "skills", title: "Skill", url: "/system/skills", icon: Sparkles },
+      { id: "skills", title: "스킬", url: "/system/skills", icon: Sparkles },
       { id: "tools", title: "도구", url: "/system/tools", icon: Wrench },
       { id: "notify", title: "알림", url: "/system/notify", icon: BellRing },
       { id: "intercept", title: "가로채기 규칙", url: "/system/intercept", icon: ShieldAlert },

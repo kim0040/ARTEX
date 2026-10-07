@@ -176,8 +176,8 @@ function relTime(ts: number, now: number): string {
   return `${Math.floor(sec / 86400)} 일 전`;
 }
 
-const dayFmt = new Intl.DateTimeFormat("zh-CN", { month: "long", day: "numeric", weekday: "short" });
-const clockFmt = new Intl.DateTimeFormat("zh-CN", {
+const dayFmt = new Intl.DateTimeFormat("ko-KR", { month: "long", day: "numeric", weekday: "short" });
+const clockFmt = new Intl.DateTimeFormat("ko-KR", {
   hour: "2-digit",
   minute: "2-digit",
   second: "2-digit",
@@ -260,7 +260,7 @@ function RelatedNodeCard({ node, assets }: { node: TaskNode; assets: FindingAsse
       <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
         <span>유형 {meta.label}</span>
         <span>출처 {node.origin || "system"}</span>
-        <span>{Number.isNaN(ts) ? node.ts : new Date(ts).toLocaleString("zh-CN")}</span>
+        <span>{Number.isNaN(ts) ? node.ts : new Date(ts).toLocaleString("ko-KR")}</span>
       </div>
       <p className="line-clamp-4 text-xs break-words">{summary || "(요약 없음)"}</p>
       <AssetList assets={assets} dense />
@@ -403,7 +403,7 @@ function BroadcastRow({
               </span>
               <span>유형 {meta.label}</span>
               <span>출처 {node.origin || "system"}</span>
-              <span>{Number.isNaN(ts) ? node.ts : new Date(ts).toLocaleString("zh-CN")}</span>
+              <span>{Number.isNaN(ts) ? node.ts : new Date(ts).toLocaleString("ko-KR")}</span>
             </div>
             {node.state === "deleted" && node.delete_reason && (
               <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs">

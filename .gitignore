@@ -1,4 +1,4 @@
-# backend
+# 백엔드
 /data/
 *.db
 *.db-wal
@@ -9,14 +9,14 @@ __pycache__/
 *.pyc
 *.pyo
 
-# frontend
+# 프론트엔드
 web/node_modules/
 web/.next/
 web/tsconfig.tsbuildinfo
 web/next-env.d.ts
 *.local
 
-# development tools
+# 개발 도구
 .playwright-mcp/
 .playwright-cli/
 .idea/
@@ -24,14 +24,18 @@ web/next-env.d.ts
 *.swp
 *.swo
 
-# docs
-/docs/
+# 문서: 아래 세 파일만 추적하고 나머지 docs/ 산출물은 무시합니다.
+/docs/*
+!/docs/
+!/docs/초보자-길잡이.md
+!/docs/포크-라이선스-안내.md
+!/docs/한글화-검증.md
 
-# os
+# 운영체제
 .DS_Store
 Thumbs.db
 
-# claude code local state
+# Claude Code 로컬 상태
 .claude/
 
 # 내장 프론트엔드가 들어간 단일 바이너리
@@ -44,17 +48,19 @@ Thumbs.db
 /artex.upgrade.json
 /server/webui/dist/
 /dist/
+/output/playwright/
+/web/out/
 
 # JWT 서명 키. 실행 중에 프로젝트 루트에 만들어지므로 커밋하지 않는다.
 /jwt.key
 
-# Docker 部署生成的本地环境（含密码/密钥，不提交）
+# Docker 배포에서 만든 로컬 환경(비밀번호/키 포함, 커밋하지 않음)
 .env
 
-# 调度器运行/模拟产生的事件日志（测试产物，不提交）
+# 스케줄러 실행/모의 테스트에서 만든 이벤트 로그(테스트 산출물, 커밋하지 않음)
 *-events.csv
 
-# bench 基准测试相关（本地产物，不提交）
+# bench 성능 측정 관련(로컬 산출물, 커밋하지 않음)
 /bench/
 /Dockerfile.bench
 /Dockerfile.bench.v2

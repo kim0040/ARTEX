@@ -84,7 +84,7 @@ export function RetestsTab({ taskId }: { taskId: string }) {
         <Card className="min-w-0">
           <CardHeader>
             <CardTitle>발견 선택{data ? ` · ${data.total}` : ""}</CardTitle>
-            <CardDescription>이 작업 발견의 재테스트 기록을 보거나, 새 재테스트를 시작하세요.</CardDescription>
+            <CardDescription>이 작업 발견의 재검사 기록을 보거나, 새 재검사를 시작하세요.</CardDescription>
           </CardHeader>
           <CardContent className="flex max-h-[32rem] flex-col overflow-y-auto">
             {!loaded && !error ? <Skeleton className="h-24 w-full" /> : null}
@@ -109,8 +109,8 @@ export function RetestsTab({ taskId }: { taskId: string }) {
             {loaded && findings.length === 0 ? (
               <Empty>
                 <EmptyHeader>
-                  <EmptyTitle>재테스트할 발견 없음</EmptyTitle>
-                  <EmptyDescription>이 작업에서 발견이 나온 뒤, 여기서 직접 재테스트를 시작할 수 있습니다.</EmptyDescription>
+                  <EmptyTitle>재검사할 발견 없음</EmptyTitle>
+                  <EmptyDescription>이 작업에서 발견이 나온 뒤, 여기서 직접 재검사를 시작할 수 있습니다.</EmptyDescription>
                 </EmptyHeader>
               </Empty>
             ) : null}

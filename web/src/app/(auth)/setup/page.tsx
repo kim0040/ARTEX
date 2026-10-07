@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { api } from "@/lib/api";
+import { APP_CONFIG } from "@/config/app-config";
 import { auth } from "@/lib/auth";
 
 export default function SetupPage() {
@@ -34,7 +35,7 @@ export default function SetupPage() {
       return;
     }
     if (password.length < 8) {
-      setError("비밀번호는 8자 이상");
+      setError("비밀번호는 8자 이상으로 입력하세요");
       return;
     }
     setLoading(true);
@@ -75,9 +76,11 @@ export default function SetupPage() {
       <div className="flex w-full items-center justify-center bg-background p-8 lg:w-2/3">
         <div className="w-full max-w-md space-y-10 py-24 lg:py-32">
           <div className="space-y-4 text-center">
+            <p className="text-sm text-muted-foreground">{APP_CONFIG.name} · {APP_CONFIG.forkLabel}</p>
             <h2 className="text-2xl font-medium tracking-tight">초기 비밀번호</h2>
-            <p className="mx-auto max-w-xl text-muted-foreground">ARTEX를 처음 쓰면, 계정에 로그인 비밀번호를 설정하세요(8자 이상)</p>
+            <p className="mx-auto max-w-xl text-muted-foreground">처음 사용할 관리자 비밀번호를 정하세요. 8자 이상으로 입력해야 합니다.</p>
           </div>
+          <p className="text-sm text-center"><a href="/about" className="underline underline-offset-4">출처·라이선스·이용 안내</a></p>
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             <div className="space-y-1.5">
               <Label htmlFor="password">새 비밀번호</Label>
